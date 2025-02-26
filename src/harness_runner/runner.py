@@ -1,3 +1,6 @@
+from pathlib import Path
+
+import yaml
 from aiohttp import client, web
 
 SERVER_URL = "http://localhost:8000"
@@ -29,6 +32,13 @@ def create_application():
     return app
 
 
+def read_test_procedure_definitions(path: Path) -> dict:
+    with path.open() as f:
+        return yaml.safe_load(f)
+
+
 if __name__ == "__main__":
+    test_procedures: dict = read_test_procedure_definitions(path=Path("config/test_procedure.yaml"))
+
     app = create_application()
     web.run_app(app, port=8080)
