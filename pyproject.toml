@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools >= 61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "client-csip-test-harness"
+dynamic = ["version", "readme"]
+authors = [
+  {name = "Mike Turner", email = "mike.turner@anu.edu.au"},
+]
+maintainers = [
+  {name = "Mike Turner", email = "mike.turner@anu.edu.au"},
+]
+description = "CSIP-AUS Client Test Harness"
+keywords = ["CSIP-AUS", "client", "testing"]
+requires-python = ">=3.12"
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development",
+  "Typing :: Typed",
+]
+dependencies = [
+  "aiohttp>=3.11.12,<4",
+  "pyyaml>=6.0.2,<7"
+]
+
+[project.urls]
+Homepage = "https://github.com/bsgip/client-CSIP-test-harness"
+Documentation = "https://github.com/bsgip/client-CSIP-test-harness/blob/main/README.md"
+Repository = "https://github.com/bsgip/client-CSIP-test-harness.git"
+Issues = "https://github.com/bsgip/client-CSIP-test-harness/issues"
+Changelog = "https://github.com/bsgip/client-CSIP-test-harness/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+dev = [
+  "bandit",
+  "black",
+  "flake8",
+  "isort",
+  "mccabe",
+  "mypy",
+  "tox",
+]
+test = [
+  "pytest",
+]
+cli = [
+  "rich",
+  "click",
+]
+docs = [
+  "sphinx",
+]
+
+[project.scripts]
+runner-cli = "harness_runner.cli:cli_main"
+
+[tool.flake8]
+max-line-length = 120
+max-complexity = 10
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
+src_paths = ["src","tests"]
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+
+[tool.mypy]
+
+[tool.setuptools.dynamic]
+version = {attr = "harness_runner.__version__"}
+readme = {file = ["README.md"], content-type="text/markdown"}
+
