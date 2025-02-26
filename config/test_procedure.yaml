@@ -1,0 +1,71 @@
+---
+Description: CSIP-AUS Client Test Procedures
+Version: 0.1
+TestProcedures:
+  ALL-01:
+    Description: Discovery with Out-of-Band Registration
+    Category: Registration
+    Class:
+      - A
+      - DR-A
+    Preconditions:
+      db: preconditions/ALL-01.sql
+      runner:
+        event-listeners:
+          - ALL-01-001: enabled
+          - ALL-01-002: disabled
+          - ALL-01-003: disabled
+          - ALL-01-004: disabled
+    Steps:
+      ALL-01-001:
+        event:
+          type: request-received
+          parameters:
+            endpoint: /dcap
+        actions:
+          - action: enable-listeners
+            parameters:
+              - ALL-01-002
+              - ALL-01-003
+              - ALL-01-004
+          - action: remove-listener
+            parameters: self
+      ALL-01-002:
+        event:
+          type: request-received
+          parameters:
+            endpoint: /edev
+        actions:
+          - action: enable-listeners
+            parameters:
+              - ALL-01-002
+              - ALL-01-003
+              - ALL-01-004
+          - action: remove-listener
+            parameters: self
+      ALL-01-003:
+        event:
+          type: request-received
+          parameters:
+            endpoint: /tm
+        actions:
+          - action: enable-listeners
+            parameters:
+              - ALL-01-002
+              - ALL-01-003
+              - ALL-01-004
+          - action: remove-listener
+            parameters: self
+      ALL-01-004:
+        event:
+          type: request-received
+          parameters:
+            endpoint: /edev/1/der
+        actions:
+          - action: enable-listeners
+            parameters:
+              - ALL-01-002
+              - ALL-01-003
+              - ALL-01-004
+          - action: remove-listener
+            parameters: self
