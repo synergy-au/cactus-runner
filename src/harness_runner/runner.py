@@ -95,7 +95,7 @@ async def finalize_test_procedure(request):
 
 async def test_procedure_status(request):
     if current_test_procedure is not None:
-        text = "Test procedure running"
+        text = f"Test procedure '{current_test_procedure.name}' running"
     else:
         text = "No test procedure running"
     return web.Response(status=http.HTTPStatus.OK, text=text)
