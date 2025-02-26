@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "Harness-Runner",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}
