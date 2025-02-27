@@ -45,12 +45,17 @@
       "filename": "logs/harness_runner.jsonl",
       "maxBytes": 10000000,
       "backupCount": 3
+    },
+    "queue_handler": {
+      "class": "logging.handlers.QueueHandler",
+      "handlers": ["stdout", "stderr", "jsonlfile"],
+      "respect_handler_level": true
     }
   },
   "loggers": {
     "root": {
       "level": "DEBUG",
-      "handlers": ["stdout", "stderr", "jsonlfile"]
+      "handlers": ["queue_handler"]
     }
   }
 }

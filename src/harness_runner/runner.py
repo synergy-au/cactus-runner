@@ -1,3 +1,4 @@
+import atexit
 import http
 import json
 import logging
@@ -165,6 +166,11 @@ def setup_logging(logging_config_file: Path):
         config = json.load(f)
 
     logging.config.dictConfig(config)
+
+    queue_handler = logging.getHandlerByName("queue_handler")
+    if queue_handler is not None:
+        queue_handler.listener.start()
+        atexit.register(queue_handler.listener.stop)
 
 
 if __name__ == "__main__":
