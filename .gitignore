@@ -6,6 +6,9 @@ test_certs
 # A folder for devs to put files they don't want committed.
 local
 
+# The default directory for store the application logs
+logs
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

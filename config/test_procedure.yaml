@@ -25,11 +25,14 @@ TestProcedures:
         actions:
           - action: enable-listeners
             parameters:
-              - ALL-01-002
-              - ALL-01-003
-              - ALL-01-004
-          - action: remove-listener
-            parameters: self
+              listeners:
+                - ALL-01-002
+                - ALL-01-003
+                - ALL-01-004
+          - action: remove-listeners
+            parameters:
+              listeners:
+                - ALL-01-001
       ALL-01-002:
         event:
           type: request-received
@@ -41,8 +44,11 @@ TestProcedures:
               - ALL-01-002
               - ALL-01-003
               - ALL-01-004
-          - action: remove-listener
-            parameters: self
+          - action: remove-listeners
+            parameters:
+              listeners:
+                - ALL-01-002
+            parameters:  self
       ALL-01-003:
         event:
           type: request-received
@@ -54,7 +60,10 @@ TestProcedures:
               - ALL-01-002
               - ALL-01-003
               - ALL-01-004
-          - action: remove-listener
+          - action: remove-listeners
+            parameters:
+              listeners:
+                - ALL-01-003
             parameters: self
       ALL-01-004:
         event:
@@ -67,5 +76,7 @@ TestProcedures:
               - ALL-01-002
               - ALL-01-003
               - ALL-01-004
-          - action: remove-listener
-            parameters: self
+          - action: remove-listeners
+            parameters:
+              listeners:
+                - ALL-01-004
