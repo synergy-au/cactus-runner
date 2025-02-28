@@ -4,6 +4,7 @@ import json
 import logging
 import logging.config
 from dataclasses import dataclass
+from enum import Enum, auto
 from pathlib import Path
 from typing import Any
 
@@ -36,11 +37,17 @@ class Listener:
     actions: list[Any]
 
 
+class StepStatus(Enum):
+    PENDING = auto()
+    RESOLVED = auto()
+
+
 @dataclass
 class TestProcedure:
     name: str
     definition: dict
     listeners: list[Listener]
+    step_status: dict[str, StepStatus]
 
 
 def apply_db_precondition(precondition):
@@ -84,7 +91,12 @@ async def start_test_procedure(request: web.Request):
         listeners.append(Listener(step=step_name, event=event, actions=actions, enabled=enabled))
 
     # Set 'current_test_procedure' to the requested test procedure
-    current_test_procedure = TestProcedure(name=requested_test_procedure, definition=definition, listeners=listeners)
+    current_test_procedure = TestProcedure(
+        name=requested_test_procedure,
+        definition=definition,
+        listeners=listeners,
+        step_status={step: StepStatus.PENDING for step in definition["Steps"]},
+    )
 
     # Get the database into the correct state for the test procedure
     db_precondition = current_test_procedure.definition["Preconditions"]["db"]
@@ -124,9 +136,13 @@ async def test_procedure_status(request):
 
     if current_test_procedure is not None:
         name = current_test_procedure.name
-        status = None
-        logger.info(f"Status of test procedure '{name}'={status}", extra={"test_procedure": name})
-        return web.Response(status=http.HTTPStatus.OK, text=f"Test procedure '{name}' running")
+        completed_steps = sum(s == StepStatus.RESOLVED for s in current_test_procedure.step_status.values())
+        steps = len(current_test_procedure.step_status)
+        status = f"{completed_steps}/{steps} steps complete."
+        logger.info(
+            f"Status of test procedure '{name}': {current_test_procedure.step_status}", extra={"test_procedure": name}
+        )
+        return web.Response(status=http.HTTPStatus.OK, text=f"Test procedure '{name}' running: {status}")
     else:
         logger.warning("Status of non-existent test procedure requested")
         return web.Response(status=http.HTTPStatus.OK, text="No test procedure running")
@@ -166,7 +182,7 @@ def apply_action(action: dict):
             raise UnknownActionError(f"Unrecognised action '{action}'")
 
 
-def handle_event(event: Event):
+def handle_event(event: Event) -> Listener | None:
     global current_test_procedure
 
     # Check all listeners
@@ -180,8 +196,14 @@ def handle_event(event: Event):
                 logger.info(f"Executing action: {action=}")
                 apply_action(action=action)
 
+            return listener
+
+    return None
+
 
 async def handle_all_request_types(request):
+    global current_test_procedure
+
     proxy_path = request.match_info.get("proxyPath", "No proxyPath placeholder defined")
     local_path = request.rel_url.path_qs
     remote_url = SERVER_URL + local_path
@@ -191,7 +213,12 @@ async def handle_all_request_types(request):
     if current_test_procedure is not None:
         # Update the progress of the test procedure
         request_event = Event(event_type="request-received", parameters={"endpoint": local_path})
-        handle_event(event=request_event)
+        listener = handle_event(event=request_event)
+
+        # The assumes each step only has one event and once the action associated with the event
+        # has been handled the step is "complete"
+        if listener is not None:
+            current_test_procedure.step_status[listener.step] = StepStatus.RESOLVED
 
     # Forward the request to the reference server
     async with client.request(
