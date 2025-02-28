@@ -16,6 +16,12 @@ MOUNT_POINT = "/"
 logger = logging.getLogger(__name__)
 
 
+class UnknownActionError(Exception):
+    """Unknown harness runner action"""
+
+    pass
+
+
 @dataclass
 class Event:
     event_type: str
@@ -126,12 +132,66 @@ async def test_procedure_status(request):
         return web.Response(status=http.HTTPStatus.OK, text="No test procedure running")
 
 
+def apply_action(action: dict):
+    global current_test_procedure
+
+    match action["action"]:
+        case "enable-listeners":
+            steps_to_enable = action["parameters"]["listeners"]
+            for listener in current_test_procedure.listeners:
+                if listener.step in steps_to_enable:
+                    logger.info(f"Enabling listener: {listener}")
+                    listener.enabled = True
+                    steps_to_enable.remove(listener.step)
+
+            # Warn about any unmatched steps
+            if steps_to_enable:
+                logger.warning(
+                    f"Unable to enable the listeners for the following steps, ({steps_to_enable}). These are not recognised steps in the '{current_test_procedure.name} test procedure"
+                )
+        case "remove-listeners":
+            steps_to_disable = action["parameters"]["listeners"]
+            for listener in current_test_procedure.listeners:
+                if listener.step in steps_to_disable:
+                    logger.info(f"Remove listener: {listener}")
+                    current_test_procedure.listeners.remove(listener)
+                    steps_to_disable.remove(listener.step)
+
+            # Warn about any unmatched steps
+            if steps_to_disable:
+                logger.warning(
+                    f"Unable to remove the listener from the following steps, ({steps_to_disable}). These are not recognised steps in the '{current_test_procedure.name}' test procedure"
+                )
+        case _:
+            raise UnknownActionError(f"Unrecognised action '{action}'")
+
+
+def handle_event(event: Event):
+    global current_test_procedure
+
+    # Check all listeners
+    for listener in current_test_procedure.listeners:
+        # Did any of the current listeners match?
+        if listener.enabled and listener.event == event:
+            logger.info(f"Event matched: {event=}")
+
+            # Perform actions associated with event
+            for action in listener.actions:
+                logger.info(f"Executing action: {action=}")
+                apply_action(action=action)
+
+
 async def handle_all_request_types(request):
     proxy_path = request.match_info.get("proxyPath", "No proxyPath placeholder defined")
     local_path = request.rel_url.path_qs
     remote_url = SERVER_URL + local_path
 
     logger.debug(f"{proxy_path=} {local_path=} {remote_url=}")
+
+    if current_test_procedure is not None:
+        # Update the progress of the test procedure
+        request_event = Event(event_type="request-received", parameters={"endpoint": local_path})
+        handle_event(event=request_event)
 
     # Forward the request to the reference server
     async with client.request(
