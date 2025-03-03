@@ -5,7 +5,7 @@ TestProcedures:
   ALL-01:
     Description: Discovery with Out-of-Band Registration
     Category: Registration
-    Class:
+    Classes:
       - A
       - DR-A
     Preconditions:
