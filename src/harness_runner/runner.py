@@ -43,7 +43,7 @@ class StepStatus(Enum):
 
 
 @dataclass
-class TestProcedure:
+class ActiveTestProcedure:
     name: str
     definition: dict
     listeners: list[Listener]
@@ -55,13 +55,13 @@ def apply_db_precondition(precondition):
 
 
 async def start_test_procedure(request: web.Request):
-    global current_test_procedure
+    global active_test_procedure
 
     # We cannot start another test procedure if one is already running
-    if current_test_procedure is not None:
+    if active_test_procedure is not None:
         return web.Response(
             status=http.HTTPStatus.CONFLICT,
-            text=f"Test Procedure ({current_test_procedure.name}) already in progress. Starting another test procedure is not permitted.",
+            text=f"Test Procedure ({active_test_procedure.name}) already in progress. Starting another test procedure is not permitted.",
         )
 
     # Get the name of the test procedure from the query parameter
@@ -90,8 +90,8 @@ async def start_test_procedure(request: web.Request):
         enabled = list(l.values())[0] == "enabled"
         listeners.append(Listener(step=step_name, event=event, actions=actions, enabled=enabled))
 
-    # Set 'current_test_procedure' to the requested test procedure
-    current_test_procedure = TestProcedure(
+    # Set 'active_test_procedure' to the requested test procedure
+    active_test_procedure = ActiveTestProcedure(
         name=requested_test_procedure,
         definition=definition,
         listeners=listeners,
@@ -99,23 +99,23 @@ async def start_test_procedure(request: web.Request):
     )
 
     # Get the database into the correct state for the test procedure
-    db_precondition = current_test_procedure.definition["Preconditions"]["db"]
+    db_precondition = active_test_procedure.definition["Preconditions"]["db"]
     apply_db_precondition(precondition=db_precondition)
 
     logger.info(
-        f"Test Procedure '{current_test_procedure.name}' started",
-        extra={"test_procedure": current_test_procedure.name},
+        f"Test Procedure '{active_test_procedure.name}' started",
+        extra={"test_procedure": active_test_procedure.name},
     )
 
     return web.Response(status=http.HTTPStatus.CREATED, text="Test Procedure Started")
 
 
 async def finalize_test_procedure(request):
-    global current_test_procedure
+    global active_test_procedure
 
-    if current_test_procedure is not None:
-        finalized_test_procedure_name = current_test_procedure.name
-        current_test_procedure = None
+    if active_test_procedure is not None:
+        finalized_test_procedure_name = active_test_procedure.name
+        active_test_procedure = None
 
         logger.info(
             f"Test Procedure '{finalized_test_procedure_name}' finalized",
@@ -134,13 +134,13 @@ async def test_procedure_status(request):
 
     logger.info("Test procedure status requested")
 
-    if current_test_procedure is not None:
-        name = current_test_procedure.name
-        completed_steps = sum(s == StepStatus.RESOLVED for s in current_test_procedure.step_status.values())
-        steps = len(current_test_procedure.step_status)
+    if active_test_procedure is not None:
+        name = active_test_procedure.name
+        completed_steps = sum(s == StepStatus.RESOLVED for s in active_test_procedure.step_status.values())
+        steps = len(active_test_procedure.step_status)
         status = f"{completed_steps}/{steps} steps complete."
         logger.info(
-            f"Status of test procedure '{name}': {current_test_procedure.step_status}", extra={"test_procedure": name}
+            f"Status of test procedure '{name}': {active_test_procedure.step_status}", extra={"test_procedure": name}
         )
         return web.Response(status=http.HTTPStatus.OK, text=f"Test procedure '{name}' running: {status}")
     else:
@@ -149,12 +149,12 @@ async def test_procedure_status(request):
 
 
 def apply_action(action: dict):
-    global current_test_procedure
+    global active_test_procedure
 
     match action["action"]:
         case "enable-listeners":
             steps_to_enable = action["parameters"]["listeners"]
-            for listener in current_test_procedure.listeners:
+            for listener in active_test_procedure.listeners:
                 if listener.step in steps_to_enable:
                     logger.info(f"Enabling listener: {listener}")
                     listener.enabled = True
@@ -163,30 +163,30 @@ def apply_action(action: dict):
             # Warn about any unmatched steps
             if steps_to_enable:
                 logger.warning(
-                    f"Unable to enable the listeners for the following steps, ({steps_to_enable}). These are not recognised steps in the '{current_test_procedure.name} test procedure"
+                    f"Unable to enable the listeners for the following steps, ({steps_to_enable}). These are not recognised steps in the '{active_test_procedure.name} test procedure"
                 )
         case "remove-listeners":
             steps_to_disable = action["parameters"]["listeners"]
-            for listener in current_test_procedure.listeners:
+            for listener in active_test_procedure.listeners:
                 if listener.step in steps_to_disable:
                     logger.info(f"Remove listener: {listener}")
-                    current_test_procedure.listeners.remove(listener)
+                    active_test_procedure.listeners.remove(listener)
                     steps_to_disable.remove(listener.step)
 
             # Warn about any unmatched steps
             if steps_to_disable:
                 logger.warning(
-                    f"Unable to remove the listener from the following steps, ({steps_to_disable}). These are not recognised steps in the '{current_test_procedure.name}' test procedure"
+                    f"Unable to remove the listener from the following steps, ({steps_to_disable}). These are not recognised steps in the '{active_test_procedure.name}' test procedure"
                 )
         case _:
             raise UnknownActionError(f"Unrecognised action '{action}'")
 
 
 def handle_event(event: Event) -> Listener | None:
-    global current_test_procedure
+    global active_test_procedure
 
     # Check all listeners
-    for listener in current_test_procedure.listeners:
+    for listener in active_test_procedure.listeners:
         # Did any of the current listeners match?
         if listener.enabled and listener.event == event:
             logger.info(f"Event matched: {event=}")
@@ -202,7 +202,7 @@ def handle_event(event: Event) -> Listener | None:
 
 
 async def handle_all_request_types(request):
-    global current_test_procedure
+    global active_test_procedure
 
     proxy_path = request.match_info.get("proxyPath", "No proxyPath placeholder defined")
     local_path = request.rel_url.path_qs
@@ -210,7 +210,7 @@ async def handle_all_request_types(request):
 
     logger.debug(f"{proxy_path=} {local_path=} {remote_url=}")
 
-    if current_test_procedure is not None:
+    if active_test_procedure is not None:
         # Update the progress of the test procedure
         request_event = Event(event_type="request-received", parameters={"endpoint": local_path})
         listener = handle_event(event=request_event)
@@ -218,7 +218,7 @@ async def handle_all_request_types(request):
         # The assumes each step only has one event and once the action associated with the event
         # has been handled the step is "complete"
         if listener is not None:
-            current_test_procedure.step_status[listener.step] = StepStatus.RESOLVED
+            active_test_procedure.step_status[listener.step] = StepStatus.RESOLVED
 
     # Forward the request to the reference server
     async with client.request(
@@ -269,7 +269,7 @@ if __name__ == "__main__":
 
     test_procedures: dict = read_test_procedure_definitions(path=Path("config/test_procedure.yaml"))
 
-    current_test_procedure = None
+    active_test_procedure = None
 
     app = create_application()
     web.run_app(app, port=8080)
