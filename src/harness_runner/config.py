@@ -6,7 +6,7 @@ from dataclass_wizard import YAMLWizard
 
 
 @dataclass
-class RawEvent:
+class Event:
     type: str
     parameters: dict
 
@@ -19,14 +19,14 @@ class Action:
 
 @dataclass
 class Step:
-    event: RawEvent
+    listener_enabled: bool
+    event: Event
     actions: list[Action]
 
 
 @dataclass
 class Preconditions:
     db: str
-    runner: dict
 
 
 @dataclass
@@ -40,6 +40,12 @@ class TestProcedure:
 
 @dataclass
 class TestProcedures(YAMLWizard):
+    """
+
+    By sub-classing YAMLWizard we get access to the class method `from_yaml`
+    which we can use to create an instances of `TestProcedures` from YAML.
+    """
+
     description: str
     version: str
     test_procedures: dict[str, TestProcedure]

@@ -8,8 +8,9 @@ from enum import Enum, auto
 from pathlib import Path
 from typing import Any
 
-import yaml
 from aiohttp import client, web
+
+from harness_runner.config import Action, Event, TestProcedure, TestProcedureConfig
 
 SERVER_URL = "http://localhost:8000"
 MOUNT_POINT = "/"
@@ -21,12 +22,6 @@ class UnknownActionError(Exception):
     """Unknown harness runner action"""
 
     pass
-
-
-@dataclass
-class Event:
-    event_type: str
-    parameters: dict
 
 
 @dataclass
@@ -45,7 +40,7 @@ class StepStatus(Enum):
 @dataclass
 class ActiveTestProcedure:
     name: str
-    definition: dict
+    definition: TestProcedure
     listeners: list[Listener]
     step_status: dict[str, StepStatus]
 
@@ -71,7 +66,7 @@ async def start_test_procedure(request: web.Request):
 
     # Get the definition of the test procedure
     try:
-        definition = test_procedures["TestProcedures"][requested_test_procedure]
+        definition = test_procedures.test_procedures[requested_test_procedure]
     except KeyError:
         return web.Response(
             status=http.HTTPStatus.BAD_REQUEST,
@@ -79,27 +74,22 @@ async def start_test_procedure(request: web.Request):
         )
 
     # Create listeners for all test procedure events
-    raw_listeners = definition["Preconditions"]["runner"]["event-listeners"]
     listeners = []
-    for l in raw_listeners:
-        step_name = list(l.keys())[0]
-        step = definition["Steps"][step_name]
-        step_event = step["event"]
-        event = Event(event_type=step_event["type"], parameters=step_event["parameters"])
-        actions = step["actions"]
-        enabled = list(l.values())[0] == "enabled"
-        listeners.append(Listener(step=step_name, event=event, actions=actions, enabled=enabled))
+    for step_name, step in definition.steps.items():
+        listeners.append(
+            Listener(step=step_name, event=step.event, actions=step.actions, enabled=step.listener_enabled)
+        )
 
     # Set 'active_test_procedure' to the requested test procedure
     active_test_procedure = ActiveTestProcedure(
         name=requested_test_procedure,
         definition=definition,
         listeners=listeners,
-        step_status={step: StepStatus.PENDING for step in definition["Steps"]},
+        step_status={step: StepStatus.PENDING for step in definition.steps.keys()},
     )
 
     # Get the database into the correct state for the test procedure
-    db_precondition = active_test_procedure.definition["Preconditions"]["db"]
+    db_precondition = active_test_procedure.definition.preconditions.db
     apply_db_precondition(precondition=db_precondition)
 
     logger.info(
@@ -148,12 +138,12 @@ async def test_procedure_status(request):
         return web.Response(status=http.HTTPStatus.OK, text="No test procedure running")
 
 
-def apply_action(action: dict):
+def apply_action(action: Action):
     global active_test_procedure
 
-    match action["action"]:
+    match action.action:
         case "enable-listeners":
-            steps_to_enable = action["parameters"]["listeners"]
+            steps_to_enable = action.parameters["listeners"]
             for listener in active_test_procedure.listeners:
                 if listener.step in steps_to_enable:
                     logger.info(f"Enabling listener: {listener}")
@@ -166,7 +156,7 @@ def apply_action(action: dict):
                     f"Unable to enable the listeners for the following steps, ({steps_to_enable}). These are not recognised steps in the '{active_test_procedure.name} test procedure"
                 )
         case "remove-listeners":
-            steps_to_disable = action["parameters"]["listeners"]
+            steps_to_disable = action.parameters["listeners"]
             for listener in active_test_procedure.listeners:
                 if listener.step in steps_to_disable:
                     logger.info(f"Remove listener: {listener}")
@@ -212,7 +202,7 @@ async def handle_all_request_types(request):
 
     if active_test_procedure is not None:
         # Update the progress of the test procedure
-        request_event = Event(event_type="request-received", parameters={"endpoint": local_path})
+        request_event = Event(type="request-received", parameters={"endpoint": local_path})
         listener = handle_event(event=request_event)
 
         # The assumes each step only has one event and once the action associated with the event
@@ -243,11 +233,6 @@ def create_application():
     return app
 
 
-def read_test_procedure_definitions(path: Path) -> dict:
-    with path.open() as f:
-        return yaml.safe_load(f)
-
-
 def setup_logging(logging_config_file: Path):
     with open(logging_config_file) as f:
         config = json.load(f)
@@ -267,7 +252,7 @@ if __name__ == "__main__":
 
     logger.info(f"Harness Runner (version={__version__})")
 
-    test_procedures: dict = read_test_procedure_definitions(path=Path("config/test_procedure.yaml"))
+    test_procedures = TestProcedureConfig.from_yamlfile(path=Path("config/test_procedure.yaml"))
 
     active_test_procedure = None
 
