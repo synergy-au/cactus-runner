@@ -24,6 +24,10 @@ class UnknownActionError(Exception):
     pass
 
 
+class UnableToApplyDatabasePrecondition(Exception):
+    pass
+
+
 @dataclass
 class Listener:
     step: str
@@ -45,8 +49,17 @@ class ActiveTestProcedure:
     step_status: dict[str, StepStatus]
 
 
-def apply_db_precondition(precondition):
-    logger.info(f"Applying {precondition=} to the CSIP-AUS database")
+def apply_db_precondition(precondition: str):
+    # The precondition is a path to a .sql file
+    # Verify that the file exists
+    path = Path(precondition)
+    if not path.exists():
+        raise UnableToApplyDatabasePrecondition(f"'{precondition}' file does not exist")
+
+    # Execute .sql file
+    pass
+
+    logger.info(f"Precondition '{precondition}' applied to database.")
 
 
 async def start_test_procedure(request: web.Request):
