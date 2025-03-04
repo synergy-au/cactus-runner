@@ -11,6 +11,7 @@ from typing import Any
 from aiohttp import client, web
 from dataclass_wizard import JSONWizard
 
+from harness_runner import precondition
 from harness_runner.config import Action, Event, TestProcedure, TestProcedureConfig
 
 SERVER_URL = "http://localhost:8000"
@@ -22,10 +23,6 @@ logger = logging.getLogger(__name__)
 class UnknownActionError(Exception):
     """Unknown harness runner action"""
 
-    pass
-
-
-class UnableToApplyDatabasePrecondition(Exception):
     pass
 
 
@@ -60,19 +57,6 @@ class ActiveTestProcedureStatus(JSONWizard):
 class HarnessCapabilities(JSONWizard):
     harness_runner_version: str
     supported_test_procedures: list[str]
-
-
-def apply_db_precondition(precondition: str):
-    # The precondition is a path to a .sql file
-    # Verify that the file exists
-    path = Path(precondition)
-    if not path.exists():
-        raise UnableToApplyDatabasePrecondition(f"'{precondition}' file does not exist")
-
-    # Execute .sql file
-    pass
-
-    logger.info(f"Precondition '{precondition}' applied to database.")
 
 
 async def start_test_procedure(request: web.Request):
@@ -116,7 +100,7 @@ async def start_test_procedure(request: web.Request):
 
     # Get the database into the correct state for the test procedure
     db_precondition = active_test_procedure.definition.preconditions.db
-    apply_db_precondition(precondition=db_precondition)
+    precondition.apply_db_precondition(precondition=db_precondition)
 
     logger.info(
         f"Test Procedure '{active_test_procedure.name}' started",
