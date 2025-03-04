@@ -21,7 +21,7 @@ TestProcedures:
           - type: enable-listeners
             parameters:
               listeners:
-                - ALL-01-002
+                - NOT-A-VALID-STEP
                 - ALL-01-003
                 - ALL-01-004
           - type: remove-listeners

@@ -20,7 +20,7 @@ TestProcedures:
         actions:
           - type: enable-listeners
             parameters:
-              listeners:
+              NOT-A-VALID-PARAMETER-NAME:
                 - ALL-01-002
                 - ALL-01-003
                 - ALL-01-004

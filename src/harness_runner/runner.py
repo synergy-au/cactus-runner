@@ -154,7 +154,7 @@ async def test_procedure_status(request):
 def apply_action(action: Action):
     global active_test_procedure
 
-    match action.action:
+    match action.type:
         case "enable-listeners":
             steps_to_enable = action.parameters["listeners"]
             for listener in active_test_procedure.listeners:

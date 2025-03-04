@@ -59,6 +59,13 @@ docs = [
 [project.scripts]
 runner-cli = "harness_runner.cli:cli_main"
 
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+  "tests",
+]
+
 [tool.flake8]
 max-line-length = 120
 max-complexity = 10
