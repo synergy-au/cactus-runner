@@ -51,6 +51,12 @@ class ActiveTestProcedure:
 
 
 @dataclass
+class ActiveTestProcedureStatus(JSONWizard):
+    summary: str
+    step_status: dict[str, StepStatus]
+
+
+@dataclass
 class HarnessCapabilities(JSONWizard):
     harness_runner_version: str
     supported_test_procedures: list[str]
@@ -142,7 +148,7 @@ async def finalize_test_procedure(request):
 
 async def test_procedure_status(request):
 
-    logger.info("Test procedure status requested")
+    logger.info("Test procedure status requested.")
 
     if active_test_procedure is not None:
         name = active_test_procedure.name
@@ -152,10 +158,16 @@ async def test_procedure_status(request):
         logger.info(
             f"Status of test procedure '{name}': {active_test_procedure.step_status}", extra={"test_procedure": name}
         )
-        return web.Response(status=http.HTTPStatus.OK, text=f"Test procedure '{name}' running: {status}")
+
+        status = ActiveTestProcedureStatus(
+            summary=f"Test procedure '{name}' running: {status}", step_status=active_test_procedure.step_status
+        )
+
     else:
-        logger.warning("Status of non-existent test procedure requested")
-        return web.Response(status=http.HTTPStatus.OK, text="No test procedure running")
+        logger.warning("Status of non-existent test procedure requested.")
+        status = ActiveTestProcedureStatus(summary="No test procedure running", step_status={})
+
+    return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=status.to_json())
 
 
 async def harness_capabilities(request):
