@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from aiohttp import client, web
+from dataclass_wizard import JSONWizard
 
 from harness_runner.config import Action, Event, TestProcedure, TestProcedureConfig
 
@@ -47,6 +48,12 @@ class ActiveTestProcedure:
     definition: TestProcedure
     listeners: list[Listener]
     step_status: dict[str, StepStatus]
+
+
+@dataclass
+class HarnessCapabilities(JSONWizard):
+    harness_runner_version: str
+    supported_test_procedures: list[str]
 
 
 def apply_db_precondition(precondition: str):
@@ -151,6 +158,20 @@ async def test_procedure_status(request):
         return web.Response(status=http.HTTPStatus.OK, text="No test procedure running")
 
 
+async def harness_capabilities(request):
+
+    logger.info("Test harness capabilities requested.")
+
+    capabilities = HarnessCapabilities(
+        harness_runner_version=test_procedures.version,
+        supported_test_procedures=[
+            test_procedure_name for test_procedure_name in test_procedures.test_procedures.keys()
+        ],
+    )
+
+    return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=capabilities.to_json())
+
+
 def apply_action(action: Action):
     global active_test_procedure
 
@@ -239,6 +260,7 @@ def create_application():
     app.router.add_route("POST", MOUNT_POINT + "start", start_test_procedure)
     app.router.add_route("POST", MOUNT_POINT + "finalize", finalize_test_procedure)
     app.router.add_route("GET", MOUNT_POINT + "status", test_procedure_status)
+    app.router.add_route("GET", MOUNT_POINT + "capability", harness_capabilities)
 
     # Add catch-all route for proxying all other requests to CSIP-AUS reference server
     app.router.add_route("*", MOUNT_POINT + "{proxyPath:.*}", handle_all_request_types)
