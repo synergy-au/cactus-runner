@@ -184,6 +184,11 @@ async def harness_capabilities(request):
     return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=capabilities.to_json())
 
 
+async def set_lfdi(request):
+    lfdi = None
+    logger.info(f"Set LFDI to {lfdi} requested.")
+
+
 def apply_action(action: Action):
     global active_test_procedure
 
@@ -269,10 +274,11 @@ def create_application():
     app = web.Application()
 
     # Add routes for Test Runner
-    app.router.add_route("POST", MOUNT_POINT + "start", start_test_procedure)
-    app.router.add_route("POST", MOUNT_POINT + "finalize", finalize_test_procedure)
     app.router.add_route("GET", MOUNT_POINT + "status", test_procedure_status)
     app.router.add_route("GET", MOUNT_POINT + "capability", harness_capabilities)
+    app.router.add_route("POST", MOUNT_POINT + "start", start_test_procedure)
+    app.router.add_route("POST", MOUNT_POINT + "finalize", finalize_test_procedure)
+    app.router.add_route("POST", MOUNT_POINT + "set-lfdi", set_lfdi)
 
     # Add catch-all route for proxying all other requests to CSIP-AUS reference server
     app.router.add_route("*", MOUNT_POINT + "{proxyPath:.*}", handle_all_request_types)
