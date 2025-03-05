@@ -11,7 +11,7 @@ from typing import Any
 from aiohttp import client, web
 from dataclass_wizard import JSONWizard
 
-from harness_runner import precondition
+from harness_runner import __version__, precondition
 from harness_runner.config import Action, Event, TestProcedure, TestProcedureConfig
 
 SERVER_URL = "http://localhost:8000"
@@ -168,11 +168,6 @@ async def harness_capabilities(request):
     return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=capabilities.to_json())
 
 
-async def set_lfdi(request):
-    lfdi = None
-    logger.info(f"Set LFDI to {lfdi} requested.")
-
-
 def apply_action(action: Action):
     global active_test_procedure
 
@@ -262,7 +257,6 @@ def create_application():
     app.router.add_route("GET", MOUNT_POINT + "capability", harness_capabilities)
     app.router.add_route("POST", MOUNT_POINT + "start", start_test_procedure)
     app.router.add_route("POST", MOUNT_POINT + "finalize", finalize_test_procedure)
-    app.router.add_route("POST", MOUNT_POINT + "set-lfdi", set_lfdi)
 
     # Add catch-all route for proxying all other requests to CSIP-AUS reference server
     app.router.add_route("*", MOUNT_POINT + "{proxyPath:.*}", handle_all_request_types)
@@ -284,13 +278,9 @@ def setup_logging(logging_config_file: Path):
 
 if __name__ == "__main__":
     setup_logging(logging_config_file=Path("config/logging/config.json"))
-
-    from harness_runner import __version__
-
     logger.info(f"Harness Runner (version={__version__})")
 
     test_procedures = TestProcedureConfig.from_yamlfile(path=Path("config/test_procedure.yaml"))
-
     active_test_procedure = None
 
     app = create_application()
