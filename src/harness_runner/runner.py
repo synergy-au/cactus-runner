@@ -74,6 +74,12 @@ async def start_test_procedure(request: web.Request):
     if requested_test_procedure is None:
         return web.Response(status=http.HTTPStatus.BAD_REQUEST, text="Missing 'test' query parameter.")
 
+    # Get the lfdi of the aggregator to register
+    aggregator_lfdi = request.query["lfdi"]
+    if aggregator_lfdi is None:
+        return web.Response(status=http.HTTPStatus.BAD_REQUEST, text="Missing 'lfdi' query parameter.")
+    precondition.register_aggregator(lfdi=aggregator_lfdi)
+
     # Get the definition of the test procedure
     try:
         definition = test_procedures.test_procedures[requested_test_procedure]

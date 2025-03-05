@@ -1,13 +1,25 @@
 import logging
+import os
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
+from envoy.server.model.aggregator import Aggregator, AggregatorCertificateAssignment
+from envoy.server.model.base import Certificate
 from psycopg import Connection
+from sqlalchemy import create_engine, insert
+from sqlalchemy.orm import sessionmaker
 
 logger = logging.getLogger(__name__)
 
 
 class UnableToApplyDatabasePrecondition(Exception):
     pass
+
+
+# Set up the database engine and session maker
+engine = create_engine(os.environ["DATABASE_URL"])
+Session = sessionmaker(engine)
 
 
 def execute_sql_file_for_connection(connection: Connection, path_to_sql_file: Path) -> None:
@@ -19,7 +31,7 @@ def execute_sql_file_for_connection(connection: Connection, path_to_sql_file: Pa
         cursor.commit()
 
 
-def apply_db_precondition(precondition: str):
+def apply_db_precondition(precondition: str) -> None:
     # The precondition is a path to a .sql file
     # Verify that the file exists
     path = Path(precondition)
@@ -30,3 +42,26 @@ def apply_db_precondition(precondition: str):
     pass
 
     logger.info(f"Precondition '{precondition}' applied to database.")
+
+
+def register_aggregator(lfdi: str) -> None:
+    with Session.begin() as session:
+        now = datetime.now(tz=ZoneInfo("UTC"))
+        expiry = now + timedelta(hours=24)
+        certificate = Certificate(lfdi=lfdi, created=now, expiry=expiry)
+        aggregator = Aggregator(name="Cactus", created_time=now, changed_time=now)
+
+        session.add(aggregator)
+        session.add(certificate)
+
+        session.execute(
+            insert(Aggregator).values(name="NULL AGGREGATOR", created_time=now, changed_time=now, aggregator_id=0)
+        )
+        session.flush()
+
+        certificate_assignment = AggregatorCertificateAssignment(
+            certificate_id=certificate.certificate_id, aggregator_id=aggregator.aggregator_id
+        )
+
+        session.add(certificate_assignment)
+        session.commit()
