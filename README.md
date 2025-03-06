@@ -4,6 +4,28 @@
 
 The test procedure definition/config file is located in `config/test_procedures.yaml`.
 
+## API
+
+| Endpoint | Query Parameters | Description |
+| --- | --- | --- |
+| `/capabililty` | - | Returns a list of supported test procedures. |
+| `/finalize` | - | Ends a test procedure and returns a final summary of the test procedure as json. |
+| `/start` | `test`, `lfdi` | Starts a test procedure. The test procedure is selected by the `test` parameter. The `lfdi` parameter is used to create the aggregator and associated certificate that the test client will use. |
+| `/status` | - | Returns the status of the active test (if present) as json. |
+
+For convenience an API client collection is provided for the [Bruno](https://www.usebruno.com/) application in the `bruno` directory.  See [here](#setup) for instructions setting up the bruno collection.
+
+## Environment Variables
+
+The following environment variables need to be defined to run the harness runner.
+
+| Environment Variable | Description | Example |
+| --- | --- | --- |
+| DATABASE_URL | The database connection string for the harness runner. | `postgresql+psycopg://test_user:test_pwd@localhost:8003/test_db` is suitable value to use with the envoy stack defined in the [docker-compose.yaml](https://github.com/bsgip/client-csip-test-harness/blob/main/docker-compose.yaml). |
+
+> NOTE:
+> There is another `DATABASE_URL` variable defined inside the docker-compose.yaml file for use by other services in the docker stack. An important difference between the two database connection strings in the choice of driver. The docker-compose.yaml variable uses `asyncpg` whilst the harness runner makes blocking calls the database using `psycopg`.
+
 ## Logging
 
 Logging is configured in the `config/logging/config.json` file.
@@ -11,3 +33,57 @@ Logging is configured in the `config/logging/config.json` file.
 In the current configurtion, debug and info messages are written to `stdout`. Warning and error messages are written to `stderr`.
 
 A persistent log is written to `logs/test_harness.jsonl`. All messages to the persistent log are written in a structured [JSONL](https://jsonlines.org/) format for easy (machine) searching/parsing.
+
+## Dev
+
+### Setup
+
+The `harness_runner` package (provided by this repo) should be installed in a suitable virtual environment. Activate your virtual environment and then run,
+
+```sh
+pip install --editable .[dev,test,cli]
+```
+
+This repo includes an API client collection made for [Bruno](https://www.usebruno.com/). Bruno is an open-source alternative to [Postman](https://www.postman.com/) and doesn't require an account to use. There are [multiple ways to install Bruno](https://www.usebruno.com/downloads). For linux users, the easiest way is via flatpak or snap,
+
+```sh
+flatpak install flathub com.usebruno.Bruno
+```
+
+or
+
+```sh
+sudo snap install bruno
+```
+
+Once Bruno is installed, we need to add the API client collection. Run Bruno, then choose *Collection → Open Collection* from the menu. Navigate to the project root directory, then the `bruno` directory. Then click the *Add* button.
+
+A new collection called `Harness-Runner` should appear in the right-hand bar. Clicking on the Harness-Runner collection should reveal four requests (2 GET requests and 2 POST requests) that can be issued from Bruno.
+
+Next we need to define the [environment variables](#environment-variables). The easiest way is to add then to a `.env` file, using the `dotenv` cli command,
+
+```sh
+dotenv set DATABASE_URL postgresql+psycopg://test_user:test_pwd@localhost:8003/test_db
+```
+
+Finally we need to create a docker image of the envoy server (tagged as `envoy:latest`) for the harness runner to interact with. To build this image, follow [these instructions](https://github.com/bsgip/envoy/blob/main/demo/README.md).
+
+### Running locally
+
+Start the docker compose stack,
+
+```
+HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose up -d
+```
+
+Start the harness-runner,
+
+```
+dotenv run -- python src/harness_runner/runner.py
+```
+
+Using Bruno, you can interact with the harness runner, for example, by starting a test procedure by sending a *Start* request.
+
+
+
+
