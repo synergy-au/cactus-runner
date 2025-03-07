@@ -17,14 +17,20 @@ For convenience an API client collection is provided for the [Bruno](https://www
 
 ## Environment Variables
 
-The following environment variables need to be defined to run the harness runner.
+The harness runner application uses the following environment variables,
 
-| Environment Variable | Description | Example |
+| Environment Variable | Default Value | Description |
 | --- | --- | --- |
-| DATABASE_URL | The database connection string for the harness runner. | `postgresql+psycopg://test_user:test_pwd@localhost:8003/test_db` is suitable value to use with the envoy stack defined in the [docker-compose.yaml](https://github.com/bsgip/client-csip-test-harness/blob/main/docker-compose.yaml). |
+| DATABASE_URL | - | The database connection string of an envoy database. |
+| SERVER_URL | `http://localhost:8000` | The URL of an envoy server. |
+| APP_HOST | `0.0.0.0` | The host IP of the harness runner application. |
+| APP_PORT | 8000 | The port the harness runner application listens on. |
 
 > NOTE:
-> There is another `DATABASE_URL` variable defined inside the docker-compose.yaml file for use by other services in the docker stack. An important difference between the two database connection strings in the choice of driver. The docker-compose.yaml variable uses `asyncpg` whilst the harness runner makes blocking calls the database using `psycopg`.
+> The `DATABASE_URL` has no default value so it must be a defined. `postgresql+psycopg://test_user:test_pwd@localhost:8003/test_db` is suitable value to use with the envoy stack defined in the [docker-compose.yaml](https://github.com/bsgip/client-csip-test-harness/blob/main/docker-compose.yaml).
+
+> NOTE:
+> There is another `DATABASE_URL` variable defined inside the [docker-compose.yaml](https://github.com/bsgip/client-csip-test-harness/blob/main/docker-compose.yaml) file for use by other services in the docker stack. An important difference between the two database connection strings in the choice of driver. The docker-compose.yaml variable uses `asyncpg` whilst the harness runner makes blocking calls the database using `psycopg`.
 
 ## Logging
 

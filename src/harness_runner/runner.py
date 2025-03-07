@@ -3,6 +3,7 @@ import http
 import json
 import logging
 import logging.config
+import os
 from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path
@@ -14,10 +15,30 @@ from dataclass_wizard import JSONWizard
 from harness_runner import __version__, precondition
 from harness_runner.config import Action, Event, TestProcedure, TestProcedureConfig
 
-SERVER_URL = "http://localhost:8000"
+# SERVER_URL is the URL of envoy or another CSIP-AUS compliant server.
+DEFAULT_SERVER_URL = "http://localhost:8000"
+SERVER_URL = os.environ.get("SERVER_URL", DEFAULT_SERVER_URL)
+
+# APP_HOST is the IP address of harness runner (aiohttp) application
+# See https://docs.aiohttp.org/en/stable/web_reference.html#aiohttp.web.run_app
+DEFAULT_APP_HOST = "0.0.0.0"  # This is the aiohttp default
+APP_HOST = os.environ.get("APP_HOST", DEFAULT_APP_HOST)
+
+# APP_PORT is the port the harness runner application listens on.
+DEFAULT_APP_PORT = 8080  # This is the aiohttp default
+APP_PORT = os.environ.get("APP_PORT", DEFAULT_APP_PORT)
+
+# MOUNT_POINT is the base path for all endpoints
 MOUNT_POINT = "/"
 
 logger = logging.getLogger(__name__)
+
+
+# Global State
+# TODO Attach these to the aiohttp app via app keys
+# See https://docs.aiohttp.org/en/stable/faq.html#where-do-i-put-my-database-connection-so-handlers-can-access-it
+test_procedures = None
+active_test_procedure = None
 
 
 class UnknownActionError(Exception):
@@ -282,12 +303,19 @@ def setup_logging(logging_config_file: Path):
         atexit.register(queue_handler.listener.stop)
 
 
-if __name__ == "__main__":
+def main():
+    global test_procedures
+
     setup_logging(logging_config_file=Path("config/logging/config.json"))
     logger.info(f"Harness Runner (version={__version__})")
+    logger.info(f"{APP_HOST=} {APP_PORT=}")
+    logger.info(f"Proxying requests to '{SERVER_URL}'")
 
     test_procedures = TestProcedureConfig.from_yamlfile(path=Path("config/test_procedure.yaml"))
-    active_test_procedure = None
 
     app = create_application()
-    web.run_app(app, port=8080)
+    web.run_app(app, port=APP_PORT)
+
+
+if __name__ == "__main__":
+    main()
