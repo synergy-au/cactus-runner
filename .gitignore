@@ -1,5 +1,8 @@
 # Taken from GitHub Python .gitignore https://github.com/github/gitignore/blob/main/Python.gitignore
 
+# Don't commit the github personal access token
+docker/github-pat.txt
+
 # test_certs is the envoy demo server certificates symlinked (or copied) into this project
 test_certs
 
