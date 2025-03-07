@@ -90,6 +90,24 @@ dotenv run -- python src/harness_runner/runner.py
 
 Using Bruno, you can interact with the harness runner, for example, by starting a test procedure by sending a *Start* request.
 
+### Running locally with docker
+
+First, the harness runner docker image needs to be built,
+
+```
+cd docker
+docker build -t harness-runner:latest -f Dockerfile --secret id=github_pat,src=./github-pat.txt ../
+```
+
+The harness runner has [envoy](https://github.com/bsgip/envoy) as a dependency and requires a [GitHub Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) stored in `docker/github-pat.txt` to build successfully.
+
+In the `docker` directory, start the docker stack with,
+
+```
+HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose up -d
+```
+
+When using the Bruno API client collection with the dockerised harness runner, it is necessary to change the collections's `HOST` variable from `http://localhost:8080` to `http:localhost:8000`.
 
 
 
