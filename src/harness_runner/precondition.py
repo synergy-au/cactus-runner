@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import psycopg
 from envoy.server.model.aggregator import Aggregator, AggregatorCertificateAssignment
 from envoy.server.model.base import Certificate
 from psycopg import Connection
@@ -17,9 +18,12 @@ class UnableToApplyDatabasePrecondition(Exception):
     pass
 
 
+DATABASE_URL = os.getenv("DATABASE_URL")
+
 # Set up the database engine and session maker
-engine = create_engine(os.environ["DATABASE_URL"])
-Session = sessionmaker(engine)
+if DATABASE_URL is not None:
+    engine = create_engine(DATABASE_URL)
+    Session = sessionmaker(engine)
 
 
 def execute_sql_file_for_connection(connection: Connection, path_to_sql_file: Path) -> None:
@@ -28,7 +32,7 @@ def execute_sql_file_for_connection(connection: Connection, path_to_sql_file: Pa
 
     with connection.cursor() as cursor:
         cursor.execute(sql)
-        cursor.commit()
+        connection.commit()
 
 
 def apply_db_precondition(precondition: str) -> None:
@@ -39,9 +43,12 @@ def apply_db_precondition(precondition: str) -> None:
         raise UnableToApplyDatabasePrecondition(f"'{precondition}' file does not exist")
 
     # Execute .sql file
-    pass
+    if DATABASE_URL is not None:
+        connection_string = DATABASE_URL.replace("+psycopg", "")
+        with psycopg.connect(conninfo=connection_string) as connection:
+            execute_sql_file_for_connection(connection=connection, path_to_sql_file=path)
 
-    logger.info(f"Precondition '{precondition}' applied to database.")
+        logger.info(f"Precondition '{precondition}' applied to database.")
 
 
 def register_aggregator(lfdi: str) -> None:
