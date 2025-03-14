@@ -25,6 +25,7 @@ The harness runner application uses the following environment variables,
 | SERVER_URL | `http://localhost:8000` | The URL of an envoy server. |
 | APP_HOST | `0.0.0.0` | The host IP of the harness runner application. |
 | APP_PORT | 8000 | The port the harness runner application listens on. |
+| AGGREGATOR_PREREGISTERED | "false" | If True ("true", "1", "t") the aggregator is not registered when a test procedure is started. |
 
 > NOTE:
 > The `DATABASE_URL` has no default value so it must be a defined. `postgresql+psycopg://test_user:test_pwd@localhost:8003/test_db` is suitable value to use with the envoy stack defined in the [docker-compose.yaml](https://github.com/bsgip/client-csip-test-harness/blob/main/docker-compose.yaml).

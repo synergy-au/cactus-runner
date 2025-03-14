@@ -23,19 +23,21 @@ from harness_runner.config import (
 
 # SERVER_URL is the URL of envoy or another CSIP-AUS compliant server.
 DEFAULT_SERVER_URL = "http://localhost:8000"
-SERVER_URL = os.environ.get("SERVER_URL", DEFAULT_SERVER_URL)
+SERVER_URL = os.getenv("SERVER_URL", DEFAULT_SERVER_URL)
 
 # APP_HOST is the IP address of harness runner (aiohttp) application
 # See https://docs.aiohttp.org/en/stable/web_reference.html#aiohttp.web.run_app
 DEFAULT_APP_HOST = "0.0.0.0"  # This is the aiohttp default
-APP_HOST = os.environ.get("APP_HOST", DEFAULT_APP_HOST)
+APP_HOST = os.getenv("APP_HOST", DEFAULT_APP_HOST)
 
 # APP_PORT is the port the harness runner application listens on.
 DEFAULT_APP_PORT = 8080  # This is the aiohttp default
-APP_PORT = os.environ.get("APP_PORT", DEFAULT_APP_PORT)
+APP_PORT = os.getenv("APP_PORT", DEFAULT_APP_PORT)
 
 # MOUNT_POINT is the base path for all endpoints
 MOUNT_POINT = "/"
+
+AGGREGATOR_PREREGISTERED = os.getenv("AGGREGATOR_PREREGISTERED", "false").lower() in ["true", "1", "t"]
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +139,8 @@ async def start_test_procedure(request: web.Request):
     aggregator_lfdi = request.query["lfdi"]
     if aggregator_lfdi is None:
         return web.Response(status=http.HTTPStatus.BAD_REQUEST, text="Missing 'lfdi' query parameter.")
-    precondition.register_aggregator(lfdi=aggregator_lfdi)
+    if not AGGREGATOR_PREREGISTERED:
+        precondition.register_aggregator(lfdi=aggregator_lfdi)
 
     # Get the definition of the test procedure
     try:
