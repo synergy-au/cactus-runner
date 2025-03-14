@@ -55,7 +55,7 @@ class Listener:
 
 
 class StepStatus(Enum):
-    PENDING = auto()
+    PENDING = 0
     RESOLVED = auto()
 
 
