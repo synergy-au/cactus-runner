@@ -13,7 +13,13 @@ from aiohttp import client, web
 from dataclass_wizard import JSONWizard
 
 from harness_runner import __version__, precondition
-from harness_runner.config import Action, Event, TestProcedure, TestProcedureConfig
+from harness_runner.config import (
+    Action,
+    Event,
+    TestProcedure,
+    TestProcedureConfig,
+    TestProcedures,
+)
 
 # SERVER_URL is the URL of envoy or another CSIP-AUS compliant server.
 DEFAULT_SERVER_URL = "http://localhost:8000"
@@ -32,13 +38,6 @@ APP_PORT = os.environ.get("APP_PORT", DEFAULT_APP_PORT)
 MOUNT_POINT = "/"
 
 logger = logging.getLogger(__name__)
-
-
-# Global State
-# TODO Attach these to the aiohttp app via app keys
-# See https://docs.aiohttp.org/en/stable/faq.html#where-do-i-put-my-database-connection-so-handlers-can-access-it
-test_procedures = None
-active_test_procedure = None
 
 
 class UnknownActionError(Exception):
@@ -69,6 +68,39 @@ class ActiveTestProcedure:
 
 
 @dataclass
+class RunnerState:
+    """Represents the current state of the Harness Runner.
+
+    This tracks the state of an active test procedure if there is one.
+
+    aiohttp uses the app instance as a means for sharing global data using AppKeys. We use
+    this mechanism to share the active test procedure between different requests.
+
+    However aiohttp (rightly) complains when replacing objects pointed to by AppKeys with different
+    instances after the app has been started; in other words the app gets frozen.
+    The reason for this, is that blindly mutating global state in async handlers could
+    get someone into a mess.
+
+    We are a special case in this regard,
+    - Each harness runner will have only one client.
+    - Even those the app supports asynchronous handling of requests, it is a reasonable
+      expectation that the client will mostly interact synchronously i.e.
+      they will wait for a response from the harness runner before issuing subsequent requests.
+    - Finally care has been taken to handle requests in their entirety before returning control back
+      to the async loop. We do this by not calling await on subtasks but calling them instead
+      synchronously. Examples include,
+        1. In 'start_test_procedure' the database operations ('register_aggregator' and 'apply_db_precondition') are handled via synchronous function calls.
+        2. In 'handle_all_request_types' we update the active test procedure with the synchronous functions 'apply_action' and 'handle_event'.
+
+    By wrapping the ActiveTestProcedure object within a RunnerState object we are
+    free to mutate the `active_test_procedure` when needed and even set it to None
+    when no test procedure is active without aiohttp "seeing" the mutation and complaining.
+    """
+
+    active_test_procedure: ActiveTestProcedure | None = None
+
+
+@dataclass
 class ActiveTestProcedureStatus(JSONWizard):
     summary: str
     step_status: dict[str, StepStatus]
@@ -80,8 +112,14 @@ class HarnessCapabilities(JSONWizard):
     supported_test_procedures: list[str]
 
 
+# aiohttp AppKeys are used to share global state between request handlers
+test_procedures_key = web.AppKey("test-procedures", TestProcedures)
+runner_state_key = web.AppKey("runner-state", RunnerState)
+
+
 async def start_test_procedure(request: web.Request):
-    global active_test_procedure
+    active_test_procedure = request.app[runner_state_key].active_test_procedure
+    test_procedures = request.app[test_procedures_key]
 
     # We cannot start another test procedure if one is already running
     if active_test_procedure is not None:
@@ -134,15 +172,18 @@ async def start_test_procedure(request: web.Request):
         extra={"test_procedure": active_test_procedure.name},
     )
 
+    request.app[runner_state_key].active_test_procedure = active_test_procedure
+
     return web.Response(status=http.HTTPStatus.CREATED, text="Test Procedure Started")
 
 
 async def finalize_test_procedure(request):
-    global active_test_procedure
+    active_test_procedure = request.app[runner_state_key].active_test_procedure
 
     if active_test_procedure is not None:
         finalized_test_procedure_name = active_test_procedure.name
-        active_test_procedure = None
+        # active_test_procedure = None
+        request.app[runner_state_key].active_test_procedure = None
 
         logger.info(
             f"Test Procedure '{finalized_test_procedure_name}' finalized",
@@ -158,6 +199,7 @@ async def finalize_test_procedure(request):
 
 
 async def test_procedure_status(request):
+    active_test_procedure = request.app[runner_state_key].active_test_procedure
 
     logger.info("Test procedure status requested.")
 
@@ -182,6 +224,7 @@ async def test_procedure_status(request):
 
 
 async def harness_capabilities(request):
+    test_procedures = request.app[test_procedures_key]
 
     logger.info("Test harness capabilities requested.")
 
@@ -195,8 +238,7 @@ async def harness_capabilities(request):
     return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=capabilities.to_json())
 
 
-def apply_action(action: Action):
-    global active_test_procedure
+def apply_action(action: Action, active_test_procedure: ActiveTestProcedure):
 
     match action.type:
         case "enable-listeners":
@@ -229,8 +271,7 @@ def apply_action(action: Action):
             raise UnknownActionError(f"Unrecognised action '{action}'")
 
 
-def handle_event(event: Event) -> Listener | None:
-    global active_test_procedure
+def handle_event(event: Event, active_test_procedure: ActiveTestProcedure) -> Listener | None:
 
     # Check all listeners
     for listener in active_test_procedure.listeners:
@@ -241,7 +282,7 @@ def handle_event(event: Event) -> Listener | None:
             # Perform actions associated with event
             for action in listener.actions:
                 logger.info(f"Executing action: {action=}")
-                apply_action(action=action)
+                apply_action(action=action, active_test_procedure=active_test_procedure)
 
             return listener
 
@@ -249,7 +290,7 @@ def handle_event(event: Event) -> Listener | None:
 
 
 async def handle_all_request_types(request):
-    global active_test_procedure
+    active_test_procedure = request.app[runner_state_key].active_test_procedure
 
     proxy_path = request.match_info.get("proxyPath", "No proxyPath placeholder defined")
     local_path = request.rel_url.path_qs
@@ -259,8 +300,8 @@ async def handle_all_request_types(request):
 
     if active_test_procedure is not None:
         # Update the progress of the test procedure
-        request_event = Event(type="request-received", parameters={"endpoint": local_path})
-        listener = handle_event(event=request_event)
+        request_event = Event(type="request-received", parameters={"endpoint": f"/{proxy_path}"})
+        listener = handle_event(event=request_event, active_test_procedure=active_test_procedure)
 
         # The assumes each step only has one event and once the action associated with the event
         # has been handled the step is "complete"
@@ -304,16 +345,15 @@ def setup_logging(logging_config_file: Path):
 
 
 def main():
-    global test_procedures
-
     setup_logging(logging_config_file=Path("config/logging/config.json"))
     logger.info(f"Harness Runner (version={__version__})")
     logger.info(f"{APP_HOST=} {APP_PORT=}")
     logger.info(f"Proxying requests to '{SERVER_URL}'")
 
-    test_procedures = TestProcedureConfig.from_yamlfile(path=Path("config/test_procedure.yaml"))
-
     app = create_application()
+    app[runner_state_key] = RunnerState()
+    app[test_procedures_key] = TestProcedureConfig.from_yamlfile(path=Path("config/test_procedure.yaml"))
+
     web.run_app(app, port=APP_PORT)
 
 
