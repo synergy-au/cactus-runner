@@ -32,11 +32,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/bsgip/client-CSIP-test-harness"
-Documentation = "https://github.com/bsgip/client-CSIP-test-harness/blob/main/README.md"
-Repository = "https://github.com/bsgip/client-CSIP-test-harness.git"
-Issues = "https://github.com/bsgip/client-CSIP-test-harness/issues"
-Changelog = "https://github.com/bsgip/client-CSIP-test-harness/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/bsgip/client-csip-test-harness"
+Documentation = "https://github.com/bsgip/client-csip-test-harness/blob/main/README.md"
+Repository = "https://github.com/bsgip/client-csip-test-harness.git"
+Issues = "https://github.com/bsgip/client-csip-test-harness/issues"
+Changelog = "https://github.com/bsgip/client-csip-test-harness/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
