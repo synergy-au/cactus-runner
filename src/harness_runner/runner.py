@@ -39,6 +39,7 @@ MOUNT_POINT = "/"
 
 DEV_AGGREGATOR_PREREGISTERED = os.getenv("DEV_AGGREGATOR_PREREGISTERED", "false").lower() in ["true", "1", "t"]
 
+DEV_SKIP_DB_PRECONDITIONS = os.getenv("DEV_SKIP_DB_PRECONDITIONS", "false").lower() in ["true", "1", "t"]
 
 logger = logging.getLogger(__name__)
 
@@ -170,8 +171,11 @@ async def start_test_procedure(request: web.Request):
     )
 
     # Get the database into the correct state for the test procedure
-    db_precondition = active_test_procedure.definition.preconditions.db
-    precondition.apply_db_precondition(precondition=db_precondition)
+    if DEV_SKIP_DB_PRECONDITIONS:
+        logger.warning("Skipping database preconditions ('DEV_SKIP_DB_PRECONDITIONS' environment variable is True)")
+    else:
+        db_precondition = active_test_procedure.definition.preconditions.db
+        precondition.apply_db_precondition(precondition=db_precondition)
 
     logger.info(
         f"Test Procedure '{active_test_procedure.name}' started",
