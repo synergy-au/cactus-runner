@@ -1,0 +1,76 @@
+Description: Discovery with Out-of-Band Registration
+Category: Registration
+Classes:
+  - A
+  - DR-A
+Preconditions:
+  db: config/preconditions/ALL-01.sql
+Steps:
+  ALL-01-001:
+    listener-enabled: true
+    event:
+      type: request-received
+      parameters:
+        endpoint: /dcap
+    actions:
+      - type: enable-listeners
+        parameters:
+          listeners:
+            - ALL-01-002
+            - ALL-01-003
+            - ALL-01-004
+      - type: remove-listeners
+        parameters:
+          listeners:
+            - ALL-01-001
+  ALL-01-002:
+    listener-enabled: false
+    event:
+      type: request-received
+      parameters:
+        endpoint: /edev
+    actions:
+      - type: enable-listeners
+        parameters:
+          listeners:
+            - ALL-01-002
+            - ALL-01-003
+            - ALL-01-004
+      - type: remove-listeners
+        parameters:
+          listeners:
+            - ALL-01-002
+  ALL-01-003:
+    listener-enabled: false
+    event:
+      type: request-received
+      parameters:
+        endpoint: /tm
+    actions:
+      - type: enable-listeners
+        parameters:
+          listeners:
+            - ALL-01-002
+            - ALL-01-003
+            - ALL-01-004
+      - type: remove-listeners
+        parameters:
+          listeners:
+            - ALL-01-003
+  ALL-01-004:
+    listener-enabled: false
+    event:
+      type: request-received
+      parameters:
+        endpoint: /edev/1/der
+    actions:
+      - type: enable-listeners
+        parameters:
+          listeners:
+            - ALL-01-002
+            - ALL-01-003
+            - ALL-01-004
+      - type: remove-listeners
+        parameters:
+          listeners:
+            - ALL-01-004

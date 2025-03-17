@@ -24,4 +24,4 @@ def test_from_yamlfile():
 def test_TestProcedures_validate_raises_exception(filename: str):
 
     with pytest.raises(TestProcedureDefinitionError):
-        test_procedures = TestProcedureConfig.from_yamlfile(path=Path(filename))
+        _ = TestProcedureConfig.from_yamlfile(path=Path(filename))

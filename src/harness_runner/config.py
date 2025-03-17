@@ -2,6 +2,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import yaml
+import yaml_include
 from dataclass_wizard import YAMLWizard
 
 
@@ -88,8 +90,29 @@ class TestProcedures(YAMLWizard):
 class TestProcedureConfig:
     @staticmethod
     def from_yamlfile(path: Path) -> TestProcedures:
+        """Converts a yaml file given by 'path' into a 'TestProcedures' instance.
+
+        Supports parts of the TestProcedures instance being described by external
+        YAML files. These are referenced in the parent yaml file using the `!include` directive.
+
+        Example:
+
+            Description: CSIP-AUS Client Test Procedures
+            Version: 0.1
+            TestProcedures:
+              ALL-01: !include ALL-01.yaml
+        """
+
         with open(path, "r") as f:
-            test_procedures: TestProcedures = TestProcedures.from_yaml(f.read())  # type: ignore
+            yaml_contents = f.read()
+
+        # Modifies the pyyaml's load method to support references to external yaml files
+        # through the `!include` directive.
+        yaml.add_constructor("!include", yaml_include.Constructor(base_dir=path.parent))
+
+        # ...because we are using YAMLWizard we need to supply a decoder and a Loader to
+        # use this modified version.
+        test_procedures: TestProcedures = TestProcedures.from_yaml(yaml_contents, decoder=yaml.load, Loader=yaml.Loader)  # type: ignore
 
         test_procedures.validate()
 
