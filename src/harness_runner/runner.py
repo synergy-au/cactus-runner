@@ -37,7 +37,8 @@ APP_PORT = os.getenv("APP_PORT", DEFAULT_APP_PORT)
 # MOUNT_POINT is the base path for all endpoints
 MOUNT_POINT = "/"
 
-AGGREGATOR_PREREGISTERED = os.getenv("AGGREGATOR_PREREGISTERED", "false").lower() in ["true", "1", "t"]
+DEV_AGGREGATOR_PREREGISTERED = os.getenv("DEV_AGGREGATOR_PREREGISTERED", "false").lower() in ["true", "1", "t"]
+
 
 logger = logging.getLogger(__name__)
 
@@ -139,8 +140,10 @@ async def start_test_procedure(request: web.Request):
     aggregator_lfdi = request.query["lfdi"]
     if aggregator_lfdi is None:
         return web.Response(status=http.HTTPStatus.BAD_REQUEST, text="Missing 'lfdi' query parameter.")
-    if not AGGREGATOR_PREREGISTERED:
+    if not DEV_AGGREGATOR_PREREGISTERED:
         precondition.register_aggregator(lfdi=aggregator_lfdi)
+    else:
+        logger.warning("Skipping aggregator registration ('DEV_AGGREGATOR_PREREGISTERED' environment variable is True)")
 
     # Get the definition of the test procedure
     try:
