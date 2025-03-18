@@ -5,8 +5,8 @@
 #   (i) The TLS service has been removed (along with the certificates docker volume).
 #  (ii) The envoy-db_init service is replaced with the simpler envoy-init service which runs `alembic upgrade head` and then terminates.
 # (iii) The postgresql database is not persisted in a docker volume.
-#  (iv) TODO The envoy service does not publish it's port (to the host). All communciation to the envoy server should be directed to the `harness-runner` service.
-#   (v) TODO The harness runner service was added and publishes itself on port 8000.
+#  (iv) The envoy service does not publish it's port (to the host). All communciation to the envoy server should be directed to the `cactus-runner` service.
+#   (v) The cactus runner service was added and publishes itself on port 8000.
 #
 x-envoy-common:
   environment: &common-env
@@ -48,7 +48,7 @@ services:
   envoy:
     image: envoy:latest
     # The envoy  service no longer publishes port 8000.
-    # It only exposes 8000 so that the harness-runner service can communicate with it
+    # It only exposes 8000 so that the cactus-runner service can communicate with it
     expose:
       - 8000 
     restart: unless-stopped
@@ -118,8 +118,8 @@ services:
       envoy-db:
         condition: service_healthy
 
-  harness-runner:
-    image: harness-runner:latest
+  cactus-runner:
+    image: cactus-runner:latest
     networks:
       - envoy-net
     environment:

@@ -1,4 +1,6 @@
-# Client CSIP-AUS Test Harness
+# Cactus Runner
+
+Cactus Runner is a component of the Client CSIP-AUS Test Harness.
 
 ## Test Procedures
 
@@ -17,22 +19,22 @@ For convenience an API client collection is provided for the [Bruno](https://www
 
 ## Environment Variables
 
-The harness runner application uses the following environment variables,
+The cactus runner application uses the following environment variables,
 
 | Environment Variable | Default Value | Description |
 | --- | --- | --- |
 | DATABASE_URL | - | The database connection string of an envoy database. |
 | SERVER_URL | `http://localhost:8000` | The URL of an envoy server. |
-| APP_HOST | `0.0.0.0` | The host IP of the harness runner application. |
-| APP_PORT | 8000 | The port the harness runner application listens on. |
+| APP_HOST | `0.0.0.0` | The host IP of the cactus runner application. |
+| APP_PORT | 8000 | The port the cactus runner application listens on. |
 | DEV_AGGREGATOR_PREREGISTERED | "false" | If True ("true", "1", "t") the aggregator is not registered when a test procedure is started. Intended for testing purposes only. |
 | DEV_SKIP_DB_PRECONDITIONS | "false" | If True ("true", "1", "t") the database preconditions are not applied. Intended for dev purposes only. |
 
 > NOTE:
-> The `DATABASE_URL` has no default value so it must be a defined. `postgresql+psycopg://test_user:test_pwd@localhost:8003/test_db` is suitable value to use with the envoy stack defined in the [docker-compose.yaml](https://github.com/bsgip/client-csip-test-harness/blob/main/docker-compose.yaml).
+> The `DATABASE_URL` has no default value so it must be a defined. `postgresql+psycopg://test_user:test_pwd@localhost:8003/test_db` is suitable value to use with the envoy stack defined in the [docker-compose.yaml](https://github.com/bsgip/cactus-runner/blob/main/docker-compose.yaml).
 
 > NOTE:
-> There is another `DATABASE_URL` variable defined inside the [docker-compose.yaml](https://github.com/bsgip/client-csip-test-harness/blob/main/docker-compose.yaml) file for use by other services in the docker stack. An important difference between the two database connection strings in the choice of driver. The docker-compose.yaml variable uses `asyncpg` whilst the harness runner makes blocking calls the database using `psycopg`.
+> There is another `DATABASE_URL` variable defined inside the [docker-compose.yaml](https://github.com/bsgip/cactus-runner/blob/main/docker-compose.yaml) file for use by other services in the docker stack. An important difference between the two database connection strings in the choice of driver. The docker-compose.yaml variable uses `asyncpg` whilst the cactus runner makes blocking calls the database using `psycopg`.
 
 ## Logging
 
@@ -40,13 +42,13 @@ Logging is configured in the `config/logging/config.json` file.
 
 In the current configurtion, debug and info messages are written to `stdout`. Warning and error messages are written to `stderr`.
 
-A persistent log is written to `logs/test_harness.jsonl`. All messages to the persistent log are written in a structured [JSONL](https://jsonlines.org/) format for easy (machine) searching/parsing.
+A persistent log is written to `logs/cactus_runner.jsonl`. All messages to the persistent log are written in a structured [JSONL](https://jsonlines.org/) format for easy (machine) searching/parsing.
 
 ## Dev
 
 ### Setup
 
-The `harness_runner` package (provided by this repo) should be installed in a suitable virtual environment. Activate your virtual environment and then run,
+The `cactus_runner` package (provided by this repo) should be installed in a suitable virtual environment. Activate your virtual environment and then run,
 
 ```sh
 pip install --editable .[dev,test,cli]
@@ -66,7 +68,7 @@ sudo snap install bruno
 
 Once Bruno is installed, we need to add the API client collection. Run Bruno, then choose *Collection → Open Collection* from the menu. Navigate to the project root directory, then the `bruno` directory. Then click the *Add* button.
 
-A new collection called `Harness-Runner` should appear in the right-hand bar. Clicking on the Harness-Runner collection should reveal four requests (2 GET requests and 2 POST requests) that can be issued from Bruno.
+A new collection called `Cactus-Runner` should appear in the right-hand bar. Clicking on the Cactus-Runner collection should reveal four requests (2 GET requests and 2 POST requests) that can be issued from Bruno.
 
 Next we need to define the [environment variables](#environment-variables). The easiest way is to add then to a `.env` file, using the `dotenv` cli command,
 
@@ -74,7 +76,7 @@ Next we need to define the [environment variables](#environment-variables). The 
 dotenv set DATABASE_URL postgresql+psycopg://test_user:test_pwd@localhost:8003/test_db
 ```
 
-Finally we need to create a docker image of the envoy server (tagged as `envoy:latest`) for the harness runner to interact with. To build this image, follow [these instructions](https://github.com/bsgip/envoy/blob/main/demo/README.md).
+Finally we need to create a docker image of the envoy server (tagged as `envoy:latest`) for the cactus runner to interact with. To build this image, follow [these instructions](https://github.com/bsgip/envoy/blob/main/demo/README.md).
 
 ### Running locally
 
@@ -84,24 +86,24 @@ Start the docker compose stack,
 HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose up -d
 ```
 
-Start the harness-runner,
+Start the cactus-runner,
 
 ```
-dotenv run -- python src/harness_runner/runner.py
+dotenv run -- python src/cactus_runner/runner.py
 ```
 
-Using Bruno, you can interact with the harness runner, for example, by starting a test procedure by sending a *Start* request.
+Using Bruno, you can interact with the cactus runner, for example, by starting a test procedure by sending a *Start* request.
 
 ### Running locally with docker
 
-First, the harness runner docker image needs to be built,
+First, the cactus runner docker image needs to be built,
 
 ```
 cd docker
-docker build -t harness-runner:latest -f Dockerfile --secret id=github_pat,src=./github-pat.txt ../
+docker build -t cactus-runner:latest -f Dockerfile --secret id=github_pat,src=./github-pat.txt ../
 ```
 
-The harness runner has [envoy](https://github.com/bsgip/envoy) as a dependency and requires a [GitHub Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) stored in `docker/github-pat.txt` to build successfully.
+The cactus runner has [envoy](https://github.com/bsgip/envoy) as a dependency and requires a [GitHub Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) stored in `docker/github-pat.txt` to build successfully.
 
 In the `docker` directory, start the docker stack with,
 
@@ -109,7 +111,7 @@ In the `docker` directory, start the docker stack with,
 HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose up -d
 ```
 
-When using the Bruno API client collection with the dockerised harness runner, it is necessary to change the collections's `HOST` variable from `http://localhost:8080` to `http:localhost:8000`.
+When using the Bruno API client collection with the dockerised cactus runner, it is necessary to change the collections's `HOST` variable from `http://localhost:8080` to `http:localhost:8000`.
 
 
 

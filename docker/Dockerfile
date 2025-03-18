@@ -23,4 +23,4 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -e /a
 # Defaults
 WORKDIR /app
 ENTRYPOINT ["python"]
-CMD ["src/harness_runner/runner.py"]
+CMD ["src/cactus_runner/runner.py"]

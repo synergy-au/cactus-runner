@@ -3,7 +3,7 @@
   "disable_existing_loggers": false,
   "filters": {
     "no_errors": {
-      "()": "harness_runner.log.NonErrorFilter"
+      "()": "cactus_runner.log.NonErrorFilter"
     }
   },
   "formatters": {
@@ -12,7 +12,7 @@
       "datefmt": "%Y-%m-%dT%H:%M:%S%z"
     },
     "jsonl": {
-      "()": "harness_runner.log.JSONLFormatter",
+      "()": "cactus_runner.log.JSONLFormatter",
       "fmt_keys": {
         "level": "levelname",
         "message": "message",
@@ -42,7 +42,7 @@
       "class": "logging.handlers.RotatingFileHandler",
       "level": "INFO",
       "formatter": "jsonl",
-      "filename": "logs/harness_runner.jsonl",
+      "filename": "logs/cactus_runner.jsonl",
       "maxBytes": 10000000,
       "backupCount": 3
     },

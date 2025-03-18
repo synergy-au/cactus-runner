@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from harness_runner.config import TestProcedureConfig, TestProcedureDefinitionError
+from cactus_runner.config import TestProcedureConfig, TestProcedureDefinitionError
 
 
 def test_from_yamlfile():

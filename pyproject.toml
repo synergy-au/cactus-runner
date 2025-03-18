@@ -3,7 +3,7 @@ requires = ["setuptools >= 61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "client-csip-test-harness"
+name = "cactus-runner"
 dynamic = ["version", "readme"]
 authors = [
   {name = "Mike Turner", email = "mike.turner@anu.edu.au"},
@@ -11,8 +11,8 @@ authors = [
 maintainers = [
   {name = "Mike Turner", email = "mike.turner@anu.edu.au"},
 ]
-description = "CSIP-AUS Client Test Harness"
-keywords = ["CSIP-AUS", "client", "testing"]
+description = "Cactus Test Procedure Runner (CSIP-AUS Client Test Harness)"
+keywords = ["CSIP-AUS", "client", "testing", "runner"]
 requires-python = ">=3.12"
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -33,11 +33,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/bsgip/client-csip-test-harness"
-Documentation = "https://github.com/bsgip/client-csip-test-harness/blob/main/README.md"
-Repository = "https://github.com/bsgip/client-csip-test-harness.git"
-Issues = "https://github.com/bsgip/client-csip-test-harness/issues"
-Changelog = "https://github.com/bsgip/client-csip-test-harness/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/bsgip/cactus-runner"
+Documentation = "https://github.com/bsgip/cactus-runner/blob/main/README.md"
+Repository = "https://github.com/bsgip/cactus-runner.git"
+Issues = "https://github.com/bsgip/cactus-runner/issues"
+Changelog = "https://github.com/bsgip/cactus-runner/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
@@ -62,7 +62,7 @@ docs = [
 ]
 
 [project.scripts]
-runner-cli = "harness_runner.cli:cli_main"
+runner-cli = "cactus_runner.cli:cli_main"
 
 [tool.pytest.ini_options]
 minversion = "6.0"
@@ -88,6 +88,6 @@ exclude_dirs = ["tests"]
 [tool.mypy]
 
 [tool.setuptools.dynamic]
-version = {attr = "harness_runner.__version__"}
+version = {attr = "cactus_runner.__version__"}
 readme = {file = ["README.md"], content-type="text/markdown"}
 

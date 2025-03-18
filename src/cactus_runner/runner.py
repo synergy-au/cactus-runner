@@ -12,8 +12,8 @@ from typing import Any
 from aiohttp import client, web
 from dataclass_wizard import JSONWizard
 
-from harness_runner import __version__, precondition
-from harness_runner.config import (
+from cactus_runner import __version__, precondition
+from cactus_runner.config import (
     Action,
     Event,
     TestProcedure,
@@ -25,12 +25,12 @@ from harness_runner.config import (
 DEFAULT_SERVER_URL = "http://localhost:8000"
 SERVER_URL = os.getenv("SERVER_URL", DEFAULT_SERVER_URL)
 
-# APP_HOST is the IP address of harness runner (aiohttp) application
+# APP_HOST is the IP address of cactus runner (aiohttp) application
 # See https://docs.aiohttp.org/en/stable/web_reference.html#aiohttp.web.run_app
 DEFAULT_APP_HOST = "0.0.0.0"  # This is the aiohttp default
 APP_HOST = os.getenv("APP_HOST", DEFAULT_APP_HOST)
 
-# APP_PORT is the port the harness runner application listens on.
+# APP_PORT is the port the cactus runner application listens on.
 DEFAULT_APP_PORT = 8080  # This is the aiohttp default
 APP_PORT = os.getenv("APP_PORT", DEFAULT_APP_PORT)
 
@@ -45,9 +45,7 @@ logger = logging.getLogger(__name__)
 
 
 class UnknownActionError(Exception):
-    """Unknown harness runner action"""
-
-    pass
+    """Unknown Cactus Runner Action"""
 
 
 @dataclass
@@ -73,7 +71,7 @@ class ActiveTestProcedure:
 
 @dataclass
 class RunnerState:
-    """Represents the current state of the Harness Runner.
+    """Represents the current state of the Runner.
 
     This tracks the state of an active test procedure if there is one.
 
@@ -86,10 +84,10 @@ class RunnerState:
     get someone into a mess.
 
     We are a special case in this regard,
-    - Each harness runner will have only one client.
+    - Each runner will have only one client.
     - Even those the app supports asynchronous handling of requests, it is a reasonable
       expectation that the client will mostly interact synchronously i.e.
-      they will wait for a response from the harness runner before issuing subsequent requests.
+      they will wait for a response from the runner before issuing subsequent requests.
     - Finally care has been taken to handle requests in their entirety before returning control back
       to the async loop. We do this by not calling await on subtasks but calling them instead
       synchronously. Examples include,
@@ -111,8 +109,8 @@ class ActiveTestProcedureStatus(JSONWizard):
 
 
 @dataclass
-class HarnessCapabilities(JSONWizard):
-    harness_runner_version: str
+class RunnerCapabilities(JSONWizard):
+    runner_version: str
     supported_test_procedures: list[str]
 
 
@@ -233,13 +231,13 @@ async def test_procedure_status(request):
     return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=status.to_json())
 
 
-async def harness_capabilities(request):
+async def runner_capabilities(request):
     test_procedures = request.app[test_procedures_key]
 
-    logger.info("Test harness capabilities requested.")
+    logger.info("Test runner capabilities requested.")
 
-    capabilities = HarnessCapabilities(
-        harness_runner_version=test_procedures.version,
+    capabilities = RunnerCapabilities(
+        runner_version=test_procedures.version,
         supported_test_procedures=[
             test_procedure_name for test_procedure_name in test_procedures.test_procedures.keys()
         ],
@@ -332,7 +330,7 @@ def create_application():
 
     # Add routes for Test Runner
     app.router.add_route("GET", MOUNT_POINT + "status", test_procedure_status)
-    app.router.add_route("GET", MOUNT_POINT + "capability", harness_capabilities)
+    app.router.add_route("GET", MOUNT_POINT + "capability", runner_capabilities)
     app.router.add_route("POST", MOUNT_POINT + "start", start_test_procedure)
     app.router.add_route("POST", MOUNT_POINT + "finalize", finalize_test_procedure)
 
@@ -356,7 +354,7 @@ def setup_logging(logging_config_file: Path):
 
 def main():
     setup_logging(logging_config_file=Path("config/logging/config.json"))
-    logger.info(f"Harness Runner (version={__version__})")
+    logger.info(f"Cactus Runner (version={__version__})")
     logger.info(f"{APP_HOST=} {APP_PORT=}")
     logger.info(f"Proxying requests to '{SERVER_URL}'")
 
