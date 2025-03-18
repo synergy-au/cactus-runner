@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from importlib import resources
 
 import psycopg
 from envoy.server.model.aggregator import Aggregator, AggregatorCertificateAssignment
@@ -36,19 +37,28 @@ def execute_sql_file_for_connection(connection: Connection, path_to_sql_file: Pa
 
 
 def apply_db_precondition(precondition: str) -> None:
-    # The precondition is a path to a .sql file
-    # Verify that the file exists
-    path = Path(precondition)
-    if not path.exists():
-        raise UnableToApplyDatabasePrecondition(f"'{precondition}' file does not exist")
+    if DATABASE_URL is None:
+        raise UnableToApplyDatabasePrecondition("DATABASE_URL environment variable not set")
 
     # Execute .sql file
-    if DATABASE_URL is not None:
-        connection_string = DATABASE_URL.replace("+psycopg", "")
-        with psycopg.connect(conninfo=connection_string) as connection:
+    connection_string = DATABASE_URL.replace("+psycopg", "")
+    with psycopg.connect(conninfo=connection_string) as connection:
+        # The precondition is either a path to a .sql file
+        # or a resource made available through the cactus_test_defintions package
+        path = Path(precondition)
+        if path.exists():
             execute_sql_file_for_connection(connection=connection, path_to_sql_file=path)
-
-        logger.info(f"Precondition '{precondition}' applied to database.")
+            logger.info(f"Precondition '{precondition}' applied to database.")
+        else:
+            # Try access the precondition as a resource
+            resource = resources.files("cactus_test_definitions") / precondition
+            with resources.as_file(resource) as path:
+                # Verify that the file exists
+                if not path.exists():
+                    raise UnableToApplyDatabasePrecondition(f"'{precondition}' file does not exist")
+                    
+                execute_sql_file_for_connection(connection=connection, path_to_sql_file=path)
+                logger.info(f"Precondition '{precondition}' applied to database.")
 
 
 def register_aggregator(lfdi: str) -> None:
