@@ -40,7 +40,7 @@ def apply_db_precondition(precondition: str) -> None:
     if DATABASE_URL is None:
         raise UnableToApplyDatabasePrecondition("DATABASE_URL environment variable not set")
 
-    # Execute .sql file
+    # Open connection to database
     connection_string = DATABASE_URL.replace("+psycopg", "")
     with psycopg.connect(conninfo=connection_string) as connection:
         # The precondition is either a path to a .sql file
