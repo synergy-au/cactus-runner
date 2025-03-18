@@ -24,12 +24,10 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
-  "envoy @ git+ssh://git@github.com/bsgip/envoy.git@main",
   "aiohttp>=3.11.12,<4",
-  "pyyaml>=6.0.2,<7",
-  "pyyaml-include>=2.2,<3",
+  "cactus-test-definitions @ git+ssh://git@github.com/bsgip/cactus-test-definitions.git@main",
+  "envoy @ git+ssh://git@github.com/bsgip/envoy.git@main",
   "psycopg[binary]>=3.2.5,<4",
-  "dataclass-wizard==0.35.0,<1"
 ]
 
 [project.urls]

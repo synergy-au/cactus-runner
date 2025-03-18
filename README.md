@@ -4,7 +4,7 @@ Cactus Runner is a component of the Client CSIP-AUS Test Harness.
 
 ## Test Procedures
 
-The test procedure definition/config file is located in `config/test_procedures.yaml`.
+The test procedures are defined in the [cactus-test-definitions](https://github.com/bsgip/cactus-test-definitions) repository.
 
 ## API
 

@@ -13,7 +13,7 @@ from aiohttp import client, web
 from dataclass_wizard import JSONWizard
 
 from cactus_runner import __version__, precondition
-from cactus_runner.config import (
+from cactus_test_definitions import (
     Action,
     Event,
     TestProcedure,
@@ -360,7 +360,7 @@ def main():
 
     app = create_application()
     app[runner_state_key] = RunnerState()
-    app[test_procedures_key] = TestProcedureConfig.from_yamlfile(path=Path("config/test_procedure.yaml"))
+    app[test_procedures_key] = TestProcedureConfig.from_resource()
 
     web.run_app(app, port=APP_PORT)
 
