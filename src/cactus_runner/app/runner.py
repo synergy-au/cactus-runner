@@ -10,9 +10,6 @@ from pathlib import Path
 from typing import Any
 
 from aiohttp import client, web
-from dataclass_wizard import JSONWizard
-
-from cactus_runner import __version__, precondition
 from cactus_test_definitions import (
     Action,
     Event,
@@ -20,6 +17,10 @@ from cactus_test_definitions import (
     TestProcedureConfig,
     TestProcedures,
 )
+from dataclass_wizard import JSONWizard
+
+from cactus_runner import __version__
+from cactus_runner.app import precondition
 
 # SERVER_URL is the URL of envoy or another CSIP-AUS compliant server.
 DEFAULT_SERVER_URL = "http://localhost:8000"

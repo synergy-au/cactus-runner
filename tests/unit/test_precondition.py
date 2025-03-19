@@ -1,6 +1,6 @@
 import pytest
 
-from cactus_runner import precondition
+from cactus_runner.app import precondition
 
 
 def test_apply_db_precondition_raises_exception():

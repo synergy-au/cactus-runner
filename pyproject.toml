@@ -59,9 +59,6 @@ docs = [
   "sphinx",
 ]
 
-[project.scripts]
-runner-cli = "cactus_runner.cli:cli_main"
-
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "-ra -q"

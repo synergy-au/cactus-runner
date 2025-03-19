@@ -3,7 +3,7 @@
   "disable_existing_loggers": false,
   "filters": {
     "no_errors": {
-      "()": "cactus_runner.log.NonErrorFilter"
+      "()": "cactus_runner.app.log.NonErrorFilter"
     }
   },
   "formatters": {
@@ -12,7 +12,7 @@
       "datefmt": "%Y-%m-%dT%H:%M:%S%z"
     },
     "jsonl": {
-      "()": "cactus_runner.log.JSONLFormatter",
+      "()": "cactus_runner.app.log.JSONLFormatter",
       "fmt_keys": {
         "level": "levelname",
         "message": "message",

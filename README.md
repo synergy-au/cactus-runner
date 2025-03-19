@@ -89,7 +89,7 @@ HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose up -d
 Start the cactus-runner,
 
 ```
-dotenv run -- python src/cactus_runner/runner.py
+dotenv run -- python src/cactus_runner/app/runner.py
 ```
 
 Using Bruno, you can interact with the cactus runner, for example, by starting a test procedure by sending a *Start* request.
