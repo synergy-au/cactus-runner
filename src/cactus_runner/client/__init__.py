@@ -1,7 +1,12 @@
 import logging
 from enum import StrEnum
 
-import aiohttp
+from aiohttp import ClientSession, ConnectionTimeoutError
+
+from cactus_runner.app.runner import (
+    ActiveTestProcedureStatus,
+    RunnerCapabilities,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -13,48 +18,40 @@ class CsipAusTestProcedureCodes(StrEnum):
     ALL01 = "ALL-01"
 
 
-# TODO: logging, retries, exception handling for all requests
 class RunnerClient:
-    def __init__(self, base_url: str):
-        self.base_url = base_url
-        self.timeout = aiohttp.ClientTimeout(total=30)
-
-    async def start_test_procedure(self, test_code: CsipAusTestProcedureCodes, aggregator_certificate: str) -> None:
-        ENDPOINT = "/start"
-        params = {"test": test_code.value, "certificate": aggregator_certificate}
+    @staticmethod
+    async def start(session: ClientSession, test_id: TestProcedureId, aggregator_certificate: str) -> None:
         try:
-            async with aiohttp.ClientSession(base_url=self.base_url, timeout=self.timeout) as session:
-                await session.post(url=ENDPOINT, params=params)
-        except aiohttp.ConnectionTimeoutError as e:
+            await session.post(url="/start", params={"test": test_id.value, "certificate": aggregator_certificate})
+        except ConnectionTimeoutError as e:
             logger.debug(e)
             raise RunnerClientException("Unexpected failure while starting test.")
 
-    async def finalize_test_procedure(self) -> str:
-        ENDPOINT = "/finalize"
+    @staticmethod
+    async def finalize(session: ClientSession) -> str:
         try:
-            async with aiohttp.ClientSession(base_url=self.base_url, timeout=self.timeout) as session:
-                async with session.post(url=ENDPOINT) as response:
-                    return await response.text()
-        except aiohttp.ConnectionTimeoutError as e:
+            async with session.post(url="/finalize") as response:
+                return await response.text()
+        except ConnectionTimeoutError as e:
             logger.debug(e)
             raise RunnerClientException("Unexpected failure while finalizing test procedure.")
 
-    async def get_runner_capability(self):
-        ENDPOINT = "/capability"
+    @staticmethod
+    async def capabilities(session: ClientSession):
         try:
-            async with aiohttp.ClientSession(base_url=self.base_url, timeout=self.timeout) as session:
-                async with session.get(url=ENDPOINT) as response:
-                    return await response.text()
-        except aiohttp.ConnectionTimeoutError as e:
+            async with session.get(url="/capability") as response:
+                json = await response.text()
+                return RunnerCapabilities.from_json(json)
+        except ConnectionTimeoutError as e:
             logger.debug(e)
             raise RunnerClientException("Unexpected failure while requesting runner capabilities.")
 
-    async def get_status(self):
-        ENDPOINT = "/status"
+    @staticmethod
+    async def status(session: ClientSession):
         try:
-            async with aiohttp.ClientSession(base_url=self.base_url, timeout=self.timeout) as session:
-                async with session.get(url=ENDPOINT) as response:
-                    return await response.text()
-        except aiohttp.ConnectionTimeoutError as e:
+            async with session.get(url="/status") as response:
+                json = await response.text()
+                return ActiveTestProcedureStatus.from_json(json)
+        except ConnectionTimeoutError as e:
             logger.debug(e)
             raise RunnerClientException("Unexpected failure while requesting test procedure status.")
