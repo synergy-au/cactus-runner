@@ -5,6 +5,7 @@ import logging
 import logging.config
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum, auto
 from pathlib import Path
 from typing import Any
@@ -114,6 +115,13 @@ class ActiveTestProcedureStatus(JSONWizard):
 class RunnerCapabilities(JSONWizard):
     runner_version: str
     supported_test_procedures: list[str]
+
+
+@dataclass
+class LastProxiedRequest(JSONWizard):
+    endpoint: str
+    status: http.HTTPStatus
+    timestamp: datetime
 
 
 # aiohttp AppKeys are used to share global state between request handlers
@@ -249,6 +257,15 @@ async def runner_capabilities(request):
     return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=capabilities.to_json())
 
 
+async def last_proxied_request(request):
+    logger.info("Last proxied request requested.")
+
+    # TODO `last_request` shouldn't be hard-coded.
+    last_request = LastProxiedRequest(endpoint="/dcap", status=http.HTTPStatus.OK, timestamp=datetime.now(timezone.utc))
+
+    return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=last_request.to_json())
+
+
 def apply_action(action: Action, active_test_procedure: ActiveTestProcedure):
 
     match action.type:
@@ -334,6 +351,7 @@ def create_application():
     # Add routes for Test Runner
     app.router.add_route("GET", MOUNT_POINT + "status", test_procedure_status)
     app.router.add_route("GET", MOUNT_POINT + "capability", runner_capabilities)
+    app.router.add_route("GET", MOUNT_POINT + "lastrequest", last_proxied_request)
     app.router.add_route("POST", MOUNT_POINT + "start", start_test_procedure)
     app.router.add_route("POST", MOUNT_POINT + "finalize", finalize_test_procedure)
 
