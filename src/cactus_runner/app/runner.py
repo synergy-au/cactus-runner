@@ -18,6 +18,7 @@ from cactus_test_definitions import (
     TestProcedures,
 )
 from dataclass_wizard import JSONWizard
+from envoy.server.api.depends.lfdi_auth import LFDIAuthDepends
 
 from cactus_runner import __version__
 from cactus_runner.app import precondition
@@ -137,10 +138,11 @@ async def start_test_procedure(request: web.Request):
         return web.Response(status=http.HTTPStatus.BAD_REQUEST, text="Missing 'test' query parameter.")
 
     # Get the lfdi of the aggregator to register
-    aggregator_lfdi = request.query["lfdi"]
-    if aggregator_lfdi is None:
-        return web.Response(status=http.HTTPStatus.BAD_REQUEST, text="Missing 'lfdi' query parameter.")
+    aggregator_certificate = request.query["certificate"]
+    if aggregator_certificate is None:
+        return web.Response(status=http.HTTPStatus.BAD_REQUEST, text="Missing 'certificate' query parameter.")
     if not DEV_AGGREGATOR_PREREGISTERED:
+        aggregator_lfdi = LFDIAuthDepends.generate_lfdi_from_pem(aggregator_certificate)
         precondition.register_aggregator(lfdi=aggregator_lfdi)
     else:
         logger.warning("Skipping aggregator registration ('DEV_AGGREGATOR_PREREGISTERED' environment variable is True)")
