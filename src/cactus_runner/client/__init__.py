@@ -3,7 +3,7 @@ import logging
 from aiohttp import ClientSession, ClientTimeout, ConnectionTimeoutError
 from cactus_test_definitions import TestProcedureId
 
-from cactus_runner.app.runner import (
+from cactus_runner.models import (
     ActiveTestProcedureStatus,
     LastProxiedRequest,
     RunnerCapabilities,

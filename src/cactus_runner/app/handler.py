@@ -1,6 +1,7 @@
 import http
 import logging
 import logging.config
+import shutil
 from datetime import datetime, timezone
 
 from aiohttp import client, web
@@ -12,7 +13,7 @@ from envoy.server.api.depends.lfdi_auth import LFDIAuthDepends
 
 from cactus_runner import __version__
 from cactus_runner.app import precondition
-from cactus_runner.app.runner import (
+from cactus_runner.app.main import (
     DEV_AGGREGATOR_PREREGISTERED,
     DEV_SKIP_DB_PRECONDITIONS,
     SERVER_URL,
@@ -101,6 +102,13 @@ async def start_test_procedure(request: web.Request):
     return web.Response(status=http.HTTPStatus.CREATED, text="Test Procedure Started")
 
 
+def finalize_response() -> web.Response:
+    FINALIZE_ZIP = "finalize.zip"
+    shutil.make_archive(FINALIZE_ZIP, "zip", "local/finalize")
+
+    return web.Response(status=http.HTTPStatus.OK, text="Test Procedure Finalized")
+
+
 async def finalize_test_procedure(request):
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
 
@@ -114,7 +122,7 @@ async def finalize_test_procedure(request):
             extra={"test_procedure": finalized_test_procedure_name},
         )
 
-        return web.Response(status=http.HTTPStatus.OK, text="Test Procedure Finalized")
+        return finalize_response()
     else:
         return web.Response(
             status=http.HTTPStatus.BAD_REQUEST,
