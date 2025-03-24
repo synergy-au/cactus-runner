@@ -1,7 +1,7 @@
 import logging
-from enum import StrEnum
 
 from aiohttp import ClientSession, ClientTimeout, ConnectionTimeoutError
+from cactus_test_definitions import TestProcedureId
 
 from cactus_runner.app.runner import (
     ActiveTestProcedureStatus,
@@ -15,11 +15,6 @@ logger = logging.getLogger(__name__)
 
 
 class RunnerClientException(Exception): ...
-
-
-class TestProcedureId(StrEnum):
-    ALL_01 = "ALL-01"
-    ALL_02 = "ALL-02"
 
 
 class RunnerClient:

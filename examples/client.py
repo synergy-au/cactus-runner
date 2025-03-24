@@ -1,10 +1,11 @@
 import asyncio
 
+from cactus_test_definitions import TestProcedureId
+
 from cactus_runner.client import (
     ClientSession,
     ClientTimeout,
     RunnerClient,
-    TestProcedureId,
 )
 from cactus_runner.models import (
     ActiveTestProcedureStatus,
