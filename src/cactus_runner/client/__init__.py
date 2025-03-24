@@ -1,13 +1,15 @@
 import logging
 from enum import StrEnum
 
-from aiohttp import ClientSession, ConnectionTimeoutError
+from aiohttp import ClientSession, ClientTimeout, ConnectionTimeoutError
 
 from cactus_runner.app.runner import (
     ActiveTestProcedureStatus,
     LastProxiedRequest,
     RunnerCapabilities,
 )
+
+__all__ = ["ClientSession", "ClientTimeout", "RunnerClientException", "TestProcedureId", "RunnerClient"]
 
 logger = logging.getLogger(__name__)
 
