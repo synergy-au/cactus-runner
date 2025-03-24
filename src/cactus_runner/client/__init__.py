@@ -36,7 +36,7 @@ class RunnerClient:
             raise RunnerClientException("Unexpected failure while finalizing test procedure.")
 
     @staticmethod
-    async def capabilities(session: ClientSession):
+    async def capabilities(session: ClientSession) -> RunnerCapabilities:
         try:
             async with session.get(url="/capability") as response:
                 json = await response.text()
@@ -46,7 +46,7 @@ class RunnerClient:
             raise RunnerClientException("Unexpected failure while requesting runner capabilities.")
 
     @staticmethod
-    async def status(session: ClientSession):
+    async def status(session: ClientSession) -> ActiveTestProcedureStatus:
         try:
             async with session.get(url="/status") as response:
                 json = await response.text()
@@ -56,7 +56,7 @@ class RunnerClient:
             raise RunnerClientException("Unexpected failure while requesting test procedure status.")
 
     @staticmethod
-    async def last_request(session: ClientSession):
+    async def last_request(session: ClientSession) -> LastProxiedRequest:
         try:
             async with session.get(url="/lastrequest") as response:
                 json = await response.text()
