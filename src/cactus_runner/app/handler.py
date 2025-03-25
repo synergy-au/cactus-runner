@@ -1,8 +1,11 @@
 import http
 import logging
 import logging.config
+import os
 import shutil
+import tempfile
 from datetime import datetime, timezone
+from pathlib import Path
 
 from aiohttp import client, web
 from cactus_test_definitions import (
@@ -102,11 +105,52 @@ async def start_test_procedure(request: web.Request):
     return web.Response(status=http.HTTPStatus.CREATED, text="Test Procedure Started")
 
 
-def finalize_response() -> web.Response:
-    FINALIZE_ZIP = "finalize.zip"
-    shutil.make_archive(FINALIZE_ZIP, "zip", "local/finalize")
+def finalize_zip_contents() -> bytes:
+    """Returns the contents of the zipped test procedures artifacts in bytes"""
+    # Work in a temporary directory
+    with tempfile.TemporaryDirectory() as tempdirname:
+        base_path = Path(tempdirname)
 
-    return web.Response(status=http.HTTPStatus.OK, text="Test Procedure Finalized")
+        # All the test procedure artifacts should be placed in `archive_dir` to be archived
+        archive_dir = base_path / "archive"
+        os.mkdir(archive_dir)
+
+        # File 1
+        file_path = archive_dir / "file1.txt"
+        with open(file_path, "w") as f:
+            f.write("This is file 1.")
+
+        # File 2
+        file_path = archive_dir / "file2.txt"
+        with open(file_path, "w") as f:
+            f.write("This is file 2.")
+
+        # Create db dump
+        # pg_dump -U test_user -h localhost -p 8003 -d test_db -f envoy.dump --data-only --inserts
+
+        # Create the temporary zip file
+        ARCHIVE_BASEFILENAME = "finalize"
+        ARCHIVE_KIND = "zip"
+        shutil.make_archive(str(base_path / ARCHIVE_BASEFILENAME), ARCHIVE_KIND, archive_dir)
+
+        # Read the zip file contents as binary
+        archive_path = base_path / f"{ARCHIVE_BASEFILENAME}.{ARCHIVE_KIND}"
+        with open(archive_path, mode="rb") as f:
+            zip_contents = f.read()
+    return zip_contents
+
+
+def finalize_response() -> web.Response:
+    zip_contents = finalize_zip_contents()
+
+    SUGGESTED_FILENAME = "finalize.zip"
+    return web.Response(
+        body=zip_contents,
+        headers={
+            "Content-Type": "application/zip",
+            "Content-Disposition": f"attachment; filename={SUGGESTED_FILENAME}",
+        },
+    )
 
 
 async def finalize_test_procedure(request):
