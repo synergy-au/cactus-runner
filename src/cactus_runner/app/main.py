@@ -42,14 +42,14 @@ def create_application():
     app = web.Application()
 
     # Add routes for Test Runner
-    app.router.add_route("GET", MOUNT_POINT + "status", handler.test_procedure_status)
-    app.router.add_route("GET", MOUNT_POINT + "capability", handler.runner_capabilities)
-    app.router.add_route("GET", MOUNT_POINT + "lastrequest", handler.last_proxied_request)
-    app.router.add_route("POST", MOUNT_POINT + "start", handler.start_test_procedure)
-    app.router.add_route("POST", MOUNT_POINT + "finalize", handler.finalize_test_procedure)
+    app.router.add_route("GET", MOUNT_POINT + "status", handler.status_handler)
+    app.router.add_route("GET", MOUNT_POINT + "capability", handler.capabilities_handler)
+    app.router.add_route("GET", MOUNT_POINT + "lastrequest", handler.last_proxied_request_handler)
+    app.router.add_route("POST", MOUNT_POINT + "start", handler.start_handler)
+    app.router.add_route("POST", MOUNT_POINT + "finalize", handler.finalize_handler)
 
     # Add catch-all route for proxying all other requests to CSIP-AUS reference server
-    app.router.add_route("*", MOUNT_POINT + "{proxyPath:.*}", handler.handle_all_request_types)
+    app.router.add_route("*", MOUNT_POINT + "{proxyPath:.*}", handler.proxied_request_handler)
 
     return app
 

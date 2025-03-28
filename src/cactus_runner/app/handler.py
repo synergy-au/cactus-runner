@@ -44,7 +44,7 @@ class DatabaseDumpError(Exception):
     pass
 
 
-async def start_test_procedure(request: web.Request):
+async def start_handler(request: web.Request):
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
     test_procedures = request.app[APPKEY_TEST_PROCEDURES]
 
@@ -174,7 +174,7 @@ def finalize_response(json_status_summary: str) -> web.Response:
     )
 
 
-async def finalize_test_procedure(request):
+async def finalize_handler(request):
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
 
     if active_test_procedure is not None:
@@ -211,7 +211,7 @@ def status_from_active_test_procedure(active_test_procedure: ActiveTestProcedure
     )
 
 
-async def test_procedure_status(request):
+async def status_handler(request):
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
 
     logger.info("Test procedure status requested.")
@@ -232,7 +232,7 @@ async def test_procedure_status(request):
     return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=status.to_json())
 
 
-async def runner_capabilities(request):
+async def capabilities_handler(request):
     test_procedures = request.app[APPKEY_TEST_PROCEDURES]
 
     logger.info("Test runner capabilities requested.")
@@ -247,7 +247,7 @@ async def runner_capabilities(request):
     return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=capabilities.to_json())
 
 
-async def last_proxied_request(request):
+async def last_proxied_request_handler(request):
     logger.info("Last proxied request requested.")
 
     # TODO `last_request` shouldn't be hard-coded.
@@ -307,7 +307,7 @@ def handle_event(event: Event, active_test_procedure: ActiveTestProcedure) -> Li
     return None
 
 
-async def handle_all_request_types(request):
+async def proxied_request_handler(request):
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
 
     proxy_path = request.match_info.get("proxyPath", "No proxyPath placeholder defined")
