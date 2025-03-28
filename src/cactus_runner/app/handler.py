@@ -174,27 +174,37 @@ async def finalize_test_procedure(request):
         )
 
 
+def status_from_active_test_procedure(active_test_procedure: ActiveTestProcedure) -> ActiveTestProcedureStatus:
+
+    # Determine status summary
+    completed_steps = sum(s == StepStatus.RESOLVED for s in active_test_procedure.step_status.values())
+    steps = len(active_test_procedure.step_status)
+    status_summary = f"{completed_steps}/{steps} steps complete."
+
+    return ActiveTestProcedureStatus(
+        test_procedure_name=active_test_procedure.name,
+        status_summary=status_summary,
+        step_status=active_test_procedure.step_status,
+    )
+
+
 async def test_procedure_status(request):
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
 
     logger.info("Test procedure status requested.")
 
     if active_test_procedure is not None:
-        name = active_test_procedure.name
-        completed_steps = sum(s == StepStatus.RESOLVED for s in active_test_procedure.step_status.values())
-        steps = len(active_test_procedure.step_status)
-        status = f"{completed_steps}/{steps} steps complete."
+        status = status_from_active_test_procedure(active_test_procedure=active_test_procedure)
         logger.info(
-            f"Status of test procedure '{name}': {active_test_procedure.step_status}", extra={"test_procedure": name}
-        )
-
-        status = ActiveTestProcedureStatus(
-            summary=f"Test procedure '{name}' running: {status}", step_status=active_test_procedure.step_status
+            f"Status of test procedure '{status.test_procedure_name}': {status.step_status}",
+            extra={"test_procedure": status.test_procedure_name},
         )
 
     else:
+        status = ActiveTestProcedureStatus(
+            test_procedure_name="-", status_summary="No test procedure running", step_status={}
+        )
         logger.warning("Status of non-existent test procedure requested.")
-        status = ActiveTestProcedureStatus(summary="No test procedure running", step_status={})
 
     return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=status.to_json())
 

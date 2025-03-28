@@ -67,7 +67,8 @@ class RunnerState:
 
 @dataclass
 class ActiveTestProcedureStatus(JSONWizard):
-    summary: str
+    test_procedure_name: str
+    status_summary: str
     step_status: dict[str, StepStatus]
 
 
