@@ -3,6 +3,7 @@ import logging
 import logging.config
 import os
 import shutil
+import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,6 +22,7 @@ from cactus_runner.app.main import (
     DEV_SKIP_DB_PRECONDITIONS,
     SERVER_URL,
 )
+from cactus_runner.app.precondition import DATABASE_URL
 from cactus_runner.app.shared import APPKEY_RUNNER_STATE, APPKEY_TEST_PROCEDURES
 from cactus_runner.models import (
     ActiveTestProcedure,
@@ -36,6 +38,10 @@ logger = logging.getLogger(__name__)
 
 class UnknownActionError(Exception):
     """Unknown Cactus Runner Action"""
+
+
+class DatabaseDumpError(Exception):
+    pass
 
 
 async def start_test_procedure(request: web.Request):
@@ -105,7 +111,7 @@ async def start_test_procedure(request: web.Request):
     return web.Response(status=http.HTTPStatus.CREATED, text="Test Procedure Started")
 
 
-def finalize_zip_contents() -> bytes:
+def finalize_zip_contents(json_status_summary: str) -> bytes:
     """Returns the contents of the zipped test procedures artifacts in bytes"""
     # Work in a temporary directory
     with tempfile.TemporaryDirectory() as tempdirname:
@@ -115,18 +121,32 @@ def finalize_zip_contents() -> bytes:
         archive_dir = base_path / "archive"
         os.mkdir(archive_dir)
 
-        # File 1
-        file_path = archive_dir / "file1.txt"
+        # Create test summary json file
+        file_path = archive_dir / "test_procedure_summary.json"
         with open(file_path, "w") as f:
-            f.write("This is file 1.")
+            f.write(json_status_summary)
 
-        # File 2
-        file_path = archive_dir / "file2.txt"
-        with open(file_path, "w") as f:
-            f.write("This is file 2.")
+        # Copy Cactus Runner log file into archive
+        source = "logs/cactus_runner.jsonl"
+        destination = archive_dir / "cactus_runner.jsonl"
+        shutil.copyfile(source, destination)
 
         # Create db dump
-        # pg_dump -U test_user -h localhost -p 8003 -d test_db -f envoy.dump --data-only --inserts
+        if DATABASE_URL is None:
+            raise DatabaseDumpError("DATABASE_URL environment variable not set")
+        else:
+            connection_string = DATABASE_URL.replace("+psycopg", "")
+            dump_file = str(archive_dir / "envoy_db.dump")
+            command = [
+                "pg_dump",
+                f"--dbname={connection_string}",
+                "-f",
+                dump_file,
+                "--data-only",
+                "--inserts",
+                "--no-password",
+            ]
+            subprocess.run(command)
 
         # Create the temporary zip file
         ARCHIVE_BASEFILENAME = "finalize"
@@ -140,8 +160,9 @@ def finalize_zip_contents() -> bytes:
     return zip_contents
 
 
-def finalize_response() -> web.Response:
-    zip_contents = finalize_zip_contents()
+def finalize_response(json_status_summary: str) -> web.Response:
+    """Creates a finalize test procedure response which includes the test procedure artifacts in zip format"""
+    zip_contents = finalize_zip_contents(json_status_summary=json_status_summary)
 
     SUGGESTED_FILENAME = "finalize.zip"
     return web.Response(
@@ -158,7 +179,9 @@ async def finalize_test_procedure(request):
 
     if active_test_procedure is not None:
         finalized_test_procedure_name = active_test_procedure.name
-        # active_test_procedure = None
+        json_status_summary = status_from_active_test_procedure(active_test_procedure=active_test_procedure).to_json()
+
+        # Clear the active test procedure
         request.app[APPKEY_RUNNER_STATE].active_test_procedure = None
 
         logger.info(
@@ -166,7 +189,7 @@ async def finalize_test_procedure(request):
             extra={"test_procedure": finalized_test_procedure_name},
         )
 
-        return finalize_response()
+        return finalize_response(json_status_summary=json_status_summary)
     else:
         return web.Response(
             status=http.HTTPStatus.BAD_REQUEST,
