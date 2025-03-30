@@ -23,10 +23,15 @@ from cactus_runner.app.main import (
     SERVER_URL,
 )
 from cactus_runner.app.precondition import DATABASE_URL
-from cactus_runner.app.shared import APPKEY_RUNNER_STATE, APPKEY_TEST_PROCEDURES
+from cactus_runner.app.shared import (
+    APPKEY_AGGREGATOR,
+    APPKEY_RUNNER_STATE,
+    APPKEY_TEST_PROCEDURES,
+)
 from cactus_runner.models import (
     ActiveTestProcedure,
     ActiveTestProcedureStatus,
+    Aggregator,
     LastProxiedRequest,
     Listener,
     RunnerCapabilities,
@@ -60,15 +65,24 @@ async def start_handler(request: web.Request):
     if requested_test_procedure is None:
         return web.Response(status=http.HTTPStatus.BAD_REQUEST, text="Missing 'test' query parameter.")
 
-    # Get the lfdi of the aggregator to register
+    # Get the certificate of the aggregator to register
     aggregator_certificate = request.query["certificate"]
     if aggregator_certificate is None:
         return web.Response(status=http.HTTPStatus.BAD_REQUEST, text="Missing 'certificate' query parameter.")
+
+    # Get the lfdi of the aggregator to register
+    aggregator_lfdi = LFDIAuthDepends.generate_lfdi_from_pem(aggregator_certificate)
     if not DEV_AGGREGATOR_PREREGISTERED:
-        aggregator_lfdi = LFDIAuthDepends.generate_lfdi_from_pem(aggregator_certificate)
         precondition.register_aggregator(lfdi=aggregator_lfdi)
     else:
         logger.warning("Skipping aggregator registration ('DEV_AGGREGATOR_PREREGISTERED' environment variable is True)")
+
+    # Save the aggregator details for later request validation
+    request.app[APPKEY_AGGREGATOR].certificate = aggregator_certificate
+    request.app[APPKEY_AGGREGATOR].lfdi = aggregator_lfdi
+
+    logger.debug(f"{aggregator_certificate=}")
+    logger.debug(f"{aggregator_lfdi=}")
 
     # Get the definition of the test procedure
     try:
