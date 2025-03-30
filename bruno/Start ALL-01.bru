@@ -5,12 +5,12 @@ meta {
 }
 
 post {
-  url: {{HOST}}/start?test=ALL-01&lfdi=5b3be900b754e7e6d2dc592170e50ee29ae4e48d
+  url: {{HOST}}/start?test=ALL-01&certificate={{CERTIFICATE}}
   body: none
   auth: none
 }
 
 params:query {
   test: ALL-01
-  lfdi: 5b3be900b754e7e6d2dc592170e50ee29ae4e48d
+  certificate: {{CERTIFICATE}}
 }
