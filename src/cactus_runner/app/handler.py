@@ -33,7 +33,6 @@ from cactus_runner.models import (
     ActiveTestProcedureStatus,
     LastProxiedRequest,
     Listener,
-    RunnerCapabilities,
     StepStatus,
 )
 
@@ -243,21 +242,6 @@ async def status_handler(request):
         logger.warning("Status of non-existent test procedure requested.")
 
     return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=status.to_json())
-
-
-async def capabilities_handler(request):
-    test_procedures = request.app[APPKEY_TEST_PROCEDURES]
-
-    logger.info("Test runner capabilities requested.")
-
-    capabilities = RunnerCapabilities(
-        runner_version=test_procedures.version,
-        supported_test_procedures=[
-            test_procedure_name for test_procedure_name in test_procedures.test_procedures.keys()
-        ],
-    )
-
-    return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=capabilities.to_json())
 
 
 async def last_proxied_request_handler(request):

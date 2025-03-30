@@ -6,7 +6,6 @@ from cactus_test_definitions import TestProcedureId
 from cactus_runner.models import (
     ActiveTestProcedureStatus,
     LastProxiedRequest,
-    RunnerCapabilities,
 )
 
 __all__ = ["ClientSession", "ClientTimeout", "RunnerClientException", "TestProcedureId", "RunnerClient"]
@@ -34,16 +33,6 @@ class RunnerClient:
         except ConnectionTimeoutError as e:
             logger.debug(e)
             raise RunnerClientException("Unexpected failure while finalizing test procedure.")
-
-    @staticmethod
-    async def capabilities(session: ClientSession) -> RunnerCapabilities:
-        try:
-            async with session.get(url="/capability") as response:
-                json = await response.text()
-                return RunnerCapabilities.from_json(json)
-        except ConnectionTimeoutError as e:
-            logger.debug(e)
-            raise RunnerClientException("Unexpected failure while requesting runner capabilities.")
 
     @staticmethod
     async def status(session: ClientSession) -> ActiveTestProcedureStatus:

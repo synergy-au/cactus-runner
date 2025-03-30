@@ -47,7 +47,6 @@ def create_application():
 
     # Add routes for Test Runner
     app.router.add_route("GET", MOUNT_POINT + "status", handler.status_handler)
-    app.router.add_route("GET", MOUNT_POINT + "capability", handler.capabilities_handler)
     app.router.add_route("GET", MOUNT_POINT + "lastrequest", handler.last_proxied_request_handler)
     app.router.add_route("POST", MOUNT_POINT + "start", handler.start_handler)
     app.router.add_route("POST", MOUNT_POINT + "finalize", handler.finalize_handler)

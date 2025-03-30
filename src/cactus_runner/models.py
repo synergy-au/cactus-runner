@@ -79,12 +79,6 @@ class ActiveTestProcedureStatus(JSONWizard):
 
 
 @dataclass
-class RunnerCapabilities(JSONWizard):
-    runner_version: str
-    supported_test_procedures: list[str]
-
-
-@dataclass
 class LastProxiedRequest(JSONWizard):
     endpoint: str
     status: http.HTTPStatus

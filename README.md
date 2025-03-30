@@ -10,7 +10,6 @@ The test procedures are defined in the [cactus-test-definitions](https://github.
 
 | Endpoint | Query Parameters | Description |
 | --- | --- | --- |
-| `/capabililty` | - | Returns a list of supported test procedures. |
 | `/finalize` | - | Ends a test procedure and returns a final summary of the test procedure as json. |
 | `/start` | `test`, `lfdi` | Starts a test procedure. The test procedure is selected by the `test` parameter. The `lfdi` parameter is used to create the aggregator and associated certificate that the test client will use. |
 | `/status` | - | Returns the status of the active test (if present) as json. |
