@@ -66,6 +66,12 @@ class RunnerState:
 
 
 @dataclass
+class Aggregator:
+    certificate: str | None = None
+    lfdi: str | None = None
+
+
+@dataclass
 class ActiveTestProcedureStatus(JSONWizard):
     test_procedure_name: str
     status_summary: str

@@ -10,8 +10,12 @@ from cactus_test_definitions import TestProcedureConfig
 
 from cactus_runner import __version__
 from cactus_runner.app import handler
-from cactus_runner.app.shared import APPKEY_RUNNER_STATE, APPKEY_TEST_PROCEDURES
-from cactus_runner.models import RunnerState
+from cactus_runner.app.shared import (
+    APPKEY_AGGREGATOR,
+    APPKEY_RUNNER_STATE,
+    APPKEY_TEST_PROCEDURES,
+)
+from cactus_runner.models import Aggregator, RunnerState
 
 # SERVER_URL is the URL of envoy or another CSIP-AUS compliant server.
 DEFAULT_SERVER_URL = "http://localhost:8000"
@@ -73,6 +77,7 @@ def main():
     logger.info(f"Proxying requests to '{SERVER_URL}'")
 
     app = create_application()
+    app[APPKEY_AGGREGATOR] = Aggregator()
     app[APPKEY_RUNNER_STATE] = RunnerState()
     app[APPKEY_TEST_PROCEDURES] = TestProcedureConfig.from_resource()
 
