@@ -31,7 +31,6 @@ from cactus_runner.app.shared import (
 from cactus_runner.models import (
     ActiveTestProcedure,
     ActiveTestProcedureStatus,
-    Aggregator,
     LastProxiedRequest,
     Listener,
     RunnerCapabilities,
