@@ -26,10 +26,10 @@ class RunnerClient:
             raise RunnerClientException("Unexpected failure while starting test.")
 
     @staticmethod
-    async def finalize(session: ClientSession) -> str:
+    async def finalize(session: ClientSession) -> bytes:
         try:
             async with session.post(url="/finalize") as response:
-                return await response.text()
+                return await response.read()
         except ConnectionTimeoutError as e:
             logger.debug(e)
             raise RunnerClientException("Unexpected failure while finalizing test procedure.")
