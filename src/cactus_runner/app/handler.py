@@ -16,7 +16,7 @@ from cactus_test_definitions import (
 from envoy.server.api.depends.lfdi_auth import LFDIAuthDepends
 
 from cactus_runner import __version__
-from cactus_runner.app import precondition
+from cactus_runner.app import auth, precondition
 from cactus_runner.app.main import (
     DEV_AGGREGATOR_PREREGISTERED,
     DEV_SKIP_DB_PRECONDITIONS,
@@ -149,8 +149,9 @@ def finalize_zip_contents(json_status_summary: str) -> bytes:
         else:
             connection_string = DATABASE_URL.replace("+psycopg", "")
             dump_file = str(archive_dir / "envoy_db.dump")
+            exectuable_name = "pg_dump"
             command = [
-                "pg_dump",
+                exectuable_name,
                 f"--dbname={connection_string}",
                 "-f",
                 dump_file,
@@ -158,7 +159,12 @@ def finalize_zip_contents(json_status_summary: str) -> bytes:
                 "--inserts",
                 "--no-password",
             ]
-            subprocess.run(command)
+            try:
+                subprocess.run(command)
+            except FileNotFoundError:
+                logger.error(
+                    f"Unable to create database snapshot ('{exectuable_name}' executable not found). Did you forget to install 'postgresql-client'?"
+                )
 
         # Create the temporary zip file
         ARCHIVE_BASEFILENAME = "finalize"
@@ -305,6 +311,11 @@ def handle_event(event: Event, active_test_procedure: ActiveTestProcedure) -> Li
 
 
 async def proxied_request_handler(request):
+    if not auth.request_is_authorized(request=request):
+        return web.Response(
+            status=http.HTTPStatus.FORBIDDEN, text="Forwarded certificate does not match for registered aggregator"
+        )
+
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
 
     proxy_path = request.match_info.get("proxyPath", "No proxyPath placeholder defined")
