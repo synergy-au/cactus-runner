@@ -35,6 +35,7 @@ from cactus_runner.models import (
     Listener,
     RequestEntry,
     RunnerStatus,
+    StartResponseBody,
     StepStatus,
 )
 
@@ -122,7 +123,12 @@ async def start_handler(request: web.Request):
 
     request.app[APPKEY_RUNNER_STATE].active_test_procedure = active_test_procedure
 
-    return web.Response(status=http.HTTPStatus.CREATED, text="Test Procedure Started")
+    body = StartResponseBody(
+        status="Test procedure started.",
+        test_procedure=active_test_procedure.name,
+        timestamp=datetime.now(timezone.utc),
+    )
+    return web.Response(status=http.HTTPStatus.CREATED, content_type="application/json", text=body.to_json())
 
 
 def finalize_zip_contents(json_status_summary: str) -> bytes:

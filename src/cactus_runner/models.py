@@ -82,6 +82,13 @@ class Aggregator:
 
 
 @dataclass
+class StartResponseBody(JSONWizard):
+    status: str
+    test_procedure: str
+    timestamp: datetime
+
+
+@dataclass
 class RunnerStatus(JSONWizard):
     status_summary: str
     test_procedure_name: str = field(default="-")  # '-' represents no active procedure
