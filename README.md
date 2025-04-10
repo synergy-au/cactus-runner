@@ -28,6 +28,7 @@ The cactus runner application uses the following environment variables,
 | APP_PORT | 8000 | The port the cactus runner application listens on. |
 | DEV_AGGREGATOR_PREREGISTERED | "false" | If True ("true", "1", "t") the aggregator is not registered when a test procedure is started. Intended for testing purposes only. |
 | DEV_SKIP_DB_PRECONDITIONS | "false" | If True ("true", "1", "t") the database preconditions are not applied. Intended for dev purposes only. |
+| DEV_SKIP_AUTHORIZATION_CHECK | "false" | If True ("true", "1", "t") no check is made that the forwarded certificate is valid. Intended for dev purposes only. |
 
 > NOTE:
 > The `DATABASE_URL` has no default value so it must be a defined. `postgresql+psycopg://test_user:test_pwd@localhost:8003/test_db` is suitable value to use with the envoy stack defined in the [docker-compose.yaml](https://github.com/bsgip/cactus-runner/blob/main/docker-compose.yaml).

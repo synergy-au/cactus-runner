@@ -19,6 +19,7 @@ from cactus_runner import __version__
 from cactus_runner.app import auth, precondition
 from cactus_runner.app.env import (
     DEV_AGGREGATOR_PREREGISTERED,
+    DEV_SKIP_AUTHORIZATION_CHECK,
     DEV_SKIP_DB_PRECONDITIONS,
     SERVER_URL,
 )
@@ -311,7 +312,8 @@ def handle_event(event: Event, active_test_procedure: ActiveTestProcedure) -> Li
 
 
 async def proxied_request_handler(request):
-    if not auth.request_is_authorized(request=request):
+    # Only proceed if authorized
+    if not (DEV_SKIP_AUTHORIZATION_CHECK or auth.request_is_authorized(request=request)):
         return web.Response(
             status=http.HTTPStatus.FORBIDDEN, text="Forwarded certificate does not match for registered aggregator"
         )
