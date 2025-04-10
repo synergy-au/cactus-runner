@@ -82,7 +82,7 @@ class Aggregator:
 
 
 @dataclass
-class ActiveTestProcedureStatus(JSONWizard):
+class RunnerStatus(JSONWizard):
     status_summary: str
     test_procedure_name: str = field(default="-")  # '-' represents no active procedure
     step_status: dict[str, StepStatus] | None = field(default=None)

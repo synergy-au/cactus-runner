@@ -31,10 +31,10 @@ from cactus_runner.app.shared import (
 )
 from cactus_runner.models import (
     ActiveTestProcedure,
-    ActiveTestProcedureStatus,
     LastProxiedRequest,
     Listener,
     RequestEntry,
+    RunnerStatus,
     StepStatus,
 )
 
@@ -223,14 +223,14 @@ async def finalize_handler(request):
 
 def status_from_active_test_procedure(
     active_test_procedure: ActiveTestProcedure, request_history: list[RequestEntry]
-) -> ActiveTestProcedureStatus:
+) -> RunnerStatus:
 
     # Determine status summary
     completed_steps = sum(s == StepStatus.RESOLVED for s in active_test_procedure.step_status.values())
     steps = len(active_test_procedure.step_status)
     status_summary = f"{completed_steps}/{steps} steps complete."
 
-    return ActiveTestProcedureStatus(
+    return RunnerStatus(
         test_procedure_name=active_test_procedure.name,
         status_summary=status_summary,
         step_status=active_test_procedure.step_status,
@@ -254,7 +254,7 @@ async def status_handler(request):
         )
 
     else:
-        status = ActiveTestProcedureStatus(status_summary="No test procedure running")
+        status = RunnerStatus(status_summary="No test procedure running")
         logger.warning("Status of non-existent test procedure requested.")
 
     return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=status.to_json())

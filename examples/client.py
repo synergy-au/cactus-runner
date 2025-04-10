@@ -8,8 +8,8 @@ from cactus_runner.client import (
     RunnerClient,
 )
 from cactus_runner.models import (
-    ActiveTestProcedureStatus,
     LastProxiedRequest,
+    RunnerStatus,
 )
 
 
@@ -17,7 +17,7 @@ async def main():
     timeout = ClientTimeout(total=30)
     base_url = "http://localhost:8080/"
     async with ClientSession(base_url=base_url, timeout=timeout) as session:
-        status: ActiveTestProcedureStatus = await RunnerClient.status(session=session)
+        status: RunnerStatus = await RunnerClient.status(session=session)
         print(status)
 
         last_request: LastProxiedRequest = await RunnerClient.last_request(session=session)
