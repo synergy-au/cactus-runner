@@ -1,5 +1,5 @@
 import http
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
 from typing import Any
@@ -33,6 +33,15 @@ class ActiveTestProcedure:
 
 
 @dataclass
+class RequestEntry(JSONWizard):
+    url: str
+    path: str
+    status: http.HTTPStatus
+    timestamp: datetime
+    step_name: str
+
+
+@dataclass
 class RunnerState:
     """Represents the current state of the Runner.
 
@@ -63,6 +72,7 @@ class RunnerState:
     """
 
     active_test_procedure: ActiveTestProcedure | None = None
+    request_history: list[RequestEntry] = field(default_factory=list)
 
 
 @dataclass
@@ -73,9 +83,10 @@ class Aggregator:
 
 @dataclass
 class ActiveTestProcedureStatus(JSONWizard):
-    test_procedure_name: str
     status_summary: str
-    step_status: dict[str, StepStatus]
+    test_procedure_name: str = field(default="-")  # '-' represents no active procedure
+    step_status: dict[str, StepStatus] | None = field(default=None)
+    request_history: list[RequestEntry] = field(default_factory=list)
 
 
 @dataclass

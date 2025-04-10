@@ -34,6 +34,7 @@ from cactus_runner.models import (
     ActiveTestProcedureStatus,
     LastProxiedRequest,
     Listener,
+    RequestEntry,
     StepStatus,
 )
 
@@ -195,13 +196,17 @@ def finalize_response(json_status_summary: str) -> web.Response:
 
 async def finalize_handler(request):
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
+    request_history = request.app[APPKEY_RUNNER_STATE].request_history
 
     if active_test_procedure is not None:
         finalized_test_procedure_name = active_test_procedure.name
-        json_status_summary = status_from_active_test_procedure(active_test_procedure=active_test_procedure).to_json()
+        json_status_summary = status_from_active_test_procedure(
+            active_test_procedure=active_test_procedure, request_history=request_history
+        ).to_json()
 
-        # Clear the active test procedure
+        # Clear the active test procedure and request history
         request.app[APPKEY_RUNNER_STATE].active_test_procedure = None
+        request.app[APPKEY_RUNNER_STATE].request_history.clear()
 
         logger.info(
             f"Test Procedure '{finalized_test_procedure_name}' finalized",
@@ -216,7 +221,9 @@ async def finalize_handler(request):
         )
 
 
-def status_from_active_test_procedure(active_test_procedure: ActiveTestProcedure) -> ActiveTestProcedureStatus:
+def status_from_active_test_procedure(
+    active_test_procedure: ActiveTestProcedure, request_history: list[RequestEntry]
+) -> ActiveTestProcedureStatus:
 
     # Determine status summary
     completed_steps = sum(s == StepStatus.RESOLVED for s in active_test_procedure.step_status.values())
@@ -227,25 +234,27 @@ def status_from_active_test_procedure(active_test_procedure: ActiveTestProcedure
         test_procedure_name=active_test_procedure.name,
         status_summary=status_summary,
         step_status=active_test_procedure.step_status,
+        request_history=request_history,
     )
 
 
 async def status_handler(request):
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
+    request_history = request.app[APPKEY_RUNNER_STATE].request_history
 
     logger.info("Test procedure status requested.")
 
     if active_test_procedure is not None:
-        status = status_from_active_test_procedure(active_test_procedure=active_test_procedure)
+        status = status_from_active_test_procedure(
+            active_test_procedure=active_test_procedure, request_history=request_history
+        )
         logger.info(
             f"Status of test procedure '{status.test_procedure_name}': {status.step_status}",
             extra={"test_procedure": status.test_procedure_name},
         )
 
     else:
-        status = ActiveTestProcedureStatus(
-            test_procedure_name="-", status_summary="No test procedure running", step_status={}
-        )
+        status = ActiveTestProcedureStatus(status_summary="No test procedure running")
         logger.warning("Status of non-existent test procedure requested.")
 
     return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=status.to_json())
@@ -254,10 +263,22 @@ async def status_handler(request):
 async def last_proxied_request_handler(request):
     logger.info("Last proxied request requested.")
 
-    # TODO `last_request` shouldn't be hard-coded.
-    last_request = LastProxiedRequest(endpoint="/dcap", status=http.HTTPStatus.OK, timestamp=datetime.now(timezone.utc))
+    request_history = request.app[APPKEY_RUNNER_STATE].request_history
 
-    return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=last_request.to_json())
+    if len(request_history) > 0:
+        last_request = request_history[-1]
+        last_proxied_request = LastProxiedRequest(
+            endpoint=last_request.endpoint, status=last_request.status, timestamp=last_request.timestamp
+        )
+        text = last_proxied_request.to_json()
+    else:
+        text = """
+        {
+            "message": "No proxied requests received."
+        }
+        """
+
+    return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=text)
 
 
 def apply_action(action: Action, active_test_procedure: ActiveTestProcedure):
@@ -312,6 +333,9 @@ def handle_event(event: Event, active_test_procedure: ActiveTestProcedure) -> Li
 
 
 async def proxied_request_handler(request):
+    # Store when request received
+    request_timestamp = datetime.now(timezone.utc)
+
     # Only proceed if authorized
     if not (DEV_SKIP_AUTHORIZATION_CHECK or auth.request_is_authorized(request=request)):
         return web.Response(
@@ -326,6 +350,8 @@ async def proxied_request_handler(request):
 
     logger.debug(f"{proxy_path=} {local_path=} {remote_url=}")
 
+    # 'IGNORED' indicates request wasn't recognised by the test procedure and didn't progress it any further
+    step_name = "IGNORED"
     if active_test_procedure is not None:
         # Update the progress of the test procedure
         request_event = Event(type="request-received", parameters={"endpoint": f"/{proxy_path}"})
@@ -335,11 +361,21 @@ async def proxied_request_handler(request):
         # has been handled the step is "complete"
         if listener is not None:
             active_test_procedure.step_status[listener.step] = StepStatus.RESOLVED
+            step_name = listener.step
 
     # Forward the request to the reference server
     async with client.request(
         request.method, remote_url, headers=request.headers.copy(), allow_redirects=False, data=await request.read()
     ) as response:
         headers = response.headers.copy()
+        status = http.HTTPStatus(response.status)
         body = await response.read()
-        return web.Response(headers=headers, status=response.status, body=body)
+
+    if active_test_procedure is not None:
+        # Record in request history
+        request_entry = RequestEntry(
+            url=remote_url, path=local_path, status=status, timestamp=request_timestamp, step_name=step_name
+        )
+        request.app[APPKEY_RUNNER_STATE].request_history.append(request_entry)
+
+    return web.Response(headers=headers, status=status, body=body)
