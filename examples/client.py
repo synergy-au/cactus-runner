@@ -21,7 +21,7 @@ async def main():
         print(status)
 
         last_interaction: ClientInteraction = await RunnerClient.last_interaction(session=session)
-        print(last_request)
+        print(last_interaction)
 
         test_id = TestProcedureId.ALL_01
         # await RunnerClient.start(session=session, test_id=test_id, aggregator_certificate=None)
