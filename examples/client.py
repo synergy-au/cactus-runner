@@ -8,7 +8,7 @@ from cactus_runner.client import (
     RunnerClient,
 )
 from cactus_runner.models import (
-    LastProxiedRequest,
+    ClientInteraction,
     RunnerStatus,
 )
 
@@ -20,7 +20,7 @@ async def main():
         status: RunnerStatus = await RunnerClient.status(session=session)
         print(status)
 
-        last_request: LastProxiedRequest = await RunnerClient.last_request(session=session)
+        last_interaction: ClientInteraction = await RunnerClient.last_interaction(session=session)
         print(last_request)
 
         test_id = TestProcedureId.ALL_01

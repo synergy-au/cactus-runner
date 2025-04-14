@@ -31,7 +31,8 @@ from cactus_runner.app.shared import (
 )
 from cactus_runner.models import (
     ActiveTestProcedure,
-    LastProxiedRequest,
+    ClientInteraction,
+    ClientInteractionType,
     Listener,
     RequestEntry,
     RunnerStatus,
@@ -60,6 +61,11 @@ async def start_handler(request: web.Request):
             status=http.HTTPStatus.CONFLICT,
             text=f"Test Procedure ({active_test_procedure.name}) already in progress. Starting another test procedure is not permitted.",
         )
+
+    # Update last client interaction
+    request.app[APPKEY_RUNNER_STATE].last_client_interaction = ClientInteraction(
+        interaction_type=ClientInteractionType.TEST_PROCEDURE_START, timestamp=datetime.now(timezone.utc)
+    )
 
     # Get the name of the test procedure from the query parameter
     requested_test_procedure = request.query["test"]
@@ -228,7 +234,9 @@ async def finalize_handler(request):
 
 
 def status_from_active_test_procedure(
-    active_test_procedure: ActiveTestProcedure, request_history: list[RequestEntry]
+    active_test_procedure: ActiveTestProcedure,
+    request_history: list[RequestEntry],
+    last_client_interaction: ClientInteraction,
 ) -> RunnerStatus:
 
     # Determine status summary
@@ -238,6 +246,7 @@ def status_from_active_test_procedure(
 
     return RunnerStatus(
         test_procedure_name=active_test_procedure.name,
+        last_client_interaction=last_client_interaction,
         status_summary=status_summary,
         step_status=active_test_procedure.step_status,
         request_history=request_history,
@@ -247,12 +256,15 @@ def status_from_active_test_procedure(
 async def status_handler(request):
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
     request_history = request.app[APPKEY_RUNNER_STATE].request_history
+    last_client_interaction = request.app[APPKEY_RUNNER_STATE].last_client_interaction
 
     logger.info("Test procedure status requested.")
 
     if active_test_procedure is not None:
         status = status_from_active_test_procedure(
-            active_test_procedure=active_test_procedure, request_history=request_history
+            active_test_procedure=active_test_procedure,
+            request_history=request_history,
+            last_client_interaction=last_client_interaction,
         )
         logger.info(
             f"Status of test procedure '{status.test_procedure_name}': {status.step_status}",
@@ -260,31 +272,12 @@ async def status_handler(request):
         )
 
     else:
-        status = RunnerStatus(status_summary="No test procedure running")
+        status = RunnerStatus(
+            status_summary="No test procedure running", last_client_interaction=last_client_interaction
+        )
         logger.warning("Status of non-existent test procedure requested.")
 
     return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=status.to_json())
-
-
-async def last_proxied_request_handler(request):
-    logger.info("Last proxied request requested.")
-
-    request_history = request.app[APPKEY_RUNNER_STATE].request_history
-
-    if len(request_history) > 0:
-        last_request = request_history[-1]
-        last_proxied_request = LastProxiedRequest(
-            endpoint=last_request.endpoint, status=last_request.status, timestamp=last_request.timestamp
-        )
-        text = last_proxied_request.to_json()
-    else:
-        text = """
-        {
-            "message": "No proxied requests received."
-        }
-        """
-
-    return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=text)
 
 
 def apply_action(action: Action, active_test_procedure: ActiveTestProcedure):
@@ -347,6 +340,11 @@ async def proxied_request_handler(request):
         return web.Response(
             status=http.HTTPStatus.FORBIDDEN, text="Forwarded certificate does not match for registered aggregator"
         )
+
+    # Update last client interaction
+    request.app[APPKEY_RUNNER_STATE].last_client_interaction = ClientInteraction(
+        interaction_type=ClientInteractionType.PROXIED_REQUEST, timestamp=request_timestamp
+    )
 
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
 

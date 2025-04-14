@@ -4,7 +4,7 @@ from aiohttp import ClientSession, ClientTimeout, ConnectionTimeoutError
 from cactus_test_definitions import TestProcedureId
 
 from cactus_runner.models import (
-    LastProxiedRequest,
+    ClientInteraction,
     RunnerStatus,
     StartResponseBody,
 )
@@ -50,11 +50,6 @@ class RunnerClient:
             raise RunnerClientException("Unexpected failure while requesting test procedure status.")
 
     @staticmethod
-    async def last_request(session: ClientSession) -> LastProxiedRequest:
-        try:
-            async with session.get(url="/lastrequest") as response:
-                json = await response.text()
-                return LastProxiedRequest.from_json(json)
-        except ConnectionTimeoutError as e:
-            logger.debug(e)
-            raise RunnerClientException("Unexpected failure while requesting the last request issued to the runner.")
+    async def last_interaction(session: ClientSession) -> ClientInteraction:
+        status = await RunnerClient.status(session=session)
+        return status.last_client_interaction

@@ -50,6 +50,7 @@ dev = [
 ]
 test = [
   "pytest",
+  "pytest-asyncio",
 ]
 cli = [
   "rich",
@@ -65,6 +66,7 @@ addopts = "-ra -q"
 testpaths = [
   "tests",
 ]
+asyncio_default_fixture_loop_scope = "session"
 
 [tool.flake8]
 max-line-length = 120

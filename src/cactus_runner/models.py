@@ -1,7 +1,7 @@
 import http
 from dataclasses import dataclass, field
-from datetime import datetime
-from enum import Enum, auto
+from datetime import datetime, timezone
+from enum import Enum, StrEnum, auto
 from typing import Any
 
 from cactus_test_definitions import (
@@ -41,6 +41,18 @@ class RequestEntry(JSONWizard):
     step_name: str
 
 
+class ClientInteractionType(StrEnum):
+    RUNNER_START = "Runner Started"
+    TEST_PROCEDURE_START = "Test Procedure Started"
+    PROXIED_REQUEST = "Request Proxied"
+
+
+@dataclass
+class ClientInteraction(JSONWizard):
+    interaction_type: ClientInteractionType
+    timestamp: datetime
+
+
 @dataclass
 class RunnerState:
     """Represents the current state of the Runner.
@@ -73,6 +85,11 @@ class RunnerState:
 
     active_test_procedure: ActiveTestProcedure | None = None
     request_history: list[RequestEntry] = field(default_factory=list)
+    last_client_interaction: ClientInteraction = field(
+        default_factory=lambda: ClientInteraction(
+            interaction_type=ClientInteractionType.RUNNER_START, timestamp=datetime.now(timezone.utc)
+        )
+    )
 
 
 @dataclass
@@ -91,13 +108,7 @@ class StartResponseBody(JSONWizard):
 @dataclass
 class RunnerStatus(JSONWizard):
     status_summary: str
+    last_client_interaction: ClientInteraction
     test_procedure_name: str = field(default="-")  # '-' represents no active procedure
     step_status: dict[str, StepStatus] | None = field(default=None)
     request_history: list[RequestEntry] = field(default_factory=list)
-
-
-@dataclass
-class LastProxiedRequest(JSONWizard):
-    endpoint: str
-    status: http.HTTPStatus
-    timestamp: datetime
