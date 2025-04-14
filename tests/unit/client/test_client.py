@@ -11,6 +11,33 @@ from cactus_runner.models import (
 
 
 @pytest.mark.asyncio
+async def test_finalize():
+    # Arrange
+    mock_session = MagicMock()
+    mock_session.post.return_value.__aenter__.return_value.status = 200
+    mock_session.post.return_value.__aenter__.return_value.read.return_value = bytes()
+
+    # Act
+    finalize_result = await RunnerClient.finalize(session=mock_session)
+
+    # Assert
+    mock_session.post.assert_called_once_with(url="/finalize")
+    assert mock_session.post.return_value.__aenter__.return_value.read.call_count == 1
+    assert isinstance(finalize_result, bytes)
+
+
+@pytest.mark.asyncio
+async def test_finalize_connectionerror():
+    # Arrange
+    mock_session = MagicMock()
+    mock_session.post.side_effect = ConnectionTimeoutError
+
+    # Act/Assert
+    with pytest.raises(RunnerClientException, match="Unexpected failure while finalizing test procedure."):
+        _ = await RunnerClient.finalize(session=mock_session)
+
+
+@pytest.mark.asyncio
 async def test_status(runner_status_fixture):
     # Arrange
     expected_status = runner_status_fixture
@@ -34,7 +61,7 @@ async def test_status_connectionerror():
     mock_session = MagicMock()
     mock_session.get.side_effect = ConnectionTimeoutError
 
-    # Act
+    # Act/Assert
     with pytest.raises(RunnerClientException, match="Unexpected failure while requesting test procedure status."):
         _ = await RunnerClient.status(session=mock_session)
 
@@ -63,6 +90,6 @@ async def test_last_interaction_connectionerror():
     mock_session = MagicMock()
     mock_session.get.side_effect = ConnectionTimeoutError
 
-    # Act
+    # Act/Assert
     with pytest.raises(RunnerClientException, match="Unexpected failure while requesting test procedure status."):
         _ = await RunnerClient.last_interaction(session=mock_session)
