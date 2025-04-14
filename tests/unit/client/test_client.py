@@ -1,13 +1,55 @@
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
 from aiohttp import ConnectionTimeoutError
+from cactus_test_definitions import TestProcedureId
 
 from cactus_runner.client import RunnerClient, RunnerClientException
 from cactus_runner.models import (
     ClientInteraction,
     RunnerStatus,
+    StartResponseBody,
 )
+
+
+@pytest.mark.asyncio
+async def test_start():
+    # Arrange
+    expected_start_result = StartResponseBody(
+        status="PLACEHOLDER-STATUS", test_procedure="ALL-01", timestamp=datetime.now(timezone.utc)
+    )
+    test_id = TestProcedureId.ALL_01
+    aggregator_certificate = """asdf"""
+    mock_session = MagicMock()
+    mock_session.post.return_value.__aenter__.return_value.status = 200
+    mock_session.post.return_value.__aenter__.return_value.text.return_value = expected_start_result.to_json()
+
+    # Act
+    start_result = await RunnerClient.start(
+        session=mock_session, test_id=test_id, aggregator_certificate=aggregator_certificate
+    )
+
+    # Assert
+    mock_session.post_assert_called_once_with(
+        url="/start", params={"test": test_id.value, "certificate": aggregator_certificate}
+    )
+    assert mock_session.post.return_value.__aenter__.return_value.text.call_count == 1
+    assert isinstance(start_result, StartResponseBody)
+    assert start_result == expected_start_result
+
+
+@pytest.mark.asyncio
+async def test_start_connectionerror():
+    # Arrange
+    mock_session = MagicMock()
+    mock_session.post.side_effect = ConnectionTimeoutError
+
+    # Act/Assert
+    with pytest.raises(RunnerClientException, match="Unexpected failure while starting test."):
+        _ = await RunnerClient.start(
+            session=mock_session, test_id=TestProcedureId.ALL_01, aggregator_certificate="FAKE_AGGREGATOR_CERT"
+        )
 
 
 @pytest.mark.asyncio
