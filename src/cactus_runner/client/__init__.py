@@ -6,6 +6,7 @@ from cactus_test_definitions import TestProcedureId
 from cactus_runner.models import (
     LastProxiedRequest,
     RunnerStatus,
+    StartResponseBody,
 )
 
 __all__ = ["ClientSession", "ClientTimeout", "RunnerClientException", "TestProcedureId", "RunnerClient"]
@@ -18,9 +19,13 @@ class RunnerClientException(Exception): ...
 
 class RunnerClient:
     @staticmethod
-    async def start(session: ClientSession, test_id: TestProcedureId, aggregator_certificate: str) -> None:
+    async def start(session: ClientSession, test_id: TestProcedureId, aggregator_certificate: str) -> StartResponseBody:
         try:
-            await session.post(url="/start", params={"test": test_id.value, "certificate": aggregator_certificate})
+            async with session.post(
+                url="/start", params={"test": test_id.value, "certificate": aggregator_certificate}
+            ) as response:
+                json = await response.text()
+                return StartResponseBody.from_json(json)
         except ConnectionTimeoutError as e:
             logger.debug(e)
             raise RunnerClientException("Unexpected failure while starting test.")
