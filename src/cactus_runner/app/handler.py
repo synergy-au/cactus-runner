@@ -16,7 +16,7 @@ from cactus_test_definitions import (
 from envoy.server.api.depends.lfdi_auth import LFDIAuthDepends
 
 from cactus_runner import __version__
-from cactus_runner.app import auth, precondition
+from cactus_runner.app import auth, precondition, status
 from cactus_runner.app.env import (
     DEV_AGGREGATOR_PREREGISTERED,
     DEV_SKIP_AUTHORIZATION_CHECK,
@@ -212,7 +212,7 @@ async def finalize_handler(request):
 
     if active_test_procedure is not None:
         finalized_test_procedure_name = active_test_procedure.name
-        json_status_summary = status_from_active_test_procedure(
+        json_status_summary = status.get_active_runner_status(
             active_test_procedure=active_test_procedure, request_history=request_history
         ).to_json()
 
@@ -233,51 +233,29 @@ async def finalize_handler(request):
         )
 
 
-def status_from_active_test_procedure(
-    active_test_procedure: ActiveTestProcedure,
-    request_history: list[RequestEntry],
-    last_client_interaction: ClientInteraction,
-) -> RunnerStatus:
-
-    # Determine status summary
-    completed_steps = sum(s == StepStatus.RESOLVED for s in active_test_procedure.step_status.values())
-    steps = len(active_test_procedure.step_status)
-    status_summary = f"{completed_steps}/{steps} steps complete."
-
-    return RunnerStatus(
-        test_procedure_name=active_test_procedure.name,
-        last_client_interaction=last_client_interaction,
-        status_summary=status_summary,
-        step_status=active_test_procedure.step_status,
-        request_history=request_history,
-    )
-
-
 async def status_handler(request):
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
-    request_history = request.app[APPKEY_RUNNER_STATE].request_history
-    last_client_interaction = request.app[APPKEY_RUNNER_STATE].last_client_interaction
 
     logger.info("Test procedure status requested.")
 
     if active_test_procedure is not None:
-        status = status_from_active_test_procedure(
+        runner_status = status.get_active_runner_status(
             active_test_procedure=active_test_procedure,
-            request_history=request_history,
-            last_client_interaction=last_client_interaction,
+            request_history=request.app[APPKEY_RUNNER_STATE].request_history,
+            last_client_interaction=request.app[APPKEY_RUNNER_STATE].last_client_interaction,
         )
         logger.info(
-            f"Status of test procedure '{status.test_procedure_name}': {status.step_status}",
-            extra={"test_procedure": status.test_procedure_name},
+            f"Status of test procedure '{runner_status.test_procedure_name}': {runner_status.step_status}",
+            extra={"test_procedure": runner_status.test_procedure_name},
         )
 
     else:
-        status = RunnerStatus(
-            status_summary="No test procedure running", last_client_interaction=last_client_interaction
+        runner_status = status.get_runner_status(
+            last_client_interaction=request.app[APPKEY_RUNNER_STATE].last_client_interaction
         )
         logger.warning("Status of non-existent test procedure requested.")
 
-    return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=status.to_json())
+    return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=runner_status.to_json())
 
 
 def apply_action(action: Action, active_test_procedure: ActiveTestProcedure):
