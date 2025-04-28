@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from unittest.mock import Mock
 
 import pytest
@@ -6,7 +5,6 @@ import pytest
 from cactus_runner.app import status
 from cactus_runner.models import (
     ClientInteraction,
-    ClientInteractionType,
     RunnerStatus,
     StepStatus,
 )
@@ -73,15 +71,12 @@ def test_get_active_runner_status_calls_get_runner_status_summary():
     status.get_runner_status_summary.assert_called_once_with(step_status=expected_step_status)
 
 
-def test_get_runner_status():
-    last_client_interaction = ClientInteraction(
-        interaction_type=ClientInteractionType.RUNNER_START, timestamp=datetime.now(timezone.utc)
-    )
-    runner_status = status.get_runner_status(last_client_interaction=last_client_interaction)
+def test_get_runner_status(example_client_interaction: ClientInteraction):
+    runner_status = status.get_runner_status(last_client_interaction=example_client_interaction)
 
     assert isinstance(runner_status, RunnerStatus)
     assert runner_status.status_summary == "No test procedure running"
-    assert runner_status.last_client_interaction == last_client_interaction
+    assert runner_status.last_client_interaction == example_client_interaction
     assert runner_status.test_procedure_name == "-"
     assert runner_status.step_status is None
     assert runner_status.request_history == []
