@@ -53,8 +53,8 @@ def test_get_active_runner_status():
     assert runner_status.status_summary == expected_status_summary
 
 
-def test_get_active_runner_status_calls_get_runner_status_summary():
-    status.get_runner_status_summary = Mock()
+def test_get_active_runner_status_calls_get_runner_status_summary(mocker):
+    get_runner_status_summary_spy = mocker.spy(status, "get_runner_status_summary")
 
     expected_step_status = {"step_name": StepStatus.PENDING}
     active_test_procedure = Mock()
@@ -67,8 +67,7 @@ def test_get_active_runner_status_calls_get_runner_status_summary():
         request_history=request_history,
         last_client_interaction=last_client_interaction,
     )
-
-    status.get_runner_status_summary.assert_called_once_with(step_status=expected_step_status)
+    get_runner_status_summary_spy.assert_called_once_with(step_status=expected_step_status)
 
 
 def test_get_runner_status(example_client_interaction: ClientInteraction):
