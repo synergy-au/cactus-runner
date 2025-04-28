@@ -1,11 +1,11 @@
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock
 
 import pytest
 from aiohttp.web import Response
 
 from cactus_runner.app import handler
 from cactus_runner.app.shared import APPKEY_RUNNER_STATE
-from cactus_runner.models import ActiveTestProcedure, ClientInteraction, RunnerStatus
+from cactus_runner.models import ClientInteraction, RunnerStatus
 
 
 @pytest.mark.asyncio
@@ -20,7 +20,6 @@ async def test_status_handler(mocker):
     assert isinstance(response, Response)
     assert response.status == 200
     assert response.content_type == "application/json"
-    print(f">>>{response.text}")
     get_active_runner_status_spy.assert_called_once()
 
 
