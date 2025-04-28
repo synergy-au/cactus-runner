@@ -52,6 +52,7 @@ dev = [
 test = [
   "pytest",
   "pytest-asyncio",
+  "pytest-mock",
 ]
 cli = [
   "rich",
