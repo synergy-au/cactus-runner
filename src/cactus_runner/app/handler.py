@@ -1,12 +1,7 @@
 import http
 import logging
 import logging.config
-import os
-import shutil
-import subprocess
-import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
 
 from aiohttp import client, web
 from cactus_test_definitions import (
@@ -16,14 +11,13 @@ from cactus_test_definitions import (
 from envoy.server.api.depends.lfdi_auth import LFDIAuthDepends
 
 from cactus_runner import __version__
-from cactus_runner.app import auth, precondition, status
+from cactus_runner.app import auth, finalize, precondition, status
 from cactus_runner.app.env import (
     DEV_AGGREGATOR_PREREGISTERED,
     DEV_SKIP_AUTHORIZATION_CHECK,
     DEV_SKIP_DB_PRECONDITIONS,
     SERVER_URL,
 )
-from cactus_runner.app.precondition import DATABASE_URL
 from cactus_runner.app.shared import (
     APPKEY_AGGREGATOR,
     APPKEY_RUNNER_STATE,
@@ -35,7 +29,6 @@ from cactus_runner.models import (
     ClientInteractionType,
     Listener,
     RequestEntry,
-    RunnerStatus,
     StartResponseBody,
     StepStatus,
 )
@@ -45,10 +38,6 @@ logger = logging.getLogger(__name__)
 
 class UnknownActionError(Exception):
     """Unknown Cactus Runner Action"""
-
-
-class DatabaseDumpError(Exception):
-    pass
 
 
 async def start_handler(request: web.Request):
@@ -137,83 +126,15 @@ async def start_handler(request: web.Request):
     return web.Response(status=http.HTTPStatus.CREATED, content_type="application/json", text=body.to_json())
 
 
-def finalize_zip_contents(json_status_summary: str) -> bytes:
-    """Returns the contents of the zipped test procedures artifacts in bytes"""
-    # Work in a temporary directory
-    with tempfile.TemporaryDirectory() as tempdirname:
-        base_path = Path(tempdirname)
-
-        # All the test procedure artifacts should be placed in `archive_dir` to be archived
-        archive_dir = base_path / "archive"
-        os.mkdir(archive_dir)
-
-        # Create test summary json file
-        file_path = archive_dir / "test_procedure_summary.json"
-        with open(file_path, "w") as f:
-            f.write(json_status_summary)
-
-        # Copy Cactus Runner log file into archive
-        source = "logs/cactus_runner.jsonl"
-        destination = archive_dir / "cactus_runner.jsonl"
-        shutil.copyfile(source, destination)
-
-        # Create db dump
-        if DATABASE_URL is None:
-            raise DatabaseDumpError("DATABASE_URL environment variable not set")
-        else:
-            connection_string = DATABASE_URL.replace("+psycopg", "")
-            dump_file = str(archive_dir / "envoy_db.dump")
-            exectuable_name = "pg_dump"
-            command = [
-                exectuable_name,
-                f"--dbname={connection_string}",
-                "-f",
-                dump_file,
-                "--data-only",
-                "--inserts",
-                "--no-password",
-            ]
-            try:
-                subprocess.run(command)
-            except FileNotFoundError:
-                logger.error(
-                    f"Unable to create database snapshot ('{exectuable_name}' executable not found). Did you forget to install 'postgresql-client'?"
-                )
-
-        # Create the temporary zip file
-        ARCHIVE_BASEFILENAME = "finalize"
-        ARCHIVE_KIND = "zip"
-        shutil.make_archive(str(base_path / ARCHIVE_BASEFILENAME), ARCHIVE_KIND, archive_dir)
-
-        # Read the zip file contents as binary
-        archive_path = base_path / f"{ARCHIVE_BASEFILENAME}.{ARCHIVE_KIND}"
-        with open(archive_path, mode="rb") as f:
-            zip_contents = f.read()
-    return zip_contents
-
-
-def finalize_response(json_status_summary: str) -> web.Response:
-    """Creates a finalize test procedure response which includes the test procedure artifacts in zip format"""
-    zip_contents = finalize_zip_contents(json_status_summary=json_status_summary)
-
-    SUGGESTED_FILENAME = "finalize.zip"
-    return web.Response(
-        body=zip_contents,
-        headers={
-            "Content-Type": "application/zip",
-            "Content-Disposition": f"attachment; filename={SUGGESTED_FILENAME}",
-        },
-    )
-
-
 async def finalize_handler(request):
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
-    request_history = request.app[APPKEY_RUNNER_STATE].request_history
 
     if active_test_procedure is not None:
         finalized_test_procedure_name = active_test_procedure.name
         json_status_summary = status.get_active_runner_status(
-            active_test_procedure=active_test_procedure, request_history=request_history
+            active_test_procedure=active_test_procedure,
+            request_history=request.app[APPKEY_RUNNER_STATE].request_history,
+            last_client_interaction=request.app[APPKEY_RUNNER_STATE].last_client_interaction,
         ).to_json()
 
         # Clear the active test procedure and request history
@@ -225,7 +146,9 @@ async def finalize_handler(request):
             extra={"test_procedure": finalized_test_procedure_name},
         )
 
-        return finalize_response(json_status_summary=json_status_summary)
+        return finalize.create_response(
+            json_status_summary=json_status_summary, runner_logfile="logs/cactus_runner.jsonl"
+        )
     else:
         return web.Response(
             status=http.HTTPStatus.BAD_REQUEST,
