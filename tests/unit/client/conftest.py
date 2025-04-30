@@ -30,6 +30,7 @@ def runner_status_fixture():
             RequestEntry(
                 url="http://localhost:8000/dcap",
                 path="/dcap",
+                method=http.HTTPMethod.GET,
                 status=http.HTTPStatus.OK,
                 timestamp=datetime.now(timezone.utc),
                 step_name="ALL-01-001",

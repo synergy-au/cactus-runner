@@ -285,7 +285,12 @@ async def proxied_request_handler(request):
     if active_test_procedure is not None:
         # Record in request history
         request_entry = RequestEntry(
-            url=remote_url, path=local_path, status=status, timestamp=request_timestamp, step_name=step_name
+            url=remote_url,
+            path=local_path,
+            method=http.HTTPMethod(method),
+            status=status,
+            timestamp=request_timestamp,
+            step_name=step_name,
         )
         request.app[APPKEY_RUNNER_STATE].request_history.append(request_entry)
 

@@ -36,6 +36,7 @@ class ActiveTestProcedure:
 class RequestEntry(JSONWizard):
     url: str
     path: str
+    method: http.HTTPMethod
     status: http.HTTPStatus
     timestamp: datetime
     step_name: str
