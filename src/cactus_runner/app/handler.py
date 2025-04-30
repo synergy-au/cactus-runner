@@ -104,12 +104,17 @@ async def start_handler(request: web.Request):
         step_status={step: StepStatus.PENDING for step in definition.steps.keys()},
     )
 
-    # Get the database into the correct state for the test procedure
-    if DEV_SKIP_DB_PRECONDITIONS:
-        logger.warning("Skipping database preconditions ('DEV_SKIP_DB_PRECONDITIONS' environment variable is True)")
-    else:
-        db_precondition = active_test_procedure.definition.preconditions.db
-        precondition.apply_db_precondition(precondition=db_precondition)
+    # Apply preconditions (if present)
+    precond = active_test_procedure.definition.preconditions
+    if precond:
+        # Get the database into the correct state for the test procedure
+        if precond.db:
+            if DEV_SKIP_DB_PRECONDITIONS:
+                logger.warning(
+                    "Skipping database preconditions ('DEV_SKIP_DB_PRECONDITIONS' environment variable is True)"
+                )
+            else:
+                precondition.apply_db_precondition(precondition=precond.db)
 
     logger.info(
         f"Test Procedure '{active_test_procedure.name}' started",
