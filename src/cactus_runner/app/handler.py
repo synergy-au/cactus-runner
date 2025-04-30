@@ -257,14 +257,15 @@ async def proxied_request_handler(request):
     proxy_path = request.match_info.get("proxyPath", "No proxyPath placeholder defined")
     local_path = request.rel_url.path_qs
     remote_url = SERVER_URL + local_path
+    method = request.method
 
-    logger.debug(f"{proxy_path=} {local_path=} {remote_url=}")
+    logger.debug(f"{proxy_path=} {local_path=} {remote_url=} {method=}")
 
     # 'IGNORED' indicates request wasn't recognised by the test procedure and didn't progress it any further
     step_name = "IGNORED"
     if active_test_procedure is not None:
         # Update the progress of the test procedure
-        request_event = Event(type="request-received", parameters={"endpoint": f"/{proxy_path}"})
+        request_event = Event(type=f"{method}-request-received", parameters={"endpoint": f"/{proxy_path}"})
         listener = handle_event(event=request_event, active_test_procedure=active_test_procedure)
 
         # The assumes each step only has one event and once the action associated with the event
