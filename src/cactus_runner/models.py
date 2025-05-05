@@ -44,6 +44,7 @@ class RequestEntry(JSONWizard):
 
 class ClientInteractionType(StrEnum):
     RUNNER_START = "Runner Started"
+    TEST_PROCEDURE_INIT = "Test Procedure Initialised"
     TEST_PROCEDURE_START = "Test Procedure Started"
     PROXIED_REQUEST = "Request Proxied"
 
