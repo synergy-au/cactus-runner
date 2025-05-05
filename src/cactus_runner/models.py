@@ -101,6 +101,13 @@ class Aggregator:
 
 
 @dataclass
+class InitResponseBody(JSONWizard):
+    status: str
+    test_procedure: str
+    timestamp: datetime
+
+
+@dataclass
 class StartResponseBody(JSONWizard):
     status: str
     test_procedure: str
