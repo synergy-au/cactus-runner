@@ -15,8 +15,8 @@ from dataclass_wizard import JSONWizard
 class Listener:
     step: str
     event: Event
-    enabled: bool
     actions: list[Any]
+    enabled: bool = False
 
 
 class StepStatus(Enum):
