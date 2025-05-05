@@ -1,16 +1,16 @@
 meta {
-  name: Start ALL-02
+  name: Init ALL-01
   type: http
   seq: 4
 }
 
 post {
-  url: {{HOST}}/start?test=ALL-02&certificate={{CERTIFICATE}}
+  url: {{HOST}}/init?test=ALL-01&certificate={{CERTIFICATE}}
   body: none
   auth: none
 }
 
 params:query {
-  test: ALL-02
+  test: ALL-01
   certificate: {{CERTIFICATE}}
 }
