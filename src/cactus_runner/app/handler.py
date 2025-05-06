@@ -44,11 +44,41 @@ class UnknownActionError(Exception):
 
 
 async def init_handler(request: web.Request):
-    """Initializes a test procedure
+    """Handler for init requests.
 
-    1. Register the aggregator (along with certificate)
+    Sent by the client to initialise a test procedure.
+
+    The following initialization steps are performed:
+
+    1. Register the aggregator (along with its certificate)
     2. Apply database preconditions
-    3. Start the envoy server with the correction configuration
+    3. Trigger the envoy server to start with the correction configuration.
+
+    If the aggregator is already present (along with its certificate) in the utility
+    servers database, registering the aggregator (step 1) can be bypassed by setting
+    the environment variable 'DEV_AGGREGATOR_PREREGISTERED'.
+
+    To skip the database preconditions (step 2), the environment variable
+    'DEV_SKIP_DB_PRECONDITIONS' can be set.
+
+    Triggering the startup of the envoy server (step 3) is achieved by writing a '.env' file
+    containing the envoy server configuration parameters then writing an empty 'envoy.kickstart' file
+    which is recognised by the container management system and results in the envoy server starting.
+    The location to write these files is controlled by the 'SHARED_VOLUME' environment variable.
+
+    Args:
+        request: An aiohttp.web.Request instance. The requests must include the following
+        query parameters:
+        'test' - the name of the test procedure to initialize
+        'certificate' - the certificate to register as belonging to the aggregator
+
+    Returns:
+        aiohttp.web.Response: The body contains a simple json message (status msg, test name and timestamp) or
+        409 (Conflict) if there is already a test procedure initialised or
+        400 (Bad Request) if either of query parameters ('test' or 'certificate') are missing or
+        400 (Bad Request) if no test procedure definition could be found for the requested test
+        procedure
+
     """
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
     test_procedures = request.app[APPKEY_TEST_PROCEDURES]
@@ -155,6 +185,18 @@ async def init_handler(request: web.Request):
 
 
 async def start_handler(request: web.Request):
+    """Handler for start requests.
+
+    This handler enables the first listener in the test procedure.
+
+    Args:
+        request: An aiohttp.web.Request instance.
+
+    Returns:
+        aiohttp.web.Response: The body contains a simple json message (status msg, test name and timestamp) or
+        409 (Conflict) if there is no initialised test procedure or
+        409 (Conflict) if the test procedure already has enabled listeners (and has presumably already been started)
+    """
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
 
     # We cannot start a test procedure if one hasn't been initialized
@@ -198,6 +240,24 @@ async def start_handler(request: web.Request):
 
 
 async def finalize_handler(request):
+    """Handler for finalize requests.
+
+    Finalises the test procedure and returns test artifacts in response as a zipped archive.
+
+    The archive contains the following test procedure artifacts,
+
+    - Test Procedure Summary ('test_procedure_summary.json')
+    - The runners log ('cactus_runner.jsonl')
+    - The utility server log ('envoy.jsonl')
+    - A utility server database dump ('envoy_db.dump')
+
+    Args:
+        request: An aiohttp.web.Request instance.
+
+    Returns:
+        aiohttp.web.Response: The body contains the zipped artifacts from the test procedure run or
+        a 400 (Bad Request) if there is no test procedure in progress.
+    """
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
 
     if active_test_procedure is not None:
@@ -228,6 +288,14 @@ async def finalize_handler(request):
 
 
 async def status_handler(request):
+    """Handler for status requests; returns the status of runner.
+
+    Args:
+        request: An aiohttp.web.Request instance.
+
+    Returns:
+        aiohttp.web.Response: The body (json) contains the status of the runner.
+    """
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
 
     logger.info("Test procedure status requested.")
@@ -304,7 +372,25 @@ def handle_event(event: Event, active_test_procedure: ActiveTestProcedure) -> Li
 
 
 async def proxied_request_handler(request):
-    # Store when request received
+    """Handler for requests that should be forwarded to the utility server.
+
+    The handler also logs all requests to `request.app[APPKEY_RUNNER_STATE].request_history`, tagging
+    them with the test procedure step if appropriate otherwise with "IGNORED" if they didn't
+    contribute to the progress of the test procedure.
+
+    Before forwarding any request to the utility server, the handler performs an authorization check,
+    comparing the forwarded certificate (request object) and the aggregator registered with
+    the utility server. This check can be disabled by setting the environment variable
+    `DEV_SKIP_AUTHORIZATION_CHECK` to True.
+
+    Args:
+        request: An aiohttp.web.Request instance.
+
+    Returns:
+        aiohttp.web.Response: The forwarded response from the utility server or
+        a 403 (forbidden) if the handler's authorization check fails.
+    """
+    # Store timestamp of when the request was received
     request_timestamp = datetime.now(timezone.utc)
 
     # Only proceed if authorized
