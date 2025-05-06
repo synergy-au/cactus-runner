@@ -7,13 +7,12 @@ from pathlib import Path
 
 from aiohttp import client, web
 from cactus_test_definitions import (
-    Action,
     Event,
 )
 from envoy.server.api.depends.lfdi_auth import LFDIAuthDepends
 
 from cactus_runner import __version__
-from cactus_runner.app import auth, finalize, precondition, status
+from cactus_runner.app import auth, event, finalize, precondition, status
 from cactus_runner.app.env import (
     DEV_AGGREGATOR_PREREGISTERED,
     DEV_SKIP_AUTHORIZATION_CHECK,
@@ -37,10 +36,6 @@ from cactus_runner.models import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-class UnknownActionError(Exception):
-    """Unknown Cactus Runner Action"""
 
 
 async def init_handler(request: web.Request):
@@ -322,57 +317,6 @@ async def status_handler(request):
     return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=runner_status.to_json())
 
 
-def apply_action(action: Action, active_test_procedure: ActiveTestProcedure):
-
-    match action.type:
-        case "enable-listeners":
-            steps_to_enable = action.parameters["listeners"]
-            for listener in active_test_procedure.listeners:
-                if listener.step in steps_to_enable:
-                    logger.info(f"Enabling listener: {listener}")
-                    listener.enabled = True
-                    steps_to_enable.remove(listener.step)
-
-            # Warn about any unmatched steps
-            if steps_to_enable:
-                logger.warning(
-                    f"Unable to enable the listeners for the following steps, ({steps_to_enable}). These are not recognised steps in the '{active_test_procedure.name} test procedure"
-                )
-        case "remove-listeners":
-            steps_to_disable = action.parameters["listeners"]
-            for listener in active_test_procedure.listeners:
-                if listener.step in steps_to_disable:
-                    logger.info(f"Remove listener: {listener}")
-                    active_test_procedure.listeners.remove(listener)
-                    steps_to_disable.remove(listener.step)
-
-            # Warn about any unmatched steps
-            if steps_to_disable:
-                logger.warning(
-                    f"Unable to remove the listener from the following steps, ({steps_to_disable}). These are not recognised steps in the '{active_test_procedure.name}' test procedure"
-                )
-        case _:
-            raise UnknownActionError(f"Unrecognised action '{action}'")
-
-
-def handle_event(event: Event, active_test_procedure: ActiveTestProcedure) -> Listener | None:
-
-    # Check all listeners
-    for listener in active_test_procedure.listeners:
-        # Did any of the current listeners match?
-        if listener.enabled and listener.event == event:
-            logger.info(f"Event matched: {event=}")
-
-            # Perform actions associated with event
-            for action in listener.actions:
-                logger.info(f"Executing action: {action=}")
-                apply_action(action=action, active_test_procedure=active_test_procedure)
-
-            return listener
-
-    return None
-
-
 async def proxied_request_handler(request):
     """Handler for requests that should be forwarded to the utility server.
 
@@ -420,7 +364,7 @@ async def proxied_request_handler(request):
     if active_test_procedure is not None:
         # Update the progress of the test procedure
         request_event = Event(type=f"{method}-request-received", parameters={"endpoint": f"/{proxy_path}"})
-        listener = handle_event(event=request_event, active_test_procedure=active_test_procedure)
+        listener = event.handle_event(event=request_event, active_test_procedure=active_test_procedure)
 
         # The assumes each step only has one event and once the action associated with the event
         # has been handled the step is "complete"
