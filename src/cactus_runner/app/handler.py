@@ -278,7 +278,9 @@ async def finalize_handler(request):
         )
 
         return finalize.create_response(
-            json_status_summary=json_status_summary, runner_logfile="logs/cactus_runner.jsonl"
+            json_status_summary=json_status_summary,
+            runner_logfile="logs/cactus_runner.jsonl",
+            envoy_logfile="logs/envoy.jsonl",
         )
     else:
         return web.Response(

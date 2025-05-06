@@ -16,7 +16,7 @@ class DatabaseDumpError(Exception):
     pass
 
 
-def get_zip_contents(json_status_summary: str, runner_logfile: str) -> bytes:
+def get_zip_contents(json_status_summary: str, runner_logfile: str, envoy_logfile: str) -> bytes:
     """Returns the contents of the zipped test procedures artifacts in bytes"""
     # Work in a temporary directory
     with tempfile.TemporaryDirectory() as tempdirname:
@@ -34,6 +34,10 @@ def get_zip_contents(json_status_summary: str, runner_logfile: str) -> bytes:
         # Copy Cactus Runner log file into archive
         destination = archive_dir / "cactus_runner.jsonl"
         shutil.copyfile(runner_logfile, destination)
+
+        # Copy Envoy log file into archive
+        destination = archive_dir / "envoy.jsonl"
+        shutil.copyfile(envoy_logfile, destination)
 
         # Create db dump
         if DATABASE_URL is None:
@@ -70,9 +74,11 @@ def get_zip_contents(json_status_summary: str, runner_logfile: str) -> bytes:
     return zip_contents
 
 
-def create_response(json_status_summary: str, runner_logfile: str) -> web.Response:
+def create_response(json_status_summary: str, runner_logfile: str, envoy_logfile: str) -> web.Response:
     """Creates a finalize test procedure response which includes the test procedure artifacts in zip format"""
-    zip_contents = get_zip_contents(json_status_summary=json_status_summary, runner_logfile=runner_logfile)
+    zip_contents = get_zip_contents(
+        json_status_summary=json_status_summary, runner_logfile=runner_logfile, envoy_logfile=envoy_logfile
+    )
 
     SUGGESTED_FILENAME = "finalize.zip"
     return web.Response(

@@ -24,11 +24,21 @@ def test_get_zip_contents(mocker):
     json_status_summary = random_string(length=100)
     contents_of_logfile = bytes(random_string(length=100), encoding="utf-8")
 
-    with tempfile.NamedTemporaryFile(delete_on_close=False) as logfile:
-        logfile.write(contents_of_logfile)
-        logfile.close()
+    with (
+        tempfile.NamedTemporaryFile(delete_on_close=False) as runner_logfile,
+        tempfile.NamedTemporaryFile(delete_on_close=False) as envoy_logfile,
+    ):
+        runner_logfile.write(contents_of_logfile)
+        runner_logfile.close()
 
-        zip_contents = finalize.get_zip_contents(json_status_summary=json_status_summary, runner_logfile=logfile.name)
+        envoy_logfile.write(contents_of_logfile)
+        envoy_logfile.close()
+
+        zip_contents = finalize.get_zip_contents(
+            json_status_summary=json_status_summary,
+            runner_logfile=runner_logfile.name,
+            envoy_logfile=envoy_logfile.name,
+        )
 
     zip = zipfile.ZipFile(io.BytesIO(zip_contents))
 
@@ -43,7 +53,7 @@ def test_get_zip_contents_raises_databasedumperror(mocker):
     mocker.patch.object(finalize.shutil, "copyfile")  # prevent logfile copying
 
     with pytest.raises(finalize.DatabaseDumpError):
-        _ = finalize.get_zip_contents(json_status_summary="", runner_logfile="")
+        _ = finalize.get_zip_contents(json_status_summary="", runner_logfile="", envoy_logfile="")
 
 
 def test_create_response(mocker):
@@ -51,7 +61,7 @@ def test_create_response(mocker):
     get_zip_contents_mock = mocker.patch("cactus_runner.app.finalize.get_zip_contents")
     get_zip_contents_mock.return_value = mocked_zip_contents
 
-    response = finalize.create_response(json_status_summary="", runner_logfile="")
+    response = finalize.create_response(json_status_summary="", runner_logfile="", envoy_logfile="")
 
     assert isinstance(response, Response)
     assert response.status == 200
