@@ -18,7 +18,17 @@ class UnknownActionError(Exception):
 
 
 def _apply_action(action: Action, active_test_procedure: ActiveTestProcedure):
+    """Applies the action to the active test procedure.
 
+    Actions describe operations such as activate or disabling listeners.
+
+    Args:
+        action (Action): The Action to apply to the active test procedure.
+        active_test_procedure (ActiveTestProcedure): The currently active test procedure.
+
+    Raises:
+        UnknownActionError: Raised if this function has no implementation for the provided `action.type`.
+    """
     match action.type:
         case "enable-listeners":
             steps_to_enable = action.parameters["listeners"]
@@ -51,6 +61,16 @@ def _apply_action(action: Action, active_test_procedure: ActiveTestProcedure):
 
 
 def handle_event(event: Event, active_test_procedure: ActiveTestProcedure) -> Listener | None:
+    """Triggers the action associated with any enabled listeners that match then event.
+
+    Args:
+        event (Event): An Event to be matched against the test procedures enabled listeners.
+        active_test_procedure (ActiveTestProcedure): The currently active test procedure.
+
+    Returns:
+        Listener: If successful return the listener that matched the event.
+        None: If no listener matched.
+    """
     # Check all listeners
     for listener in active_test_procedure.listeners:
         # Did any of the current listeners match?
