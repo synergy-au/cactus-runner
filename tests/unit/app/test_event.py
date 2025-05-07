@@ -8,6 +8,34 @@ from cactus_runner.models import Listener
 
 
 @pytest.mark.parametrize(
+    "action,apply_function_name",
+    [
+        (Action(type="enable-listeners", parameters={"listeners": []}), "_apply_enable_listeners"),
+        (Action(type="remove-listeners", parameters={"listeners": []}), "_apply_remove_listeners"),
+    ],
+)
+def test__apply_action(mocker, action: Action, apply_function_name: str):
+    # Arrange
+    active_test_procedure = MagicMock()
+    mock_apply_function = mocker.patch(f"cactus_runner.app.event.{apply_function_name}")
+
+    # Act
+    event._apply_action(action=action, active_test_procedure=active_test_procedure)
+
+    # Assert
+    mock_apply_function.assert_called_once()
+
+
+def test__apply_action_raise_exception_for_unknown_action_type():
+    active_test_procedure = MagicMock()
+
+    with pytest.raises(event.UnknownActionError):
+        event._apply_action(
+            action=Action(type="NOT-A-VALID-ACTION-TYPE", parameters={}), active_test_procedure=active_test_procedure
+        )
+
+
+@pytest.mark.parametrize(
     "test_event,listeners,matching_listener_index",
     [
         (
