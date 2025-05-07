@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, Mock
 
 import pytest
-from cactus_test_definitions import Event
+from cactus_test_definitions import Action, Event
 
 from cactus_runner.app import event
 from cactus_runner.models import Listener
@@ -72,6 +72,63 @@ def test_handle_event_with_matching_listener(
 
     # Assert
     assert matched_listener == listeners[matching_listener_index]
+
+
+@pytest.mark.parametrize(
+    "test_event,listeners",
+    [
+        (
+            Event(type="GET-request-received", parameters={"endpoint": "/dcap"}),
+            [
+                Listener(
+                    step="step",
+                    event=Event(type="GET-request-received", parameters={"endpoint": "/dcap"}),
+                    actions=[],
+                    enabled=True,
+                )
+            ],
+        ),  # no actions for listener
+        (
+            Event(type="GET-request-received", parameters={"endpoint": "/dcap"}),
+            [
+                Listener(
+                    step="step",
+                    event=Event(type="GET-request-received", parameters={"endpoint": "/dcap"}),
+                    actions=[Action(type="enable-listeners", parameters={})],
+                    enabled=True,
+                )
+            ],
+        ),  # 1 action for listener
+        (
+            Event(type="GET-request-received", parameters={"endpoint": "/dcap"}),
+            [
+                Listener(
+                    step="step",
+                    event=Event(type="GET-request-received", parameters={"endpoint": "/dcap"}),
+                    actions=[
+                        Action(type="enable-listeners", parameters={}),
+                        Action(type="remove-listeners", parameters={}),
+                    ],
+                    enabled=True,
+                )
+            ],
+        ),  # 2 actions for listener
+    ],
+)
+def test_handle_event_calls__apply_action_for_each_listener_action(
+    mocker, test_event: Event, listeners: list[Listener]
+):
+    # Arrange
+    active_test_procedure = MagicMock()
+    active_test_procedure.listeners = listeners
+
+    mock__apply_action = mocker.patch("cactus_runner.app.event._apply_action")
+
+    # Act
+    matched_listener = event.handle_event(event=test_event, active_test_procedure=active_test_procedure)
+
+    # Assert
+    assert mock__apply_action.call_count == len(matched_listener.actions)
 
 
 @pytest.mark.parametrize(
