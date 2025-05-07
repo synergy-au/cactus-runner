@@ -17,6 +17,63 @@ class UnknownActionError(Exception):
     """Unknown Cactus Runner Action"""
 
 
+def _apply_enable_listeners(steps_to_enable: list[str], listeners: list[Listener], test_procedure_name: str):
+    """Applies the enable-listeners action to the active test procedures.
+
+    Each listener has a single test procedure step associated with it. A list of step names to enable is therefore
+    sufficient to identify the corresponding listeners which are the actual objects that get disabled.
+
+    Step names are defined by the test procedures. They are strings of the form "ALL-01-001", which is the first step
+    "001" in the "ALL-01" test procedure.
+
+    Args:
+        steps_to_enable (list[str]): The steps (as a list of step names) to enable.
+        listeners (list[Listener]): A list of all the listeners for the active test procedure. Note: This function can
+        mutate the elements in this list.
+        test_procedure_name: (str): The name of the active test procedure (used for logging)
+
+    """
+    for listener in listeners:
+        if listener.step in steps_to_enable:
+            logger.info(f"Enabling listener: {listener}")
+            listener.enabled = True
+            steps_to_enable.remove(listener.step)
+
+    # Warn about any unmatched steps
+    if steps_to_enable:
+        logger.warning(
+            f"Unable to enable the listeners for the following steps, ({steps_to_enable}). These are not recognised steps in the '{test_procedure_name} test procedure"
+        )
+
+
+def _apply_remove_listeners(steps_to_disable: list[str], listeners: list[Listener], test_procedure_name: str):
+    """Applies the remove-listeners action to the active test procedure.
+
+    Each listener has a single test procedure step associated with it. A list of step names to disable is therefore
+    sufficient to identify the corresponding listeners which are the actual objects that get disabled.
+
+    Step names are defined by the test procedures. They are strings of the form "ALL-01-001", which is the first step
+    "001" in the "ALL-01" test procedure.
+
+    Args:
+        step_to_disable (list[str]): The steps (as a list of step names) to disable.
+        listeners (list[Listener]): A list of all the listeners for the active test procedure. Note: This function can
+        mutate the elements in this list.
+        test_procedure_name: (str): The name of the active test procedure (used for logging)
+    """
+    for listener in listeners:
+        if listener.step in steps_to_disable:
+            logger.info(f"Remove listener: {listener}")
+            listeners.remove(listener)
+            steps_to_disable.remove(listener.step)
+
+    # Warn about any unmatched steps
+    if steps_to_disable:
+        logger.warning(
+            f"Unable to remove the listener from the following steps, ({steps_to_disable}). These are not recognised steps in the '{test_procedure_name}' test procedure"
+        )
+
+
 def _apply_action(action: Action, active_test_procedure: ActiveTestProcedure):
     """Applies the action to the active test procedure.
 
@@ -31,31 +88,18 @@ def _apply_action(action: Action, active_test_procedure: ActiveTestProcedure):
     """
     match action.type:
         case "enable-listeners":
-            steps_to_enable = action.parameters["listeners"]
-            for listener in active_test_procedure.listeners:
-                if listener.step in steps_to_enable:
-                    logger.info(f"Enabling listener: {listener}")
-                    listener.enabled = True
-                    steps_to_enable.remove(listener.step)
+            _apply_enable_listeners(
+                steps_to_enable=action.parameters["listeners"],
+                listeners=active_test_procedure.listeners,
+                test_procedure_name=active_test_procedure.name,
+            )
 
-            # Warn about any unmatched steps
-            if steps_to_enable:
-                logger.warning(
-                    f"Unable to enable the listeners for the following steps, ({steps_to_enable}). These are not recognised steps in the '{active_test_procedure.name} test procedure"
-                )
         case "remove-listeners":
-            steps_to_disable = action.parameters["listeners"]
-            for listener in active_test_procedure.listeners:
-                if listener.step in steps_to_disable:
-                    logger.info(f"Remove listener: {listener}")
-                    active_test_procedure.listeners.remove(listener)
-                    steps_to_disable.remove(listener.step)
-
-            # Warn about any unmatched steps
-            if steps_to_disable:
-                logger.warning(
-                    f"Unable to remove the listener from the following steps, ({steps_to_disable}). These are not recognised steps in the '{active_test_procedure.name}' test procedure"
-                )
+            _apply_remove_listeners(
+                steps_to_disable=action.parameters["listeners"],
+                listeners=active_test_procedure.listeners,
+                test_procedure_name=active_test_procedure.name,
+            )
         case _:
             raise UnknownActionError(f"Unrecognised action '{action}'")
 
