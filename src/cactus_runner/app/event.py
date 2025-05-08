@@ -27,7 +27,7 @@ def _apply_enable_listeners(steps_to_enable: list[str], listeners: list[Listener
     "001" in the "ALL-01" test procedure.
 
     Args:
-        steps_to_enable (list[str]): The steps (as a list of step names) to enable.
+        steps_to_enable (list[str]): The steps (as a list of step names) to enable. Note: this function mutates this list.
         listeners (list[Listener]): A list of all the listeners for the active test procedure. Note: This function can
         mutate the elements in this list.
         test_procedure_name: (str): The name of the active test procedure (used for logging)
@@ -56,7 +56,7 @@ def _apply_remove_listeners(steps_to_disable: list[str], listeners: list[Listene
     "001" in the "ALL-01" test procedure.
 
     Args:
-        step_to_disable (list[str]): The steps (as a list of step names) to disable.
+        step_to_disable (list[str]): The steps (as a list of step names) to disable. Note: this function mutates this list.
         listeners (list[Listener]): A list of all the listeners for the active test procedure. Note: This function can
         mutate the elements in this list.
         test_procedure_name: (str): The name of the active test procedure (used for logging)
