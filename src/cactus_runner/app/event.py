@@ -71,7 +71,7 @@ def _apply_remove_listeners(steps_to_disable: list[str], listeners: list[Listene
             steps_to_disable.remove(listener.step)  # mutate the original steps_to_disable
 
     for listener_to_remove in listeners_to_remove:
-        logger.info(f"Remove listener: {listener_to_remove}")
+        logger.info(f"Removing listener: {listener_to_remove}")
         listeners.remove(listener_to_remove)  # mutate the original listeners list
 
     # Warn about any unmatched steps
