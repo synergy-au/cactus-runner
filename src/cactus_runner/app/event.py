@@ -17,6 +17,10 @@ class UnknownActionError(Exception):
     """Unknown Cactus Runner Action"""
 
 
+class FailedActionError(Exception):
+    """Error raised when an action failed to execute"""
+
+
 def _apply_enable_listeners(steps_to_enable: list[str], listeners: list[Listener], test_procedure_name: str):
     """Applies the enable-listeners action to the active test procedures.
 
@@ -114,6 +118,8 @@ def _apply_action(action: Action, active_test_procedure: ActiveTestProcedure):
 def handle_event(event: Event, active_test_procedure: ActiveTestProcedure) -> Listener | None:
     """Triggers the action associated with any enabled listeners that match then event.
 
+    Logs an error if the action was able to be executed.
+
     Args:
         event (Event): An Event to be matched against the test procedures enabled listeners.
         active_test_procedure (ActiveTestProcedure): The currently active test procedure.
@@ -131,7 +137,10 @@ def handle_event(event: Event, active_test_procedure: ActiveTestProcedure) -> Li
             # Perform actions associated with event
             for action in listener.actions:
                 logger.info(f"Executing action: {action=}")
-                _apply_action(action=action, active_test_procedure=active_test_procedure)
+                try:
+                    _apply_action(action=action, active_test_procedure=active_test_procedure)
+                except (UnknownActionError, FailedActionError) as e:
+                    logger.error(f"Error. Unable to execute action for step={listener.step}: {repr(e)}")
 
             return listener
 
