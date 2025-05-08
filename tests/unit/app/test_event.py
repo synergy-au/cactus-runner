@@ -11,6 +11,7 @@ def test__apply_enable_listeners():
     # Arrange
     step_name = "step"
     steps_to_enable = [step_name]
+    original_steps_to_enable = steps_to_enable.copy()
     listeners = [
         Listener(step=step_name, event=Event(type="", parameters={}), actions=[])
     ]  # listener defaults to disabled but should be enabled during this test
@@ -20,14 +21,14 @@ def test__apply_enable_listeners():
 
     # Assert
     assert listeners[0].enabled
-    assert len(steps_to_enable) == 0  # all steps matched listeners
+    assert steps_to_enable == original_steps_to_enable  # Ensure we are not mutating step_to_enable
 
 
 @pytest.mark.parametrize("steps_to_enable", [["NOT-A-VALID-STEP"], ["NOT-A-VALID-STEP", "NOT-A-VALID-STEP-2"]])
 def test__apply_enabled_listeners_logs_warning_for_unmatched_steps(mocker, steps_to_enable: list[str]):
     # Arrange
-    len_steps_to_enable_before_apply = len(steps_to_enable)
-    listeners = [Listener(step="step-name", event=Event(type="", parameters={}), actions=[])]
+    listener = Listener(step="step-name", event=Event(type="", parameters={}), actions=[])
+    listeners = [listener]
     mock_logger_warning = mocker.patch("cactus_runner.app.event.logger.warning")
 
     # Act
@@ -35,7 +36,7 @@ def test__apply_enabled_listeners_logs_warning_for_unmatched_steps(mocker, steps
 
     # Assert
     mock_logger_warning.assert_called_once()
-    assert len(steps_to_enable) == len_steps_to_enable_before_apply
+    assert not listener.enabled
 
 
 @pytest.mark.parametrize(
@@ -63,12 +64,15 @@ def test__apply_enabled_listeners_logs_warning_for_unmatched_steps(mocker, steps
     ],
 )
 def test__apply_remove_listeners(steps_to_disable: list[str], listeners: list[Listener]):
+    # Arrange
+    original_steps_to_disable = steps_to_disable.copy()
+
     # Act
     event._apply_remove_listeners(steps_to_disable=steps_to_disable, listeners=listeners, test_procedure_name="")
 
     # Assert
     assert len(listeners) == 0  # all listeners removed from list of listeners
-    assert len(steps_to_disable) == 0  # all steps matched listeners
+    assert steps_to_disable == original_steps_to_disable  # check we are mutating 'steps_to_diable'
 
 
 @pytest.mark.parametrize("steps_to_disable", [["NOT-A-VALID-STEP"], ["NOT-A-VALID-STEP", "NOT-A-VALID-STEP-2"]])
