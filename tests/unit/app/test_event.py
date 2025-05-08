@@ -39,6 +39,54 @@ def test__apply_enabled_listeners_logs_warning_for_unmatched_steps(mocker, steps
 
 
 @pytest.mark.parametrize(
+    "steps_to_disable,listeners",
+    [
+        (
+            ["step1"],
+            [
+                Listener(step="step1", event=Event(type="", parameters={}), actions=[], enabled=True),
+            ],
+        ),
+        (
+            ["step1"],
+            [
+                Listener(step="step1", event=Event(type="", parameters={}), actions=[], enabled=False),
+            ],
+        ),
+        (
+            ["step1", "step2"],
+            [
+                Listener(step="step1", event=Event(type="", parameters={}), actions=[], enabled=True),
+                Listener(step="step2", event=Event(type="", parameters={}), actions=[], enabled=True),
+            ],
+        ),
+    ],
+)
+def test__apply_remove_listeners(steps_to_disable: list[str], listeners: list[Listener]):
+    # Act
+    event._apply_remove_listeners(steps_to_disable=steps_to_disable, listeners=listeners, test_procedure_name="")
+
+    # Assert
+    assert len(listeners) == 0  # all listeners removed from list of listeners
+    assert len(steps_to_disable) == 0  # all steps matched listeners
+
+
+@pytest.mark.parametrize("steps_to_disable", [["NOT-A-VALID-STEP"], ["NOT-A-VALID-STEP", "NOT-A-VALID-STEP-2"]])
+def test__apply_remove_listeners_logs_warning_for_unmatched_steps(mocker, steps_to_disable: list[str]):
+    # Arrange
+    len_steps_to_enable_before_apply = len(steps_to_disable)
+    listeners = [Listener(step="step-name", event=Event(type="", parameters={}), actions=[])]
+    mock_logger_warning = mocker.patch("cactus_runner.app.event.logger.warning")
+
+    # Act
+    event._apply_remove_listeners(steps_to_disable=steps_to_disable, listeners=listeners, test_procedure_name="")
+
+    # Assert
+    mock_logger_warning.assert_called_once()
+    assert len(steps_to_disable) == len_steps_to_enable_before_apply
+
+
+@pytest.mark.parametrize(
     "action,apply_function_name",
     [
         (Action(type="enable-listeners", parameters={"listeners": []}), "_apply_enable_listeners"),
