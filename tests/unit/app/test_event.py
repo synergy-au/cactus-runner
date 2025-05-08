@@ -11,7 +11,9 @@ def test__apply_enable_listeners():
     # Arrange
     step_name = "step"
     steps_to_enable = [step_name]
-    listeners = [Listener(step=step_name, event=Event(type="", parameters={}), actions=[])]
+    listeners = [
+        Listener(step=step_name, event=Event(type="", parameters={}), actions=[])
+    ]  # listener defaults to disabled but should be enabled during this test
 
     # Act
     event._apply_enable_listeners(steps_to_enable=steps_to_enable, listeners=listeners, test_procedure_name="")
