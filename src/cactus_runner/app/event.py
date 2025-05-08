@@ -61,11 +61,15 @@ def _apply_remove_listeners(steps_to_disable: list[str], listeners: list[Listene
         mutate the elements in this list.
         test_procedure_name: (str): The name of the active test procedure (used for logging)
     """
+    listeners_to_remove = []
     for listener in listeners:
         if listener.step in steps_to_disable:
-            logger.info(f"Remove listener: {listener}")
-            listeners.remove(listener)
-            steps_to_disable.remove(listener.step)
+            listeners_to_remove.append(listener)
+            steps_to_disable.remove(listener.step)  # mutate the original steps_to_disable
+
+    for listener_to_remove in listeners_to_remove:
+        logger.info(f"Remove listener: {listener_to_remove}")
+        listeners.remove(listener_to_remove)  # mutate the original listeners list
 
     # Warn about any unmatched steps
     if steps_to_disable:
