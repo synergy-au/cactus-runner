@@ -344,10 +344,12 @@ async def proxied_request_handler(request):
 
     # Don't proxy requests if there is no active test procedure
     if active_test_procedure is None:
-        logger.warning(
+        logger.error(
             f"Request (path={request.path}) not forwarded. An active test procedure is required before requests are proxied."
         )
-        return
+        return web.Response(
+            status=http.HTTPStatus.BAD_REQUEST, text="Unable to handle request. An active test procedure is required."
+        )
 
     # Store timestamp of when the request was received
     request_timestamp = datetime.now(timezone.utc)

@@ -83,3 +83,19 @@ async def test_status_handler_handles_no_active_test_procedure(example_client_in
     assert response.content_type == "application/json"
     assert runner_status.status_summary == "No test procedure running"
     get_runner_status_spy.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_proxied_request_logs_error_with_no_active_test_procedure(mocker):
+    # Arrange
+    request = MagicMock()
+    request.app[APPKEY_RUNNER_STATE].active_test_procedure = None
+    mock_logger_warning = mocker.patch("cactus_runner.app.handler.logger.error")
+
+    # Act
+    response = await handler.proxied_request_handler(request=request)
+
+    # Assert
+    mock_logger_warning.assert_called_once()
+    assert isinstance(response, Response)
+    assert response.status == http.HTTPStatus.BAD_REQUEST
