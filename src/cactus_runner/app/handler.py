@@ -324,6 +324,10 @@ async def proxied_request_handler(request):
     them with the test procedure step if appropriate otherwise with "IGNORED" if they didn't
     contribute to the progress of the test procedure.
 
+    Requests are not forwarded if there is no active test procedure. Without an active test
+    procedure there is no where to record the history of requests which could complicate
+    inpterpreting test artifacts.
+
     Before forwarding any request to the utility server, the handler performs an authorization check,
     comparing the forwarded certificate (request object) and the aggregator registered with
     the utility server. This check can be disabled by setting the environment variable
@@ -336,6 +340,15 @@ async def proxied_request_handler(request):
         aiohttp.web.Response: The forwarded response from the utility server or
         a 403 (forbidden) if the handler's authorization check fails.
     """
+    active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
+
+    # Don't proxy requests if there is no active test procedure
+    if active_test_procedure is None:
+        logger.warning(
+            f"Request (path={request.path}) not forwarded. An active test procedure is required before requests are proxied."
+        )
+        return
+
     # Store timestamp of when the request was received
     request_timestamp = datetime.now(timezone.utc)
 
@@ -350,8 +363,6 @@ async def proxied_request_handler(request):
         interaction_type=ClientInteractionType.PROXIED_REQUEST, timestamp=request_timestamp
     )
 
-    active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
-
     proxy_path = request.match_info.get("proxyPath", "No proxyPath placeholder defined")
     local_path = request.rel_url.path_qs
     remote_url = SERVER_URL + local_path
@@ -359,18 +370,18 @@ async def proxied_request_handler(request):
 
     logger.debug(f"{proxy_path=} {local_path=} {remote_url=} {method=}")
 
-    # 'IGNORED' indicates request wasn't recognised by the test procedure and didn't progress it any further
-    step_name = "IGNORED"
-    if active_test_procedure is not None:
-        # Update the progress of the test procedure
-        request_event = Event(type=f"{method}-request-received", parameters={"endpoint": f"/{proxy_path}"})
-        listener = event.handle_event(event=request_event, active_test_procedure=active_test_procedure)
+    # Update the progress of the test procedure
+    request_event = Event(type=f"{method}-request-received", parameters={"endpoint": relative_url})
+    listener = event.handle_event(event=request_event, active_test_procedure=active_test_procedure)
 
-        # The assumes each step only has one event and once the action associated with the event
-        # has been handled the step is "complete"
-        if listener is not None:
-            active_test_procedure.step_status[listener.step] = StepStatus.RESOLVED
-            step_name = listener.step
+    # The assumes each step only has one event and once the action associated with the event
+    # has been handled the step is "complete"
+    if listener is None:
+        # 'IGNORED' indicates request wasn't recognised by the test procedure and didn't progress it any further
+        step_name = "IGNORED"
+    else:
+        active_test_procedure.step_status[listener.step] = StepStatus.RESOLVED
+        step_name = listener.step
 
     # Forward the request to the reference server
     async with client.request(
@@ -380,16 +391,15 @@ async def proxied_request_handler(request):
         status = http.HTTPStatus(response.status)
         body = await response.read()
 
-    if active_test_procedure is not None:
-        # Record in request history
-        request_entry = RequestEntry(
-            url=remote_url,
-            path=local_path,
-            method=http.HTTPMethod(method),
-            status=status,
-            timestamp=request_timestamp,
-            step_name=step_name,
-        )
-        request.app[APPKEY_RUNNER_STATE].request_history.append(request_entry)
+    # Record in request history
+    request_entry = RequestEntry(
+        url=remote_url,
+        path=local_path,
+        method=http.HTTPMethod(method),
+        status=status,
+        timestamp=request_timestamp,
+        step_name=step_name,
+    )
+    request.app[APPKEY_RUNNER_STATE].request_history.append(request_entry)
 
     return web.Response(headers=headers, status=status, body=body)
