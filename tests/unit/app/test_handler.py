@@ -86,7 +86,7 @@ async def test_status_handler_handles_no_active_test_procedure(example_client_in
 
 
 @pytest.mark.asyncio
-async def test_proxied_request_logs_error_with_no_active_test_procedure(mocker):
+async def test_proxied_request_handler_logs_error_with_no_active_test_procedure(mocker):
     # Arrange
     request = MagicMock()
     request.app[APPKEY_RUNNER_STATE].active_test_procedure = None
