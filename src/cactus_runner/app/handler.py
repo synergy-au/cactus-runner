@@ -363,12 +363,11 @@ async def proxied_request_handler(request):
         interaction_type=ClientInteractionType.PROXIED_REQUEST, timestamp=request_timestamp
     )
 
-    proxy_path = request.match_info.get("proxyPath", "No proxyPath placeholder defined")
-    local_path = request.rel_url.path_qs
-    remote_url = SERVER_URL + local_path
+    # Determine paths, url and HTTP method
+    relative_url = request.path
+    remote_url = SERVER_URL + request.path_qs
     method = request.method
-
-    logger.debug(f"{proxy_path=} {local_path=} {remote_url=} {method=}")
+    logger.debug(f"{relative_url=} {remote_url=} {method=}")
 
     # Update the progress of the test procedure
     request_event = Event(type=f"{method}-request-received", parameters={"endpoint": relative_url})
@@ -394,7 +393,7 @@ async def proxied_request_handler(request):
     # Record in request history
     request_entry = RequestEntry(
         url=remote_url,
-        path=local_path,
+        path=relative_url,
         method=http.HTTPMethod(method),
         status=status,
         timestamp=request_timestamp,
