@@ -61,7 +61,7 @@ async def test_status_handler(mocker):
 
     response = await handler.status_handler(request=request)
     assert isinstance(response, Response)
-    assert response.status == 200
+    assert response.status == http.HTTPStatus.OK
     assert response.content_type == "application/json"
     get_active_runner_status_spy.assert_called_once()
 
@@ -79,7 +79,7 @@ async def test_status_handler_handles_no_active_test_procedure(example_client_in
     response = await handler.status_handler(request=request)
     runner_status = RunnerStatus.from_json(response.text)
     assert isinstance(response, Response)
-    assert response.status == 200
+    assert response.status == http.HTTPStatus.OK
     assert response.content_type == "application/json"
     assert runner_status.status_summary == "No test procedure running"
     get_runner_status_spy.assert_called_once()
