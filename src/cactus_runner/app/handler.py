@@ -57,9 +57,9 @@ async def init_handler(request: web.Request):
     'DEV_SKIP_DB_PRECONDITIONS' can be set.
 
     Triggering the startup of the envoy server (step 3) is achieved by writing a '.env' file
-    containing the envoy server configuration parameters then writing an empty 'envoy.kickstart' file
+    containing the envoy server configuration parameters then writing an empty kickoff file
     which is recognised by the container management system and results in the envoy server starting.
-    The location to write these files is controlled by the 'SHARED_VOLUME' environment variable.
+    The full paths of these two files is set through the ENVOY_ENV_FILE and KICKSTART_FILE environment variables.
 
     Args:
         request: An aiohttp.web.Request instance. The requests must include the following
@@ -156,18 +156,22 @@ async def init_handler(request: web.Request):
     request.app[APPKEY_RUNNER_STATE].active_test_procedure = active_test_procedure
 
     # Trigger the envoy server to be started
-    DEFAULT_SHARED_VOLUME = "shared"
-    SHARED_VOLUME = Path(os.getenv("SHARED_VOLUME", DEFAULT_SHARED_VOLUME))
+    DEFAULT_ENVOY_ENV_FILE = "/shared/envoy.env"
+    ENVOY_ENV_FILE = os.getenv("ENVOY_ENV_FILE", DEFAULT_ENVOY_ENV_FILE)
 
-    with open(SHARED_VOLUME / ".env", "w") as fp:
+    with open(ENVOY_ENV_FILE, "w") as fp:
         env_vars = active_test_procedure.definition.envoy_environment_variables
         if env_vars:
             for env_var_name, env_var_value in env_vars.items():
                 fp.write(f'{env_var_name}="{env_var_value}"')
+    logger.debug(f"Wrote envoy environment variables to '{ENVOY_ENV_FILE}'")
 
     # Write an empty file to signal to cactus orchestrator that we are ready for envoy to be started
-    with open(SHARED_VOLUME / "envoy.kickstart", "w") as fp:
+    DEFAULT_KICKOFF_FILE = "/shared/.kickoff"
+    KICKOFF_FILE = os.getenv("KICKOFF_FILE", DEFAULT_KICKOFF_FILE)
+    with open(KICKOFF_FILE, "w") as fp:
         pass
+    logger.debug(f"Wrote kickoff file to '{KICKOFF_FILE}'")
 
     # TODO Should we put a sleep or ping an envoy server healthcheck here before returning a response?
 
