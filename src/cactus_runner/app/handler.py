@@ -37,6 +37,8 @@ from cactus_runner.models import (
 
 logger = logging.getLogger(__name__)
 
+UNRECOGNISED_STEP_NAME = "IGNORED"
+
 
 async def init_handler(request: web.Request):
     """Handler for init requests.
@@ -383,7 +385,7 @@ async def proxied_request_handler(request):
     # has been handled the step is "complete"
     if listener is None:
         # 'IGNORED' indicates request wasn't recognised by the test procedure and didn't progress it any further
-        step_name = "IGNORED"
+        step_name = UNRECOGNISED_STEP_NAME
     else:
         active_test_procedure.step_status[listener.step] = StepStatus.RESOLVED
         step_name = listener.step
