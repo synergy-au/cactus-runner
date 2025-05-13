@@ -7,7 +7,12 @@ from assertical.asserts.time import assert_nowish
 
 from cactus_runner.app import handler
 from cactus_runner.app.shared import APPKEY_RUNNER_STATE
-from cactus_runner.models import ClientInteraction, ClientInteractionType, RunnerStatus
+from cactus_runner.models import (
+    ClientInteraction,
+    ClientInteractionType,
+    RequestEntry,
+    RunnerStatus,
+)
 
 
 @pytest.mark.asyncio
@@ -118,6 +123,7 @@ async def test_proxied_request_handler(mocker):
     request.path_qs = "/dcap"
     request.method = "GET"
     request.read = request_read
+    request.app[APPKEY_RUNNER_STATE].request_history = []
 
     handler.SERVER_URL = ""  # Override the server url
 
@@ -160,6 +166,18 @@ async def test_proxied_request_handler(mocker):
     for key, value in response_headers.items():
         assert key in response.headers
         assert response.headers[key] == value
+
+    #  ... verify we updated the request history
+    request_entries = request.app[APPKEY_RUNNER_STATE].request_history
+    assert len(request_entries) == 1
+    request_entry = request_entries[0]
+    assert isinstance(request_entry, RequestEntry)
+    assert request_entry.url == request.path_qs
+    assert request_entry.path == request.path
+    assert request_entry.method == request.method
+    assert_nowish(request_entry.timestamp)
+    assert request_entry.status == response.status
+    assert request_entry.step_name == handler.UNRECOGNISED_STEP_NAME
 
 
 @pytest.mark.asyncio
