@@ -12,6 +12,7 @@ from cactus_runner.models import (
     ClientInteractionType,
     RequestEntry,
     RunnerStatus,
+    StepStatus,
 )
 
 
@@ -110,6 +111,52 @@ async def test_proxied_request_handler_performs_authorization(mocker):
     # We are not supplying the certificate in the request so we
     # except a 409 (FORBIDDEN) response
     assert response.status == http.HTTPStatus.FORBIDDEN
+
+
+@pytest.mark.asyncio
+async def test_proxied_request_handler_checks_listeners(mocker):
+    # Arrange
+    request_data = ""
+    request_read = AsyncMock()
+    request_read.return_value = request_data
+    request = MagicMock()
+    request.path = "/dcap"
+    request.path_qs = "/dcap"
+    request.method = "GET"
+    request.read = request_read
+    request.app[APPKEY_RUNNER_STATE].request_history = []
+    request.app[APPKEY_RUNNER_STATE].active_test_procedure.step_status = {}
+
+    handler.SERVER_URL = ""  # Override the server url
+
+    handler.DEV_SKIP_AUTHORIZATION_CHECK = True
+
+    response_text = "RESPONSE-TEXT"
+    response_status = http.HTTPStatus.OK
+    response_headers = {"X-API-Key": "API-KEY"}
+    mock_client_request = mocker.patch("aiohttp.client.request")
+    mock_client_request.return_value.__aenter__.return_value.status = response_status
+    mock_client_request.return_value.__aenter__.return_value.read.return_value = response_text
+    mock_client_request.return_value.__aenter__.return_value.headers = response_headers
+
+    # spy_handle_event = mocker.spy(handler.event, "handle_event")
+    mock_handle_event = mocker.patch("cactus_runner.app.event.handle_event")
+    matching_step_name = "STEP-NAME"
+    mock_handle_event.return_value.step = matching_step_name
+
+    # Act
+    _ = await handler.proxied_request_handler(request=request)
+
+    # Assert
+    mock_handle_event.assert_called_once()
+
+    #  ... verify we updated the request history
+    request_entries = request.app[APPKEY_RUNNER_STATE].request_history
+    request_entry = request_entries[0]
+    assert request_entry.step_name == matching_step_name
+
+    # ... verify we updated the step status of the active test procedure
+    assert request.app[APPKEY_RUNNER_STATE].active_test_procedure.step_status[matching_step_name] == StepStatus.RESOLVED
 
 
 @pytest.mark.asyncio
