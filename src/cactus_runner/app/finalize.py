@@ -7,7 +7,7 @@ from pathlib import Path
 
 from aiohttp import web
 
-from cactus_runner.app.precondition import DATABASE_URL
+from cactus_runner.app.database import DatabaseNotInitialisedError, get_postgres_dsn
 
 logger = logging.getLogger(__name__)
 
@@ -40,27 +40,27 @@ def get_zip_contents(json_status_summary: str, runner_logfile: str, envoy_logfil
         shutil.copyfile(envoy_logfile, destination)
 
         # Create db dump
-        if DATABASE_URL is None:
-            raise DatabaseDumpError("DATABASE_URL environment variable not set")
-        else:
-            connection_string = DATABASE_URL.replace("+psycopg", "")
-            dump_file = str(archive_dir / "envoy_db.dump")
-            exectuable_name = "pg_dump"
-            command = [
-                exectuable_name,
-                f"--dbname={connection_string}",
-                "-f",
-                dump_file,
-                "--data-only",
-                "--inserts",
-                "--no-password",
-            ]
-            try:
-                subprocess.run(command)
-            except FileNotFoundError:
-                logger.error(
-                    f"Unable to create database snapshot ('{exectuable_name}' executable not found). Did you forget to install 'postgresql-client'?"
-                )
+        try:
+            connection_string = get_postgres_dsn()
+        except DatabaseNotInitialisedError:
+            raise DatabaseDumpError("Database is not initialised and therefore cannot be dumped")
+        dump_file = str(archive_dir / "envoy_db.dump")
+        exectuable_name = "pg_dump"
+        command = [
+            exectuable_name,
+            f"--dbname={connection_string}",
+            "-f",
+            dump_file,
+            "--data-only",
+            "--inserts",
+            "--no-password",
+        ]
+        try:
+            subprocess.run(command)
+        except FileNotFoundError:
+            logger.error(
+                f"Unable to create database snapshot ('{exectuable_name}' executable not found). Did you forget to install 'postgresql-client'?"
+            )
 
         # Create the temporary zip file
         ARCHIVE_BASEFILENAME = "finalize"

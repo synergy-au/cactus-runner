@@ -1,9 +1,7 @@
 import http
 import logging
-import logging.config
 import os
 from datetime import datetime, timezone
-from pathlib import Path
 
 from aiohttp import client, web
 from cactus_test_definitions import (

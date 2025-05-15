@@ -2,6 +2,7 @@ import atexit
 import json
 import logging
 import logging.config
+import os
 from pathlib import Path
 
 from aiohttp import web
@@ -9,6 +10,7 @@ from cactus_test_definitions import TestProcedureConfig
 
 from cactus_runner import __version__
 from cactus_runner.app import handler
+from cactus_runner.app.database import initialise_database_connection
 from cactus_runner.app.env import (
     APP_HOST,
     APP_PORT,
@@ -26,6 +28,10 @@ logger = logging.getLogger(__name__)
 
 
 def create_app() -> web.Application:
+
+    # Ensure the DB connection is up and running before starting the app.
+    initialise_database_connection(os.getenv("DATABASE_URL"))
+
     app = web.Application()
 
     # Add routes for Test Runner

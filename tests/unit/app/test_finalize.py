@@ -19,8 +19,11 @@ def test_get_zip_contents(mocker):
     def random_string(length: int) -> str:
         return "".join(random.choices(string.ascii_uppercase + string.digits, k=length))
 
-    finalize.DATABASE_URL = "Placeholder"
+    expected_postgres_dsn = "fake:dsn//value"
+    get_postgres_dsn_mock = mocker.patch("cactus_runner.app.finalize.get_postgres_dsn")
+    get_postgres_dsn_mock.return_value = expected_postgres_dsn
     subprocess_run_mock = mocker.patch.object(finalize.subprocess, "run")  # prevent db dump
+
     json_status_summary = random_string(length=100)
     contents_of_logfile = bytes(random_string(length=100), encoding="utf-8")
 
@@ -49,11 +52,11 @@ def test_get_zip_contents(mocker):
 
 
 def test_get_zip_contents_raises_databasedumperror(mocker):
-    finalize.DATABASE_URL = None
+
     mocker.patch.object(finalize.shutil, "copyfile")  # prevent logfile copying
 
     with pytest.raises(finalize.DatabaseDumpError):
-        _ = finalize.get_zip_contents(json_status_summary="", runner_logfile="", envoy_logfile="")
+        finalize.get_zip_contents(json_status_summary="", runner_logfile="", envoy_logfile="")
 
 
 def test_create_response(mocker):
