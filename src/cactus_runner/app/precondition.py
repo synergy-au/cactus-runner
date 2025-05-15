@@ -1,30 +1,21 @@
 import logging
-import os
 from datetime import datetime, timedelta
+from importlib import resources
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from importlib import resources
 
-import psycopg
 from envoy.server.model.aggregator import Aggregator, AggregatorCertificateAssignment
 from envoy.server.model.base import Certificate
 from psycopg import Connection
-from sqlalchemy import create_engine, insert
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import insert
+
+from cactus_runner.app.database import begin_session, open_connection
 
 logger = logging.getLogger(__name__)
 
 
 class UnableToApplyDatabasePrecondition(Exception):
     pass
-
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-# Set up the database engine and session maker
-if DATABASE_URL is not None:
-    engine = create_engine(DATABASE_URL)
-    Session = sessionmaker(engine)
 
 
 def execute_sql_file_for_connection(connection: Connection, path_to_sql_file: Path) -> None:
@@ -37,12 +28,9 @@ def execute_sql_file_for_connection(connection: Connection, path_to_sql_file: Pa
 
 
 def apply_db_precondition(precondition: str) -> None:
-    if DATABASE_URL is None:
-        raise UnableToApplyDatabasePrecondition("DATABASE_URL environment variable not set")
 
     # Open connection to database
-    connection_string = DATABASE_URL.replace("+psycopg", "")
-    with psycopg.connect(conninfo=connection_string) as connection:
+    with open_connection() as connection:
         # The precondition is either a path to a .sql file
         # or a resource made available through the cactus_test_defintions package
         path = Path(precondition)
@@ -56,13 +44,13 @@ def apply_db_precondition(precondition: str) -> None:
                 # Verify that the file exists
                 if not path.exists():
                     raise UnableToApplyDatabasePrecondition(f"'{precondition}' file does not exist")
-                    
+
                 execute_sql_file_for_connection(connection=connection, path_to_sql_file=path)
                 logger.info(f"Precondition '{precondition}' applied to database.")
 
 
 def register_aggregator(lfdi: str) -> None:
-    with Session.begin() as session:
+    with begin_session() as session:
         now = datetime.now(tz=ZoneInfo("UTC"))
         expiry = now + timedelta(hours=24)
         certificate = Certificate(lfdi=lfdi, created=now, expiry=expiry)

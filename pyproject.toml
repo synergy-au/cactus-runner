@@ -5,12 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cactus-runner"
 dynamic = ["version", "readme"]
-authors = [
-  {name = "Mike Turner", email = "mike.turner@anu.edu.au"},
-]
-maintainers = [
-  {name = "Mike Turner", email = "mike.turner@anu.edu.au"},
-]
+authors = [{ name = "Mike Turner", email = "mike.turner@anu.edu.au" }]
+maintainers = [{ name = "Mike Turner", email = "mike.turner@anu.edu.au" }]
 description = "Cactus Test Procedure Runner (CSIP-AUS Client Test Harness)"
 keywords = ["CSIP-AUS", "client", "testing", "runner"]
 requires-python = ">=3.12"
@@ -49,26 +45,14 @@ dev = [
   "python-dotenv[cli]",
   "coverage",
 ]
-test = [
-  "pytest",
-  "pytest-asyncio",
-  "pytest-mock",
-  "assertical",
-]
-cli = [
-  "rich",
-  "click",
-]
-docs = [
-  "sphinx",
-]
+test = ["pytest", "pytest-asyncio", "pytest-mock", "assertical"]
+cli = ["rich", "click"]
+docs = ["sphinx"]
 
 [tool.pytest.ini_options]
 minversion = "6.0"
 addopts = "-ra -q"
-testpaths = [
-  "tests",
-]
+testpaths = ["tests"]
 asyncio_default_fixture_loop_scope = "session"
 
 [tool.flake8]
@@ -80,7 +64,7 @@ line-length = 120
 
 [tool.isort]
 profile = "black"
-src_paths = ["src","tests"]
+src_paths = ["src", "tests"]
 
 [tool.bandit]
 exclude_dirs = ["tests"]
@@ -88,6 +72,5 @@ exclude_dirs = ["tests"]
 [tool.mypy]
 
 [tool.setuptools.dynamic]
-version = {attr = "cactus_runner.__version__"}
-readme = {file = ["README.md"], content-type="text/markdown"}
-
+version = { attr = "cactus_runner.__version__" }
+readme = { file = ["README.md"], content-type = "text/markdown" }
