@@ -9,7 +9,7 @@ from cactus_test_definitions import (
 )
 from envoy.server.api.depends.lfdi_auth import LFDIAuthDepends
 
-from cactus_runner.app import auth, event, finalize, precondition, status
+from cactus_runner.app import action, auth, event, finalize, precondition, status
 from cactus_runner.app.database import begin_session
 from cactus_runner.app.env import (
     DEV_AGGREGATOR_PREREGISTERED,
@@ -219,6 +219,13 @@ async def start_handler(request: web.Request):
     request.app[APPKEY_RUNNER_STATE].last_client_interaction = ClientInteraction(
         interaction_type=ClientInteractionType.TEST_PROCEDURE_START, timestamp=datetime.now(timezone.utc)
     )
+
+    # Fire any precondition actions
+    if active_test_procedure.definition.preconditions and active_test_procedure.definition.preconditions.actions:
+        async with begin_session() as session:
+            envoy_client = request.app[APPKEY_ENVOY_ADMIN_CLIENT]
+            for a in active_test_procedure.definition.preconditions.actions:
+                await action.apply_action(a, active_test_procedure, session, envoy_client)
 
     # Active the first listener
     if active_test_procedure.listeners:
