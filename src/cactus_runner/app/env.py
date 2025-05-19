@@ -4,9 +4,15 @@ import os
 DEFAULT_SERVER_URL = "http://localhost:8000"
 SERVER_URL = os.getenv("SERVER_URL", DEFAULT_SERVER_URL)
 
+# envoy-admin configurations - this is the upstream admin api for manipulating envoy-db.
+DEFAULT_ENVOY_ADMIN_URL = "http://localhost:8001"
+ENVOY_ADMIN_URL = os.getenv("ENVOY_ADMIN_URL", DEFAULT_ENVOY_ADMIN_URL)
+ENVOY_ADMIN_BASICAUTH_USERNAME = os.environ["ENVOY_ADMIN_BASICAUTH_USERNAME"]
+ENVOY_ADMIN_BASICAUTH_PASSWORD = os.environ["ENVOY_ADMIN_BASICAUTH_PASSWORD"]
+
 # APP_HOST is the IP address of cactus runner (aiohttp) application
 # See https://docs.aiohttp.org/en/stable/web_reference.html#aiohttp.web.run_app
-DEFAULT_APP_HOST = "0.0.0.0"  # This is the aiohttp default
+DEFAULT_APP_HOST = "127.0.0.1"  # This is the aiohttp default
 APP_HOST = os.getenv("APP_HOST", DEFAULT_APP_HOST)
 
 # APP_PORT is the port the cactus runner application listens on.
