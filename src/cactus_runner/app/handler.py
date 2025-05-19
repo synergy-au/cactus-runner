@@ -8,6 +8,7 @@ from cactus_test_definitions import (
     Event,
 )
 from envoy.server.api.depends.lfdi_auth import LFDIAuthDepends
+from envoy.server.crud.common import convert_lfdi_to_sfdi
 
 from cactus_runner.app import action, auth, event, finalize, precondition, status
 from cactus_runner.app.database import begin_session
@@ -135,6 +136,8 @@ async def init_handler(request: web.Request):
         definition=definition,
         listeners=listeners,
         step_status={step: StepStatus.PENDING for step in definition.steps.keys()},
+        client_lfdi=aggregator_lfdi,
+        client_sfdi=convert_lfdi_to_sfdi(aggregator_lfdi),
     )
 
     # Apply preconditions (if present)

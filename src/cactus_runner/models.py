@@ -30,6 +30,8 @@ class ActiveTestProcedure:
     definition: TestProcedure
     listeners: list[Listener]
     step_status: dict[str, StepStatus]
+    client_lfdi: str  # The LFDI of the client certificate expected for the test
+    client_sfdi: int  # The SFDI of the client certificate expected for the test
 
 
 @dataclass

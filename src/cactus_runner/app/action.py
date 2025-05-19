@@ -208,6 +208,28 @@ async def action_set_post_rate(resolved_parameters: dict[str, Any], envoy_client
     await envoy_client.update_runtime_config(RuntimeServerConfigRequest(mup_postrate_seconds=rate_seconds))
 
 
+async def action_register_end_device(
+    active_test_procedure: ActiveTestProcedure, resolved_parameters: dict[str, Any], session: AsyncSession
+):
+
+    # This is only really used for out of band registration tests - it just needs to work "once"
+    nmi: str | None = resolved_parameters.get("nmi", None)
+    registration_pin: int | None = resolved_parameters.get("registration_pin", None)
+    session.add(
+        Site(
+            nmi=nmi,
+            aggregator_id=1,
+            timezone_id="Australia/Brisbane",
+            created_time=datetime.now(tz=timezone.utc),
+            lfdi=active_test_procedure.client_lfdi,
+            sfdi=active_test_procedure.client_sfdi,
+            device_category=0,
+            registration_pin=registration_pin if registration_pin is not None else 1,
+        )
+    )
+    await session.commit()
+
+
 async def apply_action(
     action: Action, active_test_procedure: ActiveTestProcedure, session: AsyncSession, envoy_client: EnvoyAdminClient
 ):
@@ -248,6 +270,9 @@ async def apply_action(
 
             case "set-post-rate":
                 await action_set_post_rate(resolved_parameters, envoy_client)
+
+            case "register-end-device":
+                await action_register_end_device(active_test_procedure, resolved_parameters, session)
     except Exception as exc:
         logger.error(f"Failed executing action {action}", exc_info=exc)
         raise FailedActionError(f"Failed executing action {action.type}")
