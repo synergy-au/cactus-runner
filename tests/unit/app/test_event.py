@@ -5,7 +5,10 @@ from assertical.fake.sqlalchemy import assert_mock_session, create_mock_session
 from cactus_test_definitions import Event
 
 from cactus_runner.app import event
-from cactus_runner.models import Listener
+from cactus_runner.app.shared import (
+    APPKEY_RUNNER_STATE,
+)
+from cactus_runner.models import Listener, StepStatus
 
 
 @pytest.mark.parametrize(
@@ -72,7 +75,7 @@ async def test_handle_event_with_matching_listener(
     mock_envoy_client = MagicMock()
 
     # Act
-    matched_listener = await event.handle_event(
+    matched_listener, serve_request_first = await event.handle_event(
         session=mock_session,
         event=test_event,
         active_test_procedure=active_test_procedure,
@@ -81,6 +84,7 @@ async def test_handle_event_with_matching_listener(
 
     # Assert
     assert matched_listener == listeners[matching_listener_index]
+    assert not serve_request_first
     assert_mock_session(mock_session)
 
 
@@ -192,7 +196,7 @@ async def test_handle_event_with_no_matches(test_event: Event, listeners: list[L
     mock_envoy_client = MagicMock()
 
     # Act
-    listener = await event.handle_event(
+    listener, serve_request_first = await event.handle_event(
         session=mock_session,
         event=test_event,
         active_test_procedure=active_test_procedure,
@@ -201,4 +205,70 @@ async def test_handle_event_with_no_matches(test_event: Event, listeners: list[L
 
     # Assert
     assert listener is None
+    assert not serve_request_first
     assert_mock_session(mock_session)
+
+
+@pytest.mark.asyncio
+async def test_update_test_procedure_progress(pg_empty_config, mocker):
+    # Arrange
+    request = MagicMock()
+    request.path = "/dcap"
+    request.path_qs = "/dcap"
+    request.method = "GET"
+
+    active_test_procedure = MagicMock()
+    active_test_procedure.step_status = {}
+
+    request.app[APPKEY_RUNNER_STATE].active_test_procedure = active_test_procedure
+
+    step_name = "STEP-NAME"
+    serve_request_first = False
+    listener = MagicMock()
+    listener.step = step_name
+    mock_handle_event = mocker.patch("cactus_runner.app.event.handle_event")
+    mock_handle_event.return_value = (listener, serve_request_first)
+
+    # Act
+    matching_step_name, serve_request_first = await event.update_test_procedure_progress(
+        request=request, active_test_procedure=active_test_procedure
+    )
+
+    # Assert
+    mock_handle_event.assert_called_once()
+    assert matching_step_name == step_name
+    assert serve_request_first == serve_request_first
+    assert request.app[APPKEY_RUNNER_STATE].active_test_procedure.step_status[step_name] == StepStatus.RESOLVED
+
+
+@pytest.mark.asyncio
+async def test_update_test_procedure_progress_respects_serve_request_first(pg_empty_config, mocker):
+    # Arrange
+    request = MagicMock()
+    request.path = "/dcap"
+    request.path_qs = "/dcap"
+    request.method = "GET"
+
+    active_test_procedure = MagicMock()
+    active_test_procedure.step_status = {}
+
+    request.app[APPKEY_RUNNER_STATE].active_test_procedure = active_test_procedure
+
+    step_name = "STEP-NAME"
+    serve_request_first = True
+    listener = MagicMock()
+    listener.step = step_name
+    listener.parameters = {"serve_request_first": True}
+    mock_handle_event = mocker.patch("cactus_runner.app.event.handle_event")
+    mock_handle_event.return_value = (listener, serve_request_first)
+
+    # Act
+    matching_step_name, serve_request_first = await event.update_test_procedure_progress(
+        request=request, active_test_procedure=active_test_procedure
+    )
+
+    # Assert
+    mock_handle_event.assert_called_once()
+    assert matching_step_name == step_name
+    assert serve_request_first == serve_request_first
+    assert not request.app[APPKEY_RUNNER_STATE].active_test_procedure.step_status

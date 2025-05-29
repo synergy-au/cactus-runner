@@ -2,14 +2,11 @@ import http
 import logging
 from datetime import datetime, timezone
 
-from aiohttp import client, web
-from cactus_test_definitions import (
-    Event,
-)
+from aiohttp import web
 from envoy.server.api.depends.lfdi_auth import LFDIAuthDepends
 from envoy.server.crud.common import convert_lfdi_to_sfdi
 
-from cactus_runner.app import action, auth, event, finalize, precondition, status
+from cactus_runner.app import action, auth, event, finalize, precondition, proxy, status
 from cactus_runner.app.database import begin_session
 from cactus_runner.app.env import (
     DEV_SKIP_AUTHORIZATION_CHECK,
@@ -33,8 +30,6 @@ from cactus_runner.models import (
 )
 
 logger = logging.getLogger(__name__)
-
-UNRECOGNISED_STEP_NAME = "IGNORED"
 
 
 async def init_handler(request: web.Request):
@@ -350,46 +345,28 @@ async def proxied_request_handler(request):
     method = request.method
     logger.debug(f"{relative_url=} {remote_url=} {method=}")
 
-    # Update the progress of the test procedure
-    request_event = Event(type=f"{method}-request-received", parameters={"endpoint": relative_url})
-    async with begin_session() as session:
-        envoy_client = request.app[APPKEY_ENVOY_ADMIN_CLIENT]
-        listener = await event.handle_event(
-            event=request_event, active_test_procedure=active_test_procedure, session=session, envoy_client=envoy_client
+    step_name, serve_request_first = await event.update_test_procedure_progress(
+        request=request, active_test_procedure=active_test_procedure, request_served=False
+    )
+
+    handler_response = await proxy.proxy_request(
+        request=request, remote_url=remote_url, active_test_procedure=active_test_procedure
+    )
+
+    if serve_request_first:
+        step_name, _ = await event.update_test_procedure_progress(
+            request=request, active_test_procedure=active_test_procedure, request_served=True
         )
-
-    # The assumes each step only has one event and once the action associated with the event
-    # has been handled the step is "complete"
-    if listener is None:
-        # 'IGNORED' indicates request wasn't recognised by the test procedure and didn't progress it any further
-        step_name = UNRECOGNISED_STEP_NAME
-    else:
-        active_test_procedure.step_status[listener.step] = StepStatus.RESOLVED
-        step_name = listener.step
-
-    # Forward the request to the reference server
-    if active_test_procedure.communications_disabled:
-        # We simulate communication loss as a series of HTTP 500 responses
-        headers = []
-        status = http.HTTPStatus.INTERNAL_SERVER_ERROR
-        body = "COMMS DISABLED"
-    else:
-        async with client.request(
-            request.method, remote_url, headers=request.headers.copy(), allow_redirects=False, data=await request.read()
-        ) as response:
-            headers = response.headers.copy()
-            status = http.HTTPStatus(response.status)
-            body = await response.read()
 
     # Record in request history
     request_entry = RequestEntry(
         url=remote_url,
         path=relative_url,
         method=http.HTTPMethod(method),
-        status=status,
+        status=http.HTTPStatus(handler_response.status),
         timestamp=request_timestamp,
         step_name=step_name,
     )
     request.app[APPKEY_RUNNER_STATE].request_history.append(request_entry)
 
-    return web.Response(headers=headers, status=status, body=body)
+    return handler_response
