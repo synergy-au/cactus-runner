@@ -1,6 +1,5 @@
 import http
 import logging
-import os
 from datetime import datetime, timezone
 
 from aiohttp import client, web
@@ -141,13 +140,6 @@ async def init_handler(request: web.Request):
     )
 
     request.app[APPKEY_RUNNER_STATE].active_test_procedure = active_test_procedure
-
-    # Write an empty file to signal to cactus orchestrator that we are ready for envoy to be started
-    DEFAULT_KICKOFF_FILE = "/shared/.kickoff"
-    KICKOFF_FILE = os.getenv("KICKOFF_FILE", DEFAULT_KICKOFF_FILE)
-    with open(KICKOFF_FILE, "w"):
-        pass
-    logger.debug(f"Wrote kickoff file to '{KICKOFF_FILE}'")
 
     # TODO Should we put a sleep or ping an envoy server healthcheck here before returning a response?
 

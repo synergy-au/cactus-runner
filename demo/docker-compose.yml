@@ -24,7 +24,6 @@ services:
     environment:
       - SERVER_URL=http://cactus-envoy:8000
       - DATABASE_URL=postgresql+psycopg://test_user:test_pwd@cactus-envoy-db/test_db
-      - KICKOFF_FILE=/shared/.kickoff
       - ENVOY_ENV_FILE=/shared/envoy.env
       - ENVOY_ADMIN_BASICAUTH_USERNAME=admin
       - ENVOY_ADMIN_BASICAUTH_PASSWORD=password
@@ -34,7 +33,6 @@ services:
     image: cactusimageregistry.azurecr.io/cactus-teststack-init:4
     restart: "no"
     environment:
-      - KICKOFF_FILE=/shared/.kickoff
       - ENVOY_DATABASE_URL=postgresql://test_user:test_pwd@cactus-envoy-db/test_db
     networks:
       - cactus-envoy-net
