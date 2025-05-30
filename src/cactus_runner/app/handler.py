@@ -130,7 +130,7 @@ async def init_handler(request: web.Request):
     )
 
     logger.info(
-        f"Test Procedure '{active_test_procedure.name}' started",
+        f"Test Procedure '{active_test_procedure.name}' initialised.",
         extra={"test_procedure": active_test_procedure.name},
     )
 
@@ -194,7 +194,7 @@ async def start_handler(request: web.Request):
         active_test_procedure.listeners[0].enabled = True
 
     logger.info(
-        f"Test Procedure '{active_test_procedure.name}' started",
+        f"Test Procedure '{active_test_procedure.name}' started.",
         extra={"test_procedure": active_test_procedure.name},
     )
 
