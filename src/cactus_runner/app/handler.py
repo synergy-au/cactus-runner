@@ -7,6 +7,7 @@ from envoy.server.api.depends.lfdi_auth import LFDIAuthDepends
 from envoy.server.crud.common import convert_lfdi_to_sfdi
 
 from cactus_runner.app import action, auth, event, finalize, precondition, proxy, status
+from cactus_runner.app.check import all_checks_passing
 from cactus_runner.app.database import begin_session
 from cactus_runner.app.env import (
     DEV_SKIP_AUTHORIZATION_CHECK,
@@ -168,6 +169,17 @@ async def start_handler(request: web.Request):
             text="Unable to start non-existent test procedure. Try initialising a test procedure before continuing.",
         )
 
+    # We cannot start a test procedure if any of the precondition checks are failing:
+    if active_test_procedure.definition.preconditions:
+        async with begin_session() as session:
+            if not await all_checks_passing(
+                active_test_procedure.definition.preconditions.checks, active_test_procedure, session
+            ):
+                return web.Response(
+                    status=http.HTTPStatus.PRECONDITION_FAILED,
+                    text="Unable to start test procedure. One or more preconditions have NOT been met.",
+                )
+
     # We cannot start another test procedure if one is already running.
     # If there are active listeners then the test procedure must have already been started.
     listener_state = [listener.enabled for listener in active_test_procedure.listeners]
@@ -188,6 +200,8 @@ async def start_handler(request: web.Request):
             envoy_client = request.app[APPKEY_ENVOY_ADMIN_CLIENT]
             for a in active_test_procedure.definition.preconditions.actions:
                 await action.apply_action(a, active_test_procedure, session, envoy_client)
+
+            await session.commit()  # Actions can write updates to the DB directly
 
     # Active the first listener
     if active_test_procedure.listeners:
@@ -231,11 +245,15 @@ async def finalize_handler(request):
 
     if active_test_procedure is not None:
         finalized_test_procedure_name = active_test_procedure.name
-        json_status_summary = status.get_active_runner_status(
-            active_test_procedure=active_test_procedure,
-            request_history=request.app[APPKEY_RUNNER_STATE].request_history,
-            last_client_interaction=request.app[APPKEY_RUNNER_STATE].last_client_interaction,
-        ).to_json()
+        async with begin_session() as session:
+            json_status_summary = (
+                await status.get_active_runner_status(
+                    session=session,
+                    active_test_procedure=active_test_procedure,
+                    request_history=request.app[APPKEY_RUNNER_STATE].request_history,
+                    last_client_interaction=request.app[APPKEY_RUNNER_STATE].last_client_interaction,
+                )
+            ).to_json()
 
         # Clear the active test procedure and request history
         request.app[APPKEY_RUNNER_STATE].active_test_procedure = None
@@ -272,11 +290,13 @@ async def status_handler(request):
     logger.info("Test procedure status requested.")
 
     if active_test_procedure is not None:
-        runner_status = status.get_active_runner_status(
-            active_test_procedure=active_test_procedure,
-            request_history=request.app[APPKEY_RUNNER_STATE].request_history,
-            last_client_interaction=request.app[APPKEY_RUNNER_STATE].last_client_interaction,
-        )
+        async with begin_session() as session:
+            runner_status = await status.get_active_runner_status(
+                session=session,
+                active_test_procedure=active_test_procedure,
+                request_history=request.app[APPKEY_RUNNER_STATE].request_history,
+                last_client_interaction=request.app[APPKEY_RUNNER_STATE].last_client_interaction,
+            )
         logger.info(
             f"Status of test procedure '{runner_status.test_procedure_name}': {runner_status.step_status}",
             extra={"test_procedure": runner_status.test_procedure_name},
