@@ -49,14 +49,16 @@ async def periodic_task(app: web.Application):
     """
     while True:
         try:
-            async with begin_session() as session:
-                await event.handle_event_trigger(
-                    trigger=event.generate_time_trigger(),
-                    runner_state=app[APPKEY_RUNNER_STATE],
-                    session=session,
-                    envoy_client=app[APPKEY_ENVOY_ADMIN_CLIENT],
-                )
-                await session.commit()
+            runner_state = app[APPKEY_RUNNER_STATE]
+            if runner_state.active_test_procedure is not None and not runner_state.active_test_procedure.is_finished():
+                async with begin_session() as session:
+                    await event.handle_event_trigger(
+                        trigger=event.generate_time_trigger(),
+                        runner_state=runner_state,
+                        session=session,
+                        envoy_client=app[APPKEY_ENVOY_ADMIN_CLIENT],
+                    )
+                    await session.commit()
 
         except Exception as e:
             # Catch and log uncaught exceptions to prevent periodic task from hanging
