@@ -91,7 +91,7 @@ from cactus_runner.app.schema_validator import (
     <multiplier>0</multiplier>
     <value>600</value>
   </csipaus:setMinWh>
-</DERSettings>""",   
+</DERSettings>""",
     ],
 )
 def test_validate_xml_valid_xml(xml):
