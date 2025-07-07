@@ -66,7 +66,9 @@ from cactus_runner.app.schema_validator import (
     </csipaus:opModImpLimW>
 </DERControlBase>""",
         """
-<DERSettings xsi:schemaLocation="urn:ieee:std:2030.5:ns sep.xsd" xmlns="urn:ieee:std:2030.5:ns" xmlns:csipaus="https://csipaus.org/ns/v1.3-beta/storage" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<DERSettings xsi:schemaLocation="urn:ieee:std:2030.5:ns sep.xsd"
+  xmlns="urn:ieee:std:2030.5:ns" xmlns:csipaus="https://csipaus.org/ns/v1.3-beta/storage"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <setGradW>27</setGradW>
   <setMaxVA>
     <multiplier>0</multiplier>
