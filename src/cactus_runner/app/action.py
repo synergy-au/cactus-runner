@@ -114,6 +114,7 @@ async def action_set_default_der_control(
     export_limit_watts = resolved_parameters.get("opModExpLimW", None)
     gen_limit_watts = resolved_parameters.get("opModGenLimW", None)
     load_limit_watts = resolved_parameters.get("opModLoadLimW", None)
+    storage_target_watts = resolved_parameters.get("opModStorageTargetW", None)
     setGradW = resolved_parameters.get("setGradW", None)
     cancelled = resolved_parameters.get("cancelled", False)
 
@@ -133,6 +134,9 @@ async def action_set_default_der_control(
             ),
             load_limit_watts=(
                 UpdateDefaultValue(value=load_limit_watts) if load_limit_watts is not None else default_val
+            ),
+            storage_target_watts=(
+                UpdateDefaultValue(value=storage_target_watts) if storage_target_watts is not None else default_val
             ),
             ramp_rate_percent_per_second=UpdateDefaultValue(value=setGradW) if setGradW is not None else default_val,
         ),
@@ -186,6 +190,7 @@ async def action_create_der_control(
     export_limit_watts: Decimal | None = resolved_parameters.get("opModExpLimW", None)
     gen_limit_watts: Decimal | None = resolved_parameters.get("opModGenLimW", None)
     load_limit_watts: Decimal | None = resolved_parameters.get("opModLoadLimW", None)
+    storage_target_watts: Decimal | None = resolved_parameters.get("opModStorageTargetW", None)
 
     await envoy_client.create_site_controls(
         site_control_group_id,
@@ -202,6 +207,7 @@ async def action_create_der_control(
                 export_limit_watts=export_limit_watts,
                 generation_limit_watts=gen_limit_watts,
                 load_limit_watts=load_limit_watts,
+                storage_target_watts=storage_target_watts,
             )
         ],
     )

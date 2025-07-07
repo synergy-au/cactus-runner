@@ -16,7 +16,7 @@ from cactus_runner.app.schema_validator import (
         """
 <DERControlList
     xmlns="urn:ieee:std:2030.5:ns"
-    xmlns:csipaus="https://csipaus.org/ns" all="2" href="/derp/0/derc" results="1">
+    xmlns:csipaus="https://csipaus.org/ns/v1.3-beta/storage" all="2" href="/derp/0/derc" results="1">
     <DERControl replyTo="/rsp" responseRequired="03">
         <mRID>ABCDEF0123456789</mRID>
         <description>Example DERControl 1</description>
@@ -47,20 +47,53 @@ from cactus_runner.app.schema_validator import (
                 <multiplier>0</multiplier>
                 <value>20000</value>
             </csipaus:opModLoadLimW>
+            <csipaus:opModStorageTargetW>
+                <multiplier>0</multiplier>
+                <value>10000</value>
+            </csipaus:opModStorageTargetW>
         </DERControlBase>
     </DERControl>
 </DERControlList>""",
         """
-<ConnectionPoint xmlns="https://csipaus.org/ns">
+<ConnectionPoint xmlns="https://csipaus.org/ns/v1.3-beta/storage">
     <connectionPointId>1234567890</connectionPointId>
 </ConnectionPoint>""",
         """
-<DERControlBase xmlns="urn:ieee:std:2030.5:ns" xmlns:csipaus="https://csipaus.org/ns">
+<DERControlBase xmlns="urn:ieee:std:2030.5:ns" xmlns:csipaus="https://csipaus.org/ns/v1.3-beta/storage">
     <csipaus:opModImpLimW>
         <multiplier>0</multiplier>
         <value>20000</value>
     </csipaus:opModImpLimW>
 </DERControlBase>""",
+        """
+<DERSettings xsi:schemaLocation="urn:ieee:std:2030.5:ns sep.xsd"
+  xmlns="urn:ieee:std:2030.5:ns" xmlns:csipaus="https://csipaus.org/ns/v1.3-beta/storage"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <setGradW>27</setGradW>
+  <setMaxVA>
+    <multiplier>0</multiplier>
+    <value>5000</value>
+  </setMaxVA>
+  <setMaxVar>
+    <multiplier>0</multiplier>
+    <value>3000</value>
+  </setMaxVar>
+  <setMaxVarNeg>
+    <multiplier>0</multiplier>
+    <value>3000</value>
+  </setMaxVarNeg>
+  <setMaxW>
+    <multiplier>0</multiplier>
+    <value>4000</value>
+  </setMaxW>
+  <updatedTime>1741922320</updatedTime>
+  <csipaus:doeModesEnabled>0f</csipaus:doeModesEnabled>
+  <csipaus:vppModesEnabled>01</csipaus:vppModesEnabled>
+  <csipaus:setMinWh>
+    <multiplier>0</multiplier>
+    <value>600</value>
+  </csipaus:setMinWh>
+</DERSettings>""",
     ],
 )
 def test_validate_xml_valid_xml(xml):
@@ -76,7 +109,7 @@ def test_validate_xml_valid_xml(xml):
         "",
         "123451",
         '{"foo": 123}',
-        '<ConnectionPoint xmlns="https://csipaus.org/ns"><c',
+        '<ConnectionPoint xmlns="https://csipaus.org/ns/v1.3-beta/storage"><c',
     ],
 )
 def test_validate_xml_not_xml(xml):
@@ -89,13 +122,13 @@ def test_validate_xml_not_xml(xml):
     "xml",
     [
         """
-<ConnectionPoint xmlns="https://csipaus.org/ns">
+<ConnectionPoint xmlns="https://csipaus.org/ns/v1.3-beta/storage">
     <connectionPointId>1234567890</connectionPointId>
     <extraElement/>
 </ConnectionPoint>
 """,  # Extra elements
         """
-<DERControlBase xmlns="urn:ieee:std:2030.5:ns" xmlns:csipaus="https://csipaus.org/ns">
+<DERControlBase xmlns="urn:ieee:std:2030.5:ns" xmlns:csipaus="https://csipaus.org/ns/v1.3-beta/storage">
     <csipaus:opModImpLimW>
         <value>20000</value>
         <multiplier>0</multiplier>

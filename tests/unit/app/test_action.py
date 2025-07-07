@@ -252,6 +252,7 @@ async def test_action_set_default_der_control(pg_base_config, envoy_admin_client
         "opModGenLimW": 12,
         "opModLoadLimW": 13,
         "setGradW": 14,
+        "opModStorageTargetW": 15,
     }
     if cancelled is not None:
         resolved_params["cancelled"] = cancelled
@@ -271,6 +272,7 @@ async def test_action_set_default_der_control(pg_base_config, envoy_admin_client
         assert saved_result.generation_limit_active_watts == 12
         assert saved_result.load_limit_active_watts == 13
         assert saved_result.ramp_rate_percent_per_second == 14
+        assert saved_result.storage_target_active_watts == 15
 
 
 @pytest.mark.anyio
