@@ -136,7 +136,7 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
 
     active_test_procedure.finished_zip_data = get_zip_contents(
         json_status_summary=json_status_summary,
-        runner_logfile="logs/cactus_runner.jsonl",
-        envoy_logfile="logs/envoy.jsonl",
+        runner_logfile="/shared/cactus_runner.jsonl",
+        envoy_logfile="/shared/envoy.jsonl",
     )
     return active_test_procedure.finished_zip_data
