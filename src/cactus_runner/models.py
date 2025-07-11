@@ -42,6 +42,10 @@ class ActiveTestProcedure:
         accumulate and any client events should be ignored"""
         return self.finished_zip_data is not None
 
+    def is_started(self) -> bool:
+        """True if any listener has been enabled"""
+        return any([True for listener in self.listeners if listener.enabled_time is not None])
+
 
 @dataclass
 class RequestEntry(JSONWizard):
@@ -101,11 +105,22 @@ class RunnerState:
 
     active_test_procedure: ActiveTestProcedure | None = None
     request_history: list[RequestEntry] = field(default_factory=list)
-    last_client_interaction: ClientInteraction = field(
-        default_factory=lambda: ClientInteraction(
-            interaction_type=ClientInteractionType.RUNNER_START, timestamp=datetime.now(timezone.utc)
-        )
+    client_interactions: list[ClientInteraction] = field(
+        default_factory=lambda: [
+            ClientInteraction(interaction_type=ClientInteractionType.RUNNER_START, timestamp=datetime.now(timezone.utc))
+        ]
     )
+
+    @property
+    def last_client_interaction(self) -> ClientInteraction:
+        return self.client_interactions[-1]
+
+    def interaction_timestamp(self, interaction_type: ClientInteractionType) -> datetime | None:
+        """Returns the timestamp of the first client interaction of type 'interaction_type'"""
+        for client_interaction in self.client_interactions:
+            if client_interaction.interaction_type == interaction_type:
+                return client_interaction.timestamp
+        return None
 
 
 @dataclass

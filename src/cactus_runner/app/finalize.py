@@ -3,14 +3,25 @@ import os
 import shutil
 import subprocess  # nosec B404
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
-from aiohttp import web
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cactus_runner.app.database import DatabaseNotInitialisedError, get_postgres_dsn
+from cactus_runner.app import check, reporting
+from cactus_runner.app.database import (
+    DatabaseNotInitialisedError,
+    begin_session,
+    get_postgres_dsn,
+)
+from cactus_runner.app.envoy_common import get_sites
 from cactus_runner.app.log import LOG_FILE_CACTUS_RUNNER, LOG_FILE_ENVOY
+from cactus_runner.app.readings import (
+    MANDATORY_READING_SPECIFIERS,
+    get_reading_counts,
+    get_readings,
+)
 from cactus_runner.app.status import get_active_runner_status
 from cactus_runner.models import RunnerState
 
@@ -25,7 +36,9 @@ class NoActiveTestProcedure(Exception):
     pass
 
 
-def get_zip_contents(json_status_summary: str, runner_logfile: str, envoy_logfile: str) -> bytes:
+def get_zip_contents(
+    json_status_summary: str, runner_logfile: str, envoy_logfile: str, pdf_data: bytes, filename_infix: str = ""
+) -> bytes:
     """Returns the contents of the zipped test procedures artifacts in bytes"""
     # Work in a temporary directory
     with tempfile.TemporaryDirectory() as tempdirname:
@@ -36,30 +49,35 @@ def get_zip_contents(json_status_summary: str, runner_logfile: str, envoy_logfil
         os.mkdir(archive_dir)
 
         # Create test summary json file
-        file_path = archive_dir / "test_procedure_summary.json"
+        file_path = archive_dir / f"CactusTestProcedureSummary{filename_infix}.json"
         with open(file_path, "w") as f:
             f.write(json_status_summary)
 
         # Copy Cactus Runner log file into archive
-        destination = archive_dir / "cactus_runner.jsonl"
+        destination = archive_dir / f"CactusRunnerLog{filename_infix}.jsonl"
         try:
             shutil.copyfile(runner_logfile, destination)
         except Exception as exc:
             logger.error(f"Unable to copy {runner_logfile} to {destination}", exc_info=exc)
 
         # Copy Envoy log file into archive
-        destination = archive_dir / "envoy.jsonl"
+        destination = archive_dir / f"EnvoyLog{filename_infix}.jsonl"
         try:
             shutil.copyfile(envoy_logfile, destination)
         except Exception as exc:
             logger.error(f"Unable to copy {envoy_logfile} to {destination}", exc_info=exc)
+
+        # Write pdf report
+        file_path = archive_dir / f"CactusTestProcedureReport{filename_infix}.pdf"
+        with open(file_path, "wb") as f:
+            f.write(pdf_data)
 
         # Create db dump
         try:
             connection_string = get_postgres_dsn().replace("+psycopg", "")
         except DatabaseNotInitialisedError:
             raise DatabaseDumpError("Database is not initialised and therefore cannot be dumped")
-        dump_file = str(archive_dir / "envoy_db.dump")
+        dump_file = str(archive_dir / f"EnvoyDB{filename_infix}.dump")
         exectuable_name = "pg_dump"
         # This command isn't constructed from user input, so it should be safe to use subprocess.run (nosec B603)
         command = [
@@ -88,22 +106,6 @@ def get_zip_contents(json_status_summary: str, runner_logfile: str, envoy_logfil
         with open(archive_path, mode="rb") as f:
             zip_contents = f.read()
     return zip_contents
-
-
-def create_response(json_status_summary: str, runner_logfile: str, envoy_logfile: str) -> web.Response:
-    """Creates a finalize test procedure response which includes the test procedure artifacts in zip format"""
-    zip_contents = get_zip_contents(
-        json_status_summary=json_status_summary, runner_logfile=runner_logfile, envoy_logfile=envoy_logfile
-    )
-
-    SUGGESTED_FILENAME = "finalize.zip"
-    return web.Response(
-        body=zip_contents,
-        headers={
-            "Content-Type": "application/zip",
-            "Content-Disposition": f"attachment; filename={SUGGESTED_FILENAME}",
-        },
-    )
 
 
 async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -> bytes:
@@ -135,9 +137,41 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
         )
     ).to_json()
 
+    # Determine all criteria check results
+    check_results = {}
+    if active_test_procedure.definition.criteria:
+        async with begin_session() as session:
+            check_results = await check.determine_check_results(
+                active_test_procedure.definition.criteria.checks, active_test_procedure, session
+            )
+
+    # Determine readings for the CSIP-AUS mandatory reading types
+    readings = await get_readings(reading_specifiers=MANDATORY_READING_SPECIFIERS)
+
+    # Determine reading counts
+    reading_counts = await get_reading_counts()
+
+    # Determine sites
+    sites = await get_sites(session=session)
+    if not sites:
+        sites = []
+
+    # Generate the pdf (as bytes)
+    pdf_data = reporting.pdf_report_as_bytes(
+        runner_state=runner_state,
+        check_results=check_results,
+        readings=readings,
+        reading_counts=reading_counts,
+        sites=list(sites),
+    )
+
+    generation_timestamp = datetime.now(timezone.utc).replace(microsecond=0)
+
     active_test_procedure.finished_zip_data = get_zip_contents(
         json_status_summary=json_status_summary,
         runner_logfile=LOG_FILE_CACTUS_RUNNER,
         envoy_logfile=LOG_FILE_ENVOY,
+        pdf_data=pdf_data,
+        filename_infix=f"_{generation_timestamp.isoformat()}_{active_test_procedure.name}",
     )
     return active_test_procedure.finished_zip_data
