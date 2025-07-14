@@ -3,6 +3,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import partial
+from http import HTTPStatus
 
 import pandas as pd
 import PIL.Image as PilImage
@@ -35,7 +36,12 @@ from reportlab.platypus import (
 from cactus_runner import __version__ as cactus_runner_version
 from cactus_runner.app import event
 from cactus_runner.app.check import CheckResult
-from cactus_runner.models import ClientInteraction, ClientInteractionType, RunnerState
+from cactus_runner.models import (
+    ClientInteraction,
+    ClientInteractionType,
+    RequestEntry,
+    RunnerState,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -122,13 +128,9 @@ def get_stylesheet() -> StyleSheet:
     )
 
 
-def first_page_template(
-    canvas: Canvas, doc: BaseDocTemplate, test_procedure_name: str, test_procedure_instance: str
-) -> None:
+def first_page_template(canvas: Canvas, doc: BaseDocTemplate, test_procedure_name: str, test_run_id: str) -> None:
     """Template for the first/front/title page of the report"""
 
-    # test_procedure_name = "ALL-01"
-    # test_procedure_instance = "https://cactus.cecs.anu.edu.au/asjaskdfjlkasdjf"
     document_creation: str = datetime.now(timezone.utc).strftime("%d-%m-%Y")
 
     canvas.saveState()
@@ -157,7 +159,7 @@ def first_page_template(
     canvas.setFont("Helvetica-Bold", 8)
     footer_offset = 0.2 * inch
     # Footer left
-    canvas.drawString(MARGIN, footer_offset, test_procedure_instance)
+    canvas.drawString(MARGIN, footer_offset, f"Run ID: {test_run_id}")
     # Footer mid
     canvas.drawCentredString(PAGE_WIDTH / 2.0, footer_offset, f"{test_procedure_name} Test Procedure Report")
     # Footer right
@@ -180,9 +182,7 @@ def first_page_template(
     )
 
 
-def later_pages_template(
-    canvas: Canvas, doc: BaseDocTemplate, test_procedure_name: str, test_procedure_instance: str
-) -> None:
+def later_pages_template(canvas: Canvas, doc: BaseDocTemplate, test_procedure_name: str, test_run_id: str) -> None:
     """Template for subsequent pages"""
     canvas.saveState()
     # Footer
@@ -193,7 +193,7 @@ def later_pages_template(
     canvas.setFont("Helvetica", 8)
     footer_offset = 0.2 * inch
     # Footer left
-    canvas.drawString(MARGIN, footer_offset, test_procedure_instance)
+    canvas.drawString(MARGIN, footer_offset, f"Run ID: {test_run_id}")
     # Footer mid
     canvas.drawCentredString(PAGE_WIDTH / 2.0, footer_offset, f"{test_procedure_name} Test Procedure Report")
     # Footer right
@@ -213,7 +213,7 @@ def fig_to_image(fig: go.Figure, content_width: float) -> Image:
 def generate_overview_section(
     test_procedure_name: str,
     test_procedure_description: str,
-    test_procedure_instance: str,
+    test_run_id: str,
     init_timestamp: datetime,
     start_timestamp: datetime,
     client_lfdi: str,
@@ -226,8 +226,8 @@ def generate_overview_section(
     elements.append(stylesheet.spacer)
     doe_data = [
         [
-            "Instance",
-            test_procedure_instance,
+            "Run ID",
+            test_run_id,
             "",
             "Initialisation time (UTC)",
             init_timestamp.strftime(stylesheet.date_format),
@@ -344,19 +344,6 @@ def generate_criteria_summary_table(check_results: dict[str, CheckResult], style
 
 
 def generate_criteria_failure_table(check_results: dict[str, CheckResult], stylesheet: StyleSheet) -> Table:
-    table_style = TableStyle(
-        [
-            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-            ("TOPPADDING", (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-            ("ROWBACKGROUNDS", (0, 0), (-1, -1), [TABLE_ROW_COLOR, TABLE_ALT_ROW_COLOR]),
-            ("TEXTCOLOR", (0, 0), (-1, 0), TABLE_HEADER_TEXT_COLOR),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("LINEBELOW", (0, 0), (-1, 0), 1, TABLE_LINE_COLOR),
-            ("LINEBELOW", (0, -1), (-1, -1), 1, TABLE_LINE_COLOR),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ]
-    )
     criteria_explanation_data = [
         [
             index + 1,
@@ -372,7 +359,7 @@ def generate_criteria_failure_table(check_results: dict[str, CheckResult], style
     criteria_explanation_data.insert(0, ["", "", "Explanation of Failure"])
     column_widths = [int(fraction * stylesheet.table_width) for fraction in [0.05, 0.35, 0.6]]
     table = Table(criteria_explanation_data, colWidths=column_widths)
-    table.setStyle(table_style)
+    table.setStyle(stylesheet.table)
     return table
 
 
@@ -493,7 +480,7 @@ def generate_test_progress_section(runner_state: RunnerState, stylesheet: StyleS
     return elements
 
 
-def generate_requests_timeline(request_timestamps: list[datetime] | list[float], x_axis_label: str) -> Image:
+def generate_requests_histogram(request_timestamps: list[datetime] | list[float], x_axis_label: str) -> Image:
     df = pd.DataFrame({"timestamp": request_timestamps})
     fig = px.histogram(
         df,
@@ -506,28 +493,109 @@ def generate_requests_timeline(request_timestamps: list[datetime] | list[float],
     return fig_to_image(fig=fig, content_width=MAX_CONTENT_WIDTH)
 
 
-def generate_communications_section(
-    runner_state: RunnerState, stylesheet: StyleSheet, time_relative_to_test_start: bool = True
-) -> list[Flowable]:
+def get_request_timestamps(
+    runner_state: RunnerState, time_relative_to_test_start: bool
+) -> tuple[list[datetime] | list[float], str]:
     request_timestamps: list[datetime] = [request_entry.timestamp for request_entry in runner_state.request_history]
     base_timestamp = runner_state.interaction_timestamp(interaction_type=ClientInteractionType.TEST_PROCEDURE_START)
-    alternative_x_axis_label = "Time relative to start of test (s)"
+    timestamps: list[datetime] | list[float]
 
-    x_axis_label = "Time (UTC)"
-
-    timestamps: list[datetime] | list[float] = request_timestamps
     if time_relative_to_test_start and base_timestamp is not None:
         # Timedeltas (timestamp - base_timestamp) are represented strangely by plotly
         # For example it displays 0, 5B, 10B to mean 0, 5 and 10 seconds.
         # Here convert the timedeltas to total seconds to avoid this problem.
         timestamps = [(timestamp - base_timestamp).total_seconds() for timestamp in request_timestamps]
-        x_axis_label = alternative_x_axis_label
+        description = "Time relative to start of test (s)"
+    else:
+        timestamps = request_timestamps
+        description = "Time (UTC)"
+
+    return timestamps, description
+
+
+def get_requests_with_errors(runner_state: RunnerState) -> dict[int, RequestEntry]:
+    return {
+        index: request_entry
+        for index, request_entry in enumerate(runner_state.request_history)
+        if request_entry.status >= HTTPStatus(400)
+    }
+
+
+def get_requests_with_validation_errors(runner_state: RunnerState) -> dict[int, RequestEntry]:
+    return {
+        index: request_entry
+        for index, request_entry in enumerate(runner_state.request_history)
+        if len(request_entry.body_xml_errors) > 0
+    }
+
+
+def generate_requests_with_errors_table(requests_with_errors: dict[int, RequestEntry], stylesheet: StyleSheet) -> Table:
+    data = [
+        [
+            i,
+            req.timestamp,
+            f"{str(req.method)} {req.path}",
+            f"{req.status.name.replace("_", " ").title()} ({req.status.value})",
+        ]
+        for i, req in requests_with_errors.items()
+    ]
+
+    data.insert(0, ["#", "Time (UTC)", "Request", "Error Status"])
+    column_widths = [int(fraction * stylesheet.table_width) for fraction in [0.1, 0.45, 0.2, 0.25]]
+    table = Table(data, colWidths=column_widths)
+    table.setStyle(stylesheet.table)
+    return table
+
+
+def generate_requests_with_validation_errors_table(
+    requests_with_validation_errors: dict[int, RequestEntry], stylesheet: StyleSheet
+) -> Table:
+    data = [
+        [
+            i,
+            f"{str(req.method)} {req.path} {req.status}",
+            Paragraph("\n".join(req.body_xml_errors)),
+        ]
+        for i, req in requests_with_validation_errors.items()
+    ]
+
+    data.insert(0, ["", "", "Validation Errors"])
+    column_widths = [int(fraction * stylesheet.table_width) for fraction in [0.2, 0.2, 0.6]]
+    table = Table(data, colWidths=column_widths)
+    table.setStyle(stylesheet.table)
+    return table
+
+
+def generate_communications_section(
+    runner_state: RunnerState, stylesheet: StyleSheet, time_relative_to_test_start: bool = True
+) -> list[Flowable]:
+    have_requests = len(runner_state.request_history) > 0
 
     elements: list[Flowable] = []
     elements.append(Paragraph("Communications", stylesheet.heading))
     elements[-1].keepWithNext = True
-    if request_timestamps:
-        elements.append(generate_requests_timeline(request_timestamps=timestamps, x_axis_label=x_axis_label))
+    if have_requests:
+        timestamps, description = get_request_timestamps(
+            runner_state=runner_state, time_relative_to_test_start=time_relative_to_test_start
+        )
+        elements.append(generate_requests_histogram(request_timestamps=timestamps, x_axis_label=description))
+
+        requests_with_errors = get_requests_with_errors(runner_state=runner_state)
+        if requests_with_errors:
+            elements.append(stylesheet.spacer)
+            elements.append(Paragraph("Requests with errors", stylesheet.subheading))
+            elements.append(
+                generate_requests_with_errors_table(requests_with_errors=requests_with_errors, stylesheet=stylesheet)
+            )
+
+        requests_with_validation_errors = get_requests_with_validation_errors(runner_state=runner_state)
+        if requests_with_validation_errors:
+            elements.append(stylesheet.spacer)
+            elements.append(
+                generate_requests_with_validation_errors_table(
+                    requests_with_validation_errors=requests_with_validation_errors, stylesheet=stylesheet
+                )
+            )
     else:
         elements.append(Paragraph("No requests were received by utility server during the test procedure."))
     elements.append(stylesheet.spacer)
@@ -697,7 +765,7 @@ def first_client_interaction_of_type(
 
 def generate_page_elements(
     runner_state: RunnerState,
-    test_procedure_instance: str,
+    test_run_id: str,
     check_results: dict[str, CheckResult],
     readings: dict[SiteReadingType, pd.DataFrame],
     reading_counts: dict[SiteReadingType, int],
@@ -733,7 +801,7 @@ def generate_page_elements(
             generate_overview_section(
                 test_procedure_name=test_procedure_name,
                 test_procedure_description=test_procedure_description,
-                test_procedure_instance=test_procedure_instance,
+                test_run_id=test_run_id,
                 init_timestamp=init_timestamp,
                 start_timestamp=start_timestamp,
                 client_lfdi=active_test_procedure.client_lfdi,
@@ -778,14 +846,15 @@ def pdf_report_as_bytes(
 ) -> bytes:
     stylesheet = get_stylesheet()
 
-    test_procedure_instance = "cactus.cecs.anu.edu.au/0ab24cce-cd1b-4bfc"
-
     if runner_state.active_test_procedure is None:
         raise ValueError("Unable to generate report - no active test procedure")
 
+    run_id = runner_state.active_test_procedure.run_id
+    test_run_id = "UNKNOWN" if run_id is None else run_id
+
     page_elements = generate_page_elements(
         runner_state=runner_state,
-        test_procedure_instance=test_procedure_instance,
+        test_run_id=test_run_id,
         check_results=check_results,
         readings=readings,
         reading_counts=reading_counts,
@@ -794,12 +863,8 @@ def pdf_report_as_bytes(
     )
 
     test_procedure_name = runner_state.active_test_procedure.name
-    first_page = partial(
-        first_page_template, test_procedure_name=test_procedure_name, test_procedure_instance=test_procedure_instance
-    )
-    later_pages = partial(
-        later_pages_template, test_procedure_name=test_procedure_name, test_procedure_instance=test_procedure_instance
-    )
+    first_page = partial(first_page_template, test_procedure_name=test_procedure_name, test_run_id=test_run_id)
+    later_pages = partial(later_pages_template, test_procedure_name=test_procedure_name, test_run_id=test_run_id)
 
     with io.BytesIO() as buffer:
         doc = SimpleDocTemplate(
