@@ -60,12 +60,21 @@ async def test_client_interactions(
     assert status_response.test_procedure_name == test_procedure_id.value
     assert isinstance(status_response.last_client_interaction, ClientInteraction)
     assert_dict_type(str, StepStatus, status_response.step_status)
+    assert_nowish(status_response.timestamp_status)
 
     # Interrogate a finalize response (assume we don't fire off any CSIP requests)
     async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(30)) as session:
         finalize_response = await RunnerClient.finalize(session)
     zip = zipfile.ZipFile(io.BytesIO(finalize_response))
-    summary_data = zip.read("test_procedure_summary.json")
+
+    def get_filename(prefix: str, filenames: list[str]) -> str:
+        """Find first filename that starts with 'prefix'"""
+        for filename in filenames:
+            if filename.startswith(prefix):
+                return filename
+        return ""
+
+    summary_data = zip.read(get_filename(prefix="CactusTestProcedureSummary", filenames=zip.namelist()))
     assert len(summary_data) > 0
     summary = RunnerStatus.from_json(summary_data.decode())
     assert summary.step_status == status_response.step_status, "This shouldn't have changed between status and finalize"

@@ -8,13 +8,14 @@ from assertical.fake.generator import generate_class_instance
 
 from cactus_runner.app import handler
 from cactus_runner.app.proxy import ProxyResult
-from cactus_runner.app.shared import APPKEY_RUNNER_STATE
+from cactus_runner.app.shared import APPKEY_ENVOY_ADMIN_CLIENT, APPKEY_RUNNER_STATE
 from cactus_runner.models import (
     ActiveTestProcedure,
     ClientInteraction,
     ClientInteractionType,
     Listener,
     RequestEntry,
+    RunnerState,
     RunnerStatus,
     StepStatus,
 )
@@ -47,9 +48,10 @@ async def test_finalize_handler(mocker):
 async def test_finalize_handler_resets_runner_state(mocker):
     request = MagicMock()
     request.app[APPKEY_RUNNER_STATE].request_history = [None]  # a non-empty list stand-in
-    mocker.patch("cactus_runner.app.finalize.create_response")
     mocker.patch("cactus_runner.app.handler.begin_session")
-    mocker.patch("cactus_runner.app.handler.status.get_active_runner_status").return_value = RunnerStatus("", None)
+    mocker.patch("cactus_runner.app.handler.status.get_active_runner_status").return_value = generate_class_instance(
+        RunnerStatus, step_status={}
+    )
 
     _ = await handler.finalize_handler(request=request)
 
@@ -134,12 +136,16 @@ async def test_proxied_request_handler_before_request_trigger(pg_base_config, mo
     request.path_qs = "/dcap"
     request.method = "GET"
     request.app[APPKEY_RUNNER_STATE].request_history = []
-    request.app[APPKEY_RUNNER_STATE].active_test_procedure = generate_class_instance(
+    mock_active_test_procedure = generate_class_instance(
         ActiveTestProcedure,
         communications_disabled=False,
         finished_zip_data=None,
         step_status={"1": StepStatus.PENDING},
     )
+    request.app = {}
+    request.app[APPKEY_RUNNER_STATE] = RunnerState(active_test_procedure=mock_active_test_procedure)
+    request.app[APPKEY_ENVOY_ADMIN_CLIENT] = MagicMock()
+
     handling_listener = generate_class_instance(Listener, actions=[])
 
     handler.SERVER_URL = ""  # Override the server url
@@ -161,6 +167,7 @@ async def test_proxied_request_handler_before_request_trigger(pg_base_config, mo
     expected_response = mocked_ProxyResult(203)  # Set to a random "success" code to ensure it's extracted correctly
     mock_proxy_request.return_value = expected_response
 
+    num_client_interactions_before = len(request.app[APPKEY_RUNNER_STATE].client_interactions)
     mock_validate_proxy_request_schema = mocker.patch("cactus_runner.app.handler.validate_proxy_request_schema")
     expected_validate_result = ["abc-123"]
     mock_validate_proxy_request_schema.return_value = expected_validate_result
@@ -179,6 +186,7 @@ async def test_proxied_request_handler_before_request_trigger(pg_base_config, mo
     mock_validate_proxy_request_schema.assert_called_once_with(expected_response)
 
     #  ... verify we update the last client interaction
+    assert len(request.app[APPKEY_RUNNER_STATE].client_interactions) == num_client_interactions_before + 1
     assert isinstance(request.app[APPKEY_RUNNER_STATE].last_client_interaction, ClientInteraction)
     assert (
         request.app[APPKEY_RUNNER_STATE].last_client_interaction.interaction_type
@@ -215,12 +223,15 @@ async def test_proxied_request_handler_after_request_trigger(pg_base_config, moc
     request.path_qs = "/dcap"
     request.method = "GET"
     request.app[APPKEY_RUNNER_STATE].request_history = []
-    request.app[APPKEY_RUNNER_STATE].active_test_procedure = generate_class_instance(
+    mock_active_test_procedure = generate_class_instance(
         ActiveTestProcedure,
         communications_disabled=False,
         finished_zip_data=None,
         step_status={"1": StepStatus.PENDING},
     )
+    request.app = {}
+    request.app[APPKEY_RUNNER_STATE] = RunnerState(active_test_procedure=mock_active_test_procedure)
+    request.app[APPKEY_ENVOY_ADMIN_CLIENT] = MagicMock()
     handling_listener = generate_class_instance(Listener, actions=[])
 
     handler.SERVER_URL = ""  # Override the server url

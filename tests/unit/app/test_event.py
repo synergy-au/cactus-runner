@@ -210,6 +210,21 @@ def test_generate_client_request_trigger(request_method: str, request_path: str,
         ),
         (
             event.EventTrigger(
+                event.EventTriggerType.CLIENT_REQUEST_BEFORE,
+                datetime(2022, 11, 10, tzinfo=timezone.utc),
+                False,
+                event.ClientRequestDetails(HTTPMethod.GET, "/some/prefix/my/endppoint/1"),
+            ),
+            Listener(
+                step="step",
+                event=Event(type="GET-request-received", parameters={"endpoint": "/my/endppoint/1"}),
+                actions=[],
+                enabled_time=datetime(2024, 11, 10, tzinfo=timezone.utc),
+            ),
+            True,  # The HREF_PREFIX on the incoming should be ignored
+        ),
+        (
+            event.EventTrigger(
                 event.EventTriggerType.CLIENT_REQUEST_AFTER,
                 datetime(2022, 11, 10, tzinfo=timezone.utc),
                 False,
@@ -314,7 +329,7 @@ async def test_is_listener_triggerable(
         (RunnerState(None, [], None)),  # This is when we have no active test procedure
         (
             RunnerState(
-                ActiveTestProcedure("", None, [], {}, "", 0, finished_zip_data=bytes([0, 1])),
+                generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_data=bytes([0, 1])),
                 [generate_class_instance(Listener, actions=[])],
                 None,
             )
@@ -378,7 +393,7 @@ async def test_handle_event_trigger_normal_operation(
     mock_envoy_client = MagicMock()
     input_trigger = generate_class_instance(event.EventTrigger, single_listener=single_listener)
     input_runner_state = RunnerState(
-        ActiveTestProcedure("", None, listeners, {}, "", 0, finished_zip_data=None),
+        generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_data=None, listeners=listeners),
         [],
         None,
     )

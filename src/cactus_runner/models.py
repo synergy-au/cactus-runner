@@ -28,10 +28,13 @@ class StepStatus(Enum):
 class ActiveTestProcedure:
     name: str
     definition: TestProcedure
+    initialised_at: datetime  # When did the test initialise - timezone aware
+    started_at: datetime | None  # When did the test start (None if it hasn't started yet) - timezone aware
     listeners: list[Listener]
     step_status: dict[str, StepStatus]
     client_lfdi: str  # The LFDI of the client certificate expected for the test
     client_sfdi: int  # The SFDI of the client certificate expected for the test
+    run_id: str | None  # Metadata about what "id" has been assigned to this test (from external) - if any
     communications_disabled: bool = False
     finished_zip_data: bytes | None = (
         None  # Finalised ZIP file. If not None - this test is "done" and shouldn't update any events/state
@@ -41,6 +44,10 @@ class ActiveTestProcedure:
         """True if the active test procedure has been marked as finished. That is, there is no more test data to
         accumulate and any client events should be ignored"""
         return self.finished_zip_data is not None
+
+    def is_started(self) -> bool:
+        """True if any listener has been enabled"""
+        return any([True for listener in self.listeners if listener.enabled_time is not None])
 
 
 @dataclass
@@ -101,11 +108,22 @@ class RunnerState:
 
     active_test_procedure: ActiveTestProcedure | None = None
     request_history: list[RequestEntry] = field(default_factory=list)
-    last_client_interaction: ClientInteraction = field(
-        default_factory=lambda: ClientInteraction(
-            interaction_type=ClientInteractionType.RUNNER_START, timestamp=datetime.now(timezone.utc)
-        )
+    client_interactions: list[ClientInteraction] = field(
+        default_factory=lambda: [
+            ClientInteraction(interaction_type=ClientInteractionType.RUNNER_START, timestamp=datetime.now(timezone.utc))
+        ]
     )
+
+    @property
+    def last_client_interaction(self) -> ClientInteraction:
+        return self.client_interactions[-1]
+
+    def interaction_timestamp(self, interaction_type: ClientInteractionType) -> datetime | None:
+        """Returns the timestamp of the first client interaction of type 'interaction_type'"""
+        for client_interaction in self.client_interactions:
+            if client_interaction.interaction_type == interaction_type:
+                return client_interaction.timestamp
+        return None
 
 
 @dataclass
@@ -137,8 +155,12 @@ class CriteriaEntry(JSONWizard):
 
 @dataclass
 class RunnerStatus(JSONWizard):
+    timestamp_status: datetime  # when was this status generated?
+    timestamp_initialise: datetime | None  # When did the test initialise
+    timestamp_start: datetime | None  # When did the test start
     status_summary: str
     last_client_interaction: ClientInteraction
+    log_envoy: str  # Snapshot of the current envoy logs
     criteria: list[CriteriaEntry] = field(default_factory=list)
     test_procedure_name: str = field(default="-")  # '-' represents no active procedure
     step_status: dict[str, StepStatus] | None = field(default=None)

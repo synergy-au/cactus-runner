@@ -1,6 +1,6 @@
 import logging
 
-from aiohttp import ClientSession, ClientTimeout, ConnectionTimeoutError
+from aiohttp import ClientResponse, ClientSession, ClientTimeout, ConnectionTimeoutError
 from cactus_test_definitions import TestProcedureId
 
 from cactus_runner.models import (
@@ -18,6 +18,21 @@ logger = logging.getLogger(__name__)
 class RunnerClientException(Exception): ...  # noqa: E701
 
 
+async def ensure_success_response(response: ClientResponse) -> None:
+    """Raises a RunnerClientException if the response is NOT a success response (will consume body). Does nothing
+    otherwise"""
+    if response.status < 200 or response.status > 299:
+        try:
+            response_body = await response.text()
+        except Exception:
+            response_body = ""
+
+        logger.error(
+            f"Received HTTP {response.status} response for {response.request_info.url}. Response: {response_body}"
+        )
+        raise RunnerClientException(f"Received HTTP {response.status} response from server. Response: {response_body}")
+
+
 class RunnerClient:
     @staticmethod
     async def init(
@@ -25,18 +40,24 @@ class RunnerClient:
         test_id: TestProcedureId,
         aggregator_certificate: str,
         subscription_domain: str | None = None,
+        run_id: str | None = None,
     ) -> InitResponseBody:
         """
         Args:
             test_id: The TestProcedureId to initialise the runner with
             aggregator_certificate: The PEM encoded public certificate to be installed as the "aggregator" cert
-            subscription_domain: The FQDN that will be added to the allow list for subscription notifications"""
+            subscription_domain: The FQDN that will be added to the allow list for subscription notifications
+            run_id: The upstream identifier for this run (to be used in report metadata)"""
+
         try:
             params = {"test": test_id.value, "certificate": aggregator_certificate}
             if subscription_domain is not None:
                 params["subscription_domain"] = subscription_domain
+            if run_id is not None:
+                params["run_id"] = run_id
 
             async with session.post(url="/init", params=params) as response:
+                await ensure_success_response(response)
                 json = await response.text()
                 init_response_body = InitResponseBody.from_json(json)
                 if isinstance(init_response_body, list):
@@ -52,6 +73,7 @@ class RunnerClient:
     async def start(session: ClientSession) -> StartResponseBody:
         try:
             async with session.post(url="/start") as response:
+                await ensure_success_response(response)
                 json = await response.text()
                 start_response_body = StartResponseBody.from_json(json)
                 if isinstance(start_response_body, list):
@@ -67,6 +89,7 @@ class RunnerClient:
     async def finalize(session: ClientSession) -> bytes:
         try:
             async with session.post(url="/finalize") as response:
+                await ensure_success_response(response)
                 return await response.read()
         except ConnectionTimeoutError as e:
             logger.debug(e)
@@ -76,6 +99,7 @@ class RunnerClient:
     async def status(session: ClientSession) -> RunnerStatus:
         try:
             async with session.get(url="/status") as response:
+                await ensure_success_response(response)
                 json = await response.text()
                 runner_status = RunnerStatus.from_json(json)
                 if isinstance(runner_status, list):
