@@ -327,6 +327,7 @@ async def test_action_create_der_control_no_group(pg_base_config, envoy_admin_cl
         "opModGenLimW": 0,
         "opModLoadLimW": 0,
         "opModFixedW": 0,
+        "opModStorageTargetW": 0,
     }
     if fsa_id is not None:
         resolved_params["fsa_id"] = fsa_id
@@ -396,6 +397,7 @@ async def test_action_create_der_control_existing_group(pg_base_config, envoy_ad
         "opModGenLimW": 0,
         "opModLoadLimW": 0,
         "opModFixedW": 0,
+        "opModStorageTargetW": 0,
     }
     if fsa_id is not None:
         resolved_params["fsa_id"] = fsa_id
@@ -448,6 +450,7 @@ async def test_action_create_der_control_control_values(pg_base_config, envoy_ad
         "opModGenLimW": gen_float(value_seed, 5),
         "opModLoadLimW": gen_float(value_seed, 6),
         "opModFixedW": gen_float(value_seed, 7),
+        "opModStorageTargetW": gen_float(value_seed, 8),
     }
     for k in list(resolved_params.keys()):
         if resolved_params[k] is None:
@@ -468,6 +471,7 @@ async def test_action_create_der_control_control_values(pg_base_config, envoy_ad
         assert doe.generation_limit_active_watts == gen_float(value_seed, 5)
         assert doe.load_limit_active_watts == gen_float(value_seed, 6)
         assert doe.set_point_percentage == gen_float(value_seed, 7)
+        assert doe.storage_target_active_watts == gen_float(value_seed, 8)
 
 
 @pytest.mark.anyio
