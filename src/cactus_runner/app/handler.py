@@ -74,8 +74,10 @@ async def init_handler(request: web.Request):
         )
 
     # Update last client interaction
-    request.app[APPKEY_RUNNER_STATE].last_client_interaction = ClientInteraction(
-        interaction_type=ClientInteractionType.TEST_PROCEDURE_INIT, timestamp=datetime.now(timezone.utc)
+    request.app[APPKEY_RUNNER_STATE].client_interactions.append(
+        ClientInteraction(
+            interaction_type=ClientInteractionType.TEST_PROCEDURE_INIT, timestamp=datetime.now(timezone.utc)
+        )
     )
 
     # Reset envoy database
@@ -98,6 +100,12 @@ async def init_handler(request: web.Request):
         logger.info("Subscriptions will NOT be creatable - no valid domain (subscription_domain not set)")
     else:
         logger.info(f"Subscriptions will restricted to the FQDN '{subscription_domain}'")
+
+    run_id = request.query.get("run_id", None)
+    if run_id is None:
+        logger.info("No run ID has been assigned to this test.")
+    else:
+        logger.info(f"run ID {run_id} has been assigned to this test.")
 
     # Get the lfdi of the aggregator to register
     aggregator_lfdi = LFDIAuthDepends.generate_lfdi_from_pem(aggregator_certificate)
@@ -128,10 +136,13 @@ async def init_handler(request: web.Request):
     active_test_procedure = ActiveTestProcedure(
         name=requested_test_procedure,
         definition=definition,
+        initialised_at=datetime.now(tz=timezone.utc),
+        started_at=None,  # Test hasn't started yet
         listeners=listeners,
         step_status={step: StepStatus.PENDING for step in definition.steps.keys()},
         client_lfdi=aggregator_lfdi,
         client_sfdi=convert_lfdi_to_sfdi(aggregator_lfdi),
+        run_id=run_id,
     )
 
     logger.info(
@@ -195,9 +206,11 @@ async def start_handler(request: web.Request):
         )
 
     # Update last client interaction
-    runner_state.last_client_interaction = ClientInteraction(
-        interaction_type=ClientInteractionType.TEST_PROCEDURE_START, timestamp=datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    request.app[APPKEY_RUNNER_STATE].client_interactions.append(
+        ClientInteraction(interaction_type=ClientInteractionType.TEST_PROCEDURE_START, timestamp=now)
     )
+    active_test_procedure.started_at = now
 
     # Fire any precondition actions
     if active_test_procedure.definition.preconditions and active_test_procedure.definition.preconditions.actions:
@@ -265,11 +278,18 @@ async def finalize_handler(request):
             extra={"test_procedure": finalized_test_procedure_name},
         )
 
+        # Determine zip filename
+        generation_timestamp = datetime.now(timezone.utc).replace(microsecond=0)
+        zip_filename = (
+            f"CactusTestProcedureArtifacts_{generation_timestamp.isoformat()}_{finalized_test_procedure_name}.zip"
+            # f"CactusTestProcedureArtifacts_{finalized_test_procedure_name}.zip"
+        )
+
         return web.Response(
             body=zip_contents,
             headers={
                 "Content-Type": "application/zip",
-                "Content-Disposition": "attachment; filename=finalize.zip",
+                "Content-Disposition": f'attachment; filename="{zip_filename}"',
             },
         )
     else:
@@ -368,8 +388,8 @@ async def proxied_request_handler(request: web.Request):
         )
 
     # Update last client interaction
-    runner_state.last_client_interaction = ClientInteraction(
-        interaction_type=ClientInteractionType.PROXIED_REQUEST, timestamp=request_timestamp
+    runner_state.client_interactions.append(
+        ClientInteraction(interaction_type=ClientInteractionType.PROXIED_REQUEST, timestamp=request_timestamp)
     )
 
     # Determine paths, url and HTTP method
@@ -407,7 +427,9 @@ async def proxied_request_handler(request: web.Request):
 
     # There will only ever be a maximum of 1 entry in this list
     # The request events will only trigger a max of one listener
-    step_name: str = event.UNRECOGNISED_STEP_NAME
+    step_name: str = event.INIT_STAGE_STEP_NAME
+    if active_test_procedure.is_started():
+        step_name = event.UNMATCHED_STEP_NAME
     if trigger_handled:
         handling_listener = trigger_handled[0]
         step_name = handling_listener.step

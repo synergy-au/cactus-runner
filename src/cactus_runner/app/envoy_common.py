@@ -2,16 +2,17 @@ import logging
 from enum import IntEnum
 from typing import Sequence
 
-from envoy.server.model.site import Site
-from envoy.server.model.site_reading import SiteReadingType
+from envoy.server.model.site import Site, SiteDER
+from envoy.server.model.site_reading import SiteReading, SiteReadingType
 from envoy_schema.server.schema.sep2.types import (
     DataQualifierType,
     KindType,
     RoleFlagsType,
     UomType,
 )
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 logger = logging.getLogger(__name__)
 
@@ -81,4 +82,70 @@ async def get_csip_aus_site_reading_types(
         .order_by(SiteReadingType.created_time.asc())
     )
 
+    return response.scalars().all()
+
+
+async def get_site_readings(session: AsyncSession, site_reading_type: SiteReadingType) -> Sequence[SiteReading]:
+
+    response = await session.execute(
+        select(SiteReading)
+        .where((SiteReading.site_reading_type_id == site_reading_type.site_reading_type_id))
+        .order_by(SiteReading.created_time.asc())
+    )
+
+    return response.scalars().all()
+
+
+async def get_reading_counts_grouped_by_reading_type(session: AsyncSession) -> dict[SiteReadingType, int]:
+    """Returns the number of readings for each reading type
+
+    Reading types with no readings are NOT returned.
+    """
+    # TODO this function works by performing two database queries
+    # First to get the number of readings (grouped by reading type id)
+    # Second to get the reading types (that have readings)
+    # These two queries are combined to produced the final mapping:
+    # Reading type -> Count of readings
+    #
+    # These queries could probably be combined into a single query for efficiency.
+    count_statement = (
+        select(SiteReading.site_reading_type_id, func.count())
+        .select_from(SiteReading)
+        .group_by(SiteReading.site_reading_type_id)
+    )
+
+    count_resp = await session.execute(
+        count_statement,
+    )
+
+    count_by_site_reading_type_id: dict[int, int] = {}
+    for site_reading_type, count in count_resp.all():
+        print(f"{site_reading_type=} {count=}")
+        count_by_site_reading_type_id[site_reading_type] = count
+
+    site_reading_type_ids = list(count_by_site_reading_type_id.keys())
+
+    reading_types_resp = await session.execute(
+        select(SiteReadingType).where(SiteReadingType.site_reading_type_id.in_(site_reading_type_ids))
+    )
+
+    count_by_site_reading_type: dict[SiteReadingType, int] = {}
+    for reading_type in reading_types_resp.scalars().all():
+        count_by_site_reading_type[reading_type] = count_by_site_reading_type_id[reading_type.site_reading_type_id]
+
+    return count_by_site_reading_type
+
+
+async def get_sites(session: AsyncSession) -> Sequence[Site] | None:
+    statement = (
+        select(Site)
+        .order_by(Site.site_id.asc())
+        .options(
+            selectinload(Site.site_ders).selectinload(SiteDER.site_der_availability),
+            selectinload(Site.site_ders).selectinload(SiteDER.site_der_rating),
+            selectinload(Site.site_ders).selectinload(SiteDER.site_der_setting),
+            selectinload(Site.site_ders).selectinload(SiteDER.site_der_status),
+        )
+    )
+    response = await session.execute(statement)
     return response.scalars().all()
