@@ -10,11 +10,11 @@ x-envoy-common:
     ENABLE_NOTIFICATIONS: "True"
     RABBIT_MQ_BROKER_URL: "amqp://guest:guest@rabbit-mq:5672"
     ALLOW_DEVICE_REGISTRATION: "True"
-    ENVOY_ENV_FILE: ./.env
+    ENVOY_ENV_FILE: ".env"
 
 services:
   cactus-teststack-init:
-    image: ghcr.io/synergy-au/cactus-teststack-init:23-synergy
+    image: cactusimageregistry.azurecr.io/cactus-teststack-init:34-synergy
     restart: "no"
     environment:
       - ENVOY_DATABASE_URL=postgresql://test_user:test_pwd@cactus-envoy-db/test_db
@@ -43,7 +43,7 @@ services:
         condition: service_completed_successfully
 
   taskiq-worker:
-    image: ghcr.io/synergy-au/cactus-envoy:23-synergy
+    image: cactusimageregistry.azurecr.io/cactus-envoy:34-synergy
     environment:
       <<: *common-env
     command: taskiq worker envoy.notification.main:broker envoy.notification.task
@@ -57,7 +57,7 @@ services:
         condition: service_completed_successfully
 
   cactus-envoy:
-    image: ghcr.io/synergy-au/cactus-envoy:23-synergy
+    image: cactusimageregistry.azurecr.io/cactus-envoy:34-synergy
     ports:
       - 127.0.0.1:8000:8000
     restart: unless-stopped
@@ -79,7 +79,7 @@ services:
       - logs:/app/logs
 
   cactus-envoy-admin:
-    image: ghcr.io/synergy-au/cactus-envoy:23-synergy
+    image: cactusimageregistry.azurecr.io/cactus-envoy:34-synergy
     ports:
       - 127.0.0.1:8001:8001
     restart: unless-stopped

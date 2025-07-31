@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
 from cactus_runner.app.envoy_common import get_active_site
 from cactus_runner.app.finalize import finish_active_test
-from cactus_runner.app.variable_resolver import (
+from cactus_runner.app.evaluator import (
     resolve_variable_expressions_from_parameters,
 )
 from cactus_runner.models import (
@@ -188,6 +188,7 @@ async def action_create_der_control(
         )
 
     randomize_seconds: int | None = resolved_parameters.get("randomizeStart_seconds", None)
+    ramp_time_seconds: Decimal | None = resolved_parameters.get("ramp_time_seconds", None)
     energize: bool | None = resolved_parameters.get("opModEnergize", None)
     connect: bool | None = resolved_parameters.get("opModConnect", None)
     import_limit_watts: Decimal | None = resolved_parameters.get("opModImpLimW", None)
@@ -214,6 +215,7 @@ async def action_create_der_control(
                 load_limit_watts=load_limit_watts,
                 set_point_percentage=set_point_percent,
                 storage_target_watts=storage_target_watts,
+                ramp_time_seconds=ramp_time_seconds,
             )
         ],
     )
@@ -289,7 +291,7 @@ async def action_register_end_device(
     session.add(
         Site(
             nmi=nmi,
-            aggregator_id=1,
+            aggregator_id=active_test_procedure.client_aggregator_id,
             timezone_id="Australia/Brisbane",
             created_time=now,
             changed_time=now,

@@ -10,7 +10,14 @@ import PIL.Image as PilImage
 import plotly.express as px  # type: ignore
 import plotly.graph_objects as go  # type: ignore
 from cactus_test_definitions import __version__ as cactus_test_definitions_version
-from envoy.server.model.site import Site
+from envoy.server.model import (
+    DynamicOperatingEnvelope,
+    Site,
+    SiteDERAvailability,
+    SiteDERRating,
+    SiteDERSetting,
+    SiteDERStatus,
+)
 from envoy.server.model.site_reading import SiteReadingType
 from envoy_schema.server.schema.sep2.types import DataQualifierType, PhaseCode, UomType
 from reportlab.lib.colors import Color, HexColor
@@ -85,6 +92,9 @@ DEFAULT_TABLE_STYLE = TableStyle(
 # Limit document content to full width of page (minus margins)
 MAX_CONTENT_WIDTH = PAGE_WIDTH - 2 * MARGIN
 
+# The maximum length of a string that can appear in a single table cell
+MAX_CELL_LENGTH_CHARS = 500
+
 DOCUMENT_TITLE = "CSIP-AUS Client Test Procedure"
 AUTHOR = "Cactus Test Harness"
 AUTHOR_URL = "https://cactus.cecs.anu.edu.au"
@@ -106,6 +116,8 @@ class StyleSheet:
     table_width: float
     spacer: Spacer
     date_format: str
+    max_cell_length_chars: int
+    truncation_marker: str
 
 
 def get_stylesheet() -> StyleSheet:
@@ -125,6 +137,8 @@ def get_stylesheet() -> StyleSheet:
         table_width=MAX_CONTENT_WIDTH,
         spacer=DEFAULT_SPACER,
         date_format="%Y-%m-%d %H:%M:%S",
+        max_cell_length_chars=MAX_CELL_LENGTH_CHARS,
+        truncation_marker=" … ",
     )
 
 
@@ -216,6 +230,7 @@ def generate_overview_section(
     test_run_id: str,
     init_timestamp: datetime,
     start_timestamp: datetime,
+    client_cert_type: str,
     client_lfdi: str,
     duration: timedelta,
     stylesheet: StyleSheet,
@@ -224,6 +239,7 @@ def generate_overview_section(
     elements.append(Paragraph(test_procedure_name, style=stylesheet.title))
     elements.append(Paragraph(test_procedure_description, style=stylesheet.subheading))
     elements.append(stylesheet.spacer)
+
     doe_data = [
         [
             "Run ID",
@@ -232,7 +248,13 @@ def generate_overview_section(
             "Initialisation time (UTC)",
             init_timestamp.strftime(stylesheet.date_format),
         ],
-        ["Client LFDI", client_lfdi, "", "Start time (UTC)", start_timestamp.strftime(stylesheet.date_format)],
+        [
+            f"{client_cert_type} LFDI",
+            client_lfdi,
+            "",
+            "Start time (UTC)",
+            start_timestamp.strftime(stylesheet.date_format),
+        ],
         ["", "", "", "Duration", str(duration).split(".")[0]],  # remove microseconds from output
     ]
     column_widths = [int(fraction * stylesheet.table_width) for fraction in [0.15, 0.4, 0.05, 0.2, 0.2]]
@@ -550,14 +572,22 @@ def generate_requests_with_errors_table(requests_with_errors: dict[int, RequestE
 def generate_requests_with_validation_errors_table(
     requests_with_validation_errors: dict[int, RequestEntry], stylesheet: StyleSheet
 ) -> Table:
-    data = [
-        [
-            i,
-            f"{str(req.method)} {req.path} {req.status}",
-            Paragraph("\n".join(req.body_xml_errors)),
-        ]
-        for i, req in requests_with_validation_errors.items()
-    ]
+    data = []
+    for i, req in requests_with_validation_errors.items():
+        request_description = f"{str(req.method)} {req.path} {req.status}"
+        validation_errors = "\n".join(req.body_xml_errors)
+
+        # Limit to a reason size the validation error information
+        if len(validation_errors) > stylesheet.max_cell_length_chars:
+            validation_errors = validation_errors[: stylesheet.max_cell_length_chars] + stylesheet.truncation_marker
+
+        data.append(
+            [
+                i,
+                request_description,
+                Paragraph(validation_errors),
+            ]
+        )
 
     data.insert(0, ["", "", "Validation Errors"])
     column_widths = [int(fraction * stylesheet.table_width) for fraction in [0.2, 0.2, 0.6]]
@@ -602,19 +632,164 @@ def generate_communications_section(
     return elements
 
 
-def generate_site_der_table(site: Site, stylesheet: StyleSheet) -> list[Flowable]:
-    elements: list[Flowable] = []
+def generate_der_table_data(obj: object, attributes_to_include: list[str]) -> list:
+    def attribute_short_form(attribute: str) -> str:
+        suffix = "_value"
+        if attribute.endswith(suffix):
+            return attribute.removesuffix(suffix)
+        return attribute
+
+    def attribute_value(obj: object, attribute: str):
+        multiplier_suffix = "_multiplier"
+        multiplier_attribute = attribute_short_form(attribute) + multiplier_suffix
+        if hasattr(obj, multiplier_attribute):
+            return Paragraph(f"{getattr(obj, attribute)} x 10<super>{getattr(obj, multiplier_attribute)}</super>")
+        return f"{getattr(obj, attribute)}"
+
     table_data = [
-        [
-            Paragraph(site_der.site_der_rating.model_dump()),  # type: ignore
-            Paragraph(site_der.site_der_setting.model_dump()),  # type: ignore
-            Paragraph(site_der.site_der_availability.model_dump()),  # type: ignore
-            Paragraph(site_der.site_der_status.model_dump()),  # type: ignore
-        ]
-        for site_der in site.site_ders
+        [attribute_short_form(attribute), attribute_value(obj, attribute)] for attribute in attributes_to_include
     ]
-    table_data.insert(0, [Paragraph("Rating"), Paragraph("Setting"), Paragraph("Availability"), Paragraph("Status")])
-    table = Table(table_data)
+    return table_data
+
+
+def generate_site_der_rating_table(site_der_rating: SiteDERRating, stylesheet: StyleSheet) -> list[Flowable]:
+    elements: list[Flowable] = []
+    attributes_to_include = [
+        "created_time",
+        "changed_time",
+        "modes_supported",
+        "abnormal_category",
+        "max_a_value",
+        "max_ah_value",
+        "max_charge_rate_va_value",
+        "max_charge_rate_w_value",
+        "max_discharge_rate_va_value",
+        "max_discharge_rate_w_value",
+        "max_v_value",
+        "max_va_value",
+        "max_var_value",
+        "max_var_neg_value",
+        "max_w_value",
+        "max_wh_value",
+        "min_pf_over_excited_displacement",
+        "min_pf_under_excited_displacement",
+        "min_v_value",
+        "normal_category",
+        "over_excited_pf_displacement",
+        "over_excited_w_value",
+        "reactive_susceptance_value",
+        "under_excited_pf_displacement",
+        "under_excited_w_value",
+        "v_nom_value",
+        "der_type",
+        "doe_modes_supported",
+    ]
+    table_data = generate_der_table_data(site_der_rating, attributes_to_include)
+    table_data.insert(0, ["DER Rating", "Value"])
+    column_widths = [int(fraction * stylesheet.table_width) for fraction in [0.5, 0.5]]
+    table = Table(table_data, colWidths=column_widths)
+    table.setStyle(stylesheet.table)
+    elements.append(table)
+    elements.append(stylesheet.spacer)
+    return elements
+
+
+def generate_site_der_setting_table(site_der_setting: SiteDERSetting, stylesheet: StyleSheet) -> list[Flowable]:
+    elements: list[Flowable] = []
+    attributes_to_include = [
+        "created_time",
+        "changed_time",
+        "modes_enabled",
+        "es_delay",
+        "es_high_freq",
+        "es_high_volt",
+        "es_low_freq",
+        "es_low_volt",
+        "es_ramp_tms",
+        "es_random_delay",
+        "grad_w",
+        "max_a_value",
+        "max_ah_value",
+        "max_charge_rate_va_value",
+        "max_charge_rate_w_value",
+        "max_discharge_rate_va_value",
+        "max_discharge_rate_w_value",
+        "max_v_value",
+        "max_va_value",
+        "max_var_value",
+        "max_var_neg_value",
+        "max_w_value",
+        "max_wh_value",
+        "min_pf_over_excited_displacement",
+        "min_pf_under_excited_displacement",
+        "min_v_value",
+        "soft_grad_w",
+        "v_nom_value",
+        "v_ref_value",
+        "v_ref_ofs_value",
+        "doe_modes_enabled",
+    ]
+    table_data = generate_der_table_data(site_der_setting, attributes_to_include)
+    table_data.insert(0, ["DER Setting", "Value"])
+    column_widths = [int(fraction * stylesheet.table_width) for fraction in [0.5, 0.5]]
+    table = Table(table_data, colWidths=column_widths)
+    table.setStyle(stylesheet.table)
+    elements.append(table)
+    elements.append(stylesheet.spacer)
+    return elements
+
+
+def generate_site_der_availability_table(
+    site_der_availability: SiteDERAvailability, stylesheet: StyleSheet
+) -> list[Flowable]:
+    elements: list[Flowable] = []
+    attributes_to_include = [
+        "created_time",
+        "changed_time",
+        "availability_duration_sec",
+        "max_charge_duration_sec",
+        "reserved_charge_percent",
+        "reserved_deliver_percent",
+        "estimated_var_avail_value",
+        "estimated_w_avail_value",
+    ]
+    table_data = generate_der_table_data(site_der_availability, attributes_to_include)
+    table_data.insert(0, ["DER Availability", "Value"])
+    column_widths = [int(fraction * stylesheet.table_width) for fraction in [0.5, 0.5]]
+    table = Table(table_data, colWidths=column_widths)
+    table.setStyle(stylesheet.table)
+    elements.append(table)
+    elements.append(stylesheet.spacer)
+    return elements
+
+
+def generate_site_der_status_table(site_der_status: SiteDERStatus, stylesheet: StyleSheet) -> list[Flowable]:
+    elements: list[Flowable] = []
+    attributes_to_include = [
+        "created_time",
+        "changed_time",
+        "alarm_status",
+        "generator_connect_status",
+        "generator_connect_status_time",
+        "inverter_status",
+        "inverter_status_time",
+        "local_control_mode_status",
+        "local_control_mode_status_time",
+        "manufacturer_status",
+        "manufacturer_status_time",
+        "operational_mode_status",
+        "operational_mode_status_time",
+        "state_of_charge_status",
+        "state_of_charge_status_time",
+        "storage_mode_status",
+        "storage_mode_status_time",
+        "storage_connect_status",
+        "storage_connect_status_time",
+    ]
+    table_data = generate_der_table_data(site_der_status, attributes_to_include)
+    table_data.insert(0, ["DER Status", "Value"])
+    column_widths = [int(fraction * stylesheet.table_width) for fraction in [0.5, 0.5]]
+    table = Table(table_data, colWidths=column_widths)
     table.setStyle(stylesheet.table)
     elements.append(table)
     elements.append(stylesheet.spacer)
@@ -625,16 +800,37 @@ def generate_site_section(site: Site, stylesheet: StyleSheet) -> list[Flowable]:
     elements: list[Flowable] = []
 
     if site.nmi:
-        section_title = f"Site {site.site_id} (nmi: {site.nmi})"
+        section_title = f"EndDevice {site.site_id} (nmi: {site.nmi})"
         site_description = f"Created at {site.created_time.strftime(stylesheet.date_format)}"
     else:
-        section_title = f"Site {site.site_id}"
+        section_title = f"EndDevice {site.site_id}"
         site_description = "Generated as part of test procedure precondition."
     elements.append(Paragraph(section_title, stylesheet.subheading))
     elements.append(Paragraph(site_description))
     elements.append(stylesheet.spacer)
     if site.site_ders:
-        elements.extend(generate_site_der_table(site=site, stylesheet=stylesheet))
+        site_der = site.site_ders[0]
+        if site_der.site_der_rating is not None:
+            elements.extend(
+                generate_site_der_rating_table(site_der_rating=site_der.site_der_rating, stylesheet=stylesheet)
+            )
+            elements.append(stylesheet.spacer)
+        if site_der.site_der_setting is not None:
+            elements.extend(
+                generate_site_der_setting_table(site_der_setting=site_der.site_der_setting, stylesheet=stylesheet)
+            )
+            elements.append(stylesheet.spacer)
+        if site_der.site_der_availability is not None:
+            elements.extend(
+                generate_site_der_availability_table(
+                    site_der_availability=site_der.site_der_availability, stylesheet=stylesheet
+                )
+            )
+            elements.append(stylesheet.spacer)
+        if site_der.site_der_status is not None:
+            elements.extend(
+                generate_site_der_status_table(site_der_status=site_der.site_der_status, stylesheet=stylesheet)
+            )
     else:
         elements.append(Paragraph("No Site DER registered for this site."))
     return elements
@@ -649,6 +845,54 @@ def generate_devices_section(sites: list[Site], stylesheet: StyleSheet) -> list[
             elements.extend(generate_site_section(site=site, stylesheet=stylesheet))
     else:
         elements.append(Paragraph("No devices registered either out-of-band or in-band during this test procedure."))
+    elements.append(stylesheet.spacer)
+    return elements
+
+
+def generate_controls_chart(controls: list[DynamicOperatingEnvelope]) -> Image:
+    data = [
+        dict(Control=f"{i}", Start=control.start_time, Finish=control.end_time)
+        for i, control in enumerate(controls, start=1)
+    ]
+    df = pd.DataFrame(data)
+    fig = px.timeline(df, x_start="Start", x_end="Finish", y="Control")
+    fig.update_yaxes(autorange="reversed")
+    return fig_to_image(fig=fig, content_width=MAX_CONTENT_WIDTH)
+
+
+def generate_controls_table(controls: list[DynamicOperatingEnvelope], stylesheet: StyleSheet) -> list[Flowable]:
+    elements: list[Flowable] = []
+
+    table_data = [
+        [
+            f"{i}",
+            control.start_time,
+            control.duration_seconds,
+            "-" if control.import_limit_active_watts is None else control.import_limit_active_watts,
+            "-" if control.export_limit_watts is None else control.export_limit_watts,
+            "-" if control.load_limit_active_watts is None else control.load_limit_active_watts,
+        ]
+        for i, control in enumerate(controls, start=1)
+    ]
+    table_data.insert(0, ["", "Start (UTC)", "Duration (s)", "Import Limit (W)", "Export Limit (W)", "Load Limit (W)"])
+    column_widths = [int(fraction * stylesheet.table_width) for fraction in [0.06, 0.35, 0.11, 0.16, 0.16, 0.16]]
+    table = Table(table_data, colWidths=column_widths)
+    table.setStyle(stylesheet.table)
+    elements.append(table)
+    elements.append(stylesheet.spacer)
+    return elements
+
+
+def generate_controls_section(controls: list[DynamicOperatingEnvelope], stylesheet: StyleSheet) -> list[Flowable]:
+    elements: list[Flowable] = []
+    elements.append(Paragraph("Controls", stylesheet.heading))
+    elements[-1].keepWithNext = True
+    if controls:
+        elements.append(generate_controls_chart(controls=controls))
+        elements.append(stylesheet.spacer)
+        elements.extend(generate_controls_table(controls=controls, stylesheet=stylesheet))
+    else:
+        elements.append(Paragraph("No controls active during this test procedure."))
     elements.append(stylesheet.spacer)
     return elements
 
@@ -770,6 +1014,7 @@ def generate_page_elements(
     readings: dict[SiteReadingType, pd.DataFrame],
     reading_counts: dict[SiteReadingType, int],
     sites: list[Site],
+    controls: list[DynamicOperatingEnvelope],
     stylesheet: StyleSheet,
 ) -> list[Flowable]:
     active_test_procedure = runner_state.active_test_procedure
@@ -805,6 +1050,7 @@ def generate_page_elements(
                 init_timestamp=init_timestamp,
                 start_timestamp=start_timestamp,
                 client_lfdi=active_test_procedure.client_lfdi,
+                client_cert_type=active_test_procedure.client_certificate_type,
                 duration=duration,
                 stylesheet=stylesheet,
             )
@@ -827,6 +1073,9 @@ def generate_page_elements(
     # Devices Section
     page_elements.extend(generate_devices_section(sites=sites, stylesheet=stylesheet))
 
+    # Controls Section
+    page_elements.extend(generate_controls_section(controls=controls, stylesheet=stylesheet))
+
     # Readings Section
     page_elements.extend(
         generate_readings_section(
@@ -843,6 +1092,7 @@ def pdf_report_as_bytes(
     readings: dict[SiteReadingType, pd.DataFrame],
     reading_counts: dict[SiteReadingType, int],
     sites: list[Site],
+    controls: list[DynamicOperatingEnvelope],
 ) -> bytes:
     stylesheet = get_stylesheet()
 
@@ -859,6 +1109,7 @@ def pdf_report_as_bytes(
         readings=readings,
         reading_counts=reading_counts,
         sites=sites,
+        controls=controls,
         stylesheet=stylesheet,
     )
 

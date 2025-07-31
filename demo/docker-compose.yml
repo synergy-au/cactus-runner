@@ -13,7 +13,7 @@ x-envoy-common:
 
 services:
   cactus-runner:
-    image: ghcr.io/synergy-au/cactus-runner:23-synergy
+    image: cactusimageregistry.azurecr.io/cactus-runner:34-synergy
     ports:
       - 127.0.0.1:8080:8080
     networks:
@@ -28,7 +28,7 @@ services:
       - ENVOY_ADMIN_URL=http://cactus-envoy-admin:8001
 
   cactus-teststack-init:
-    image: ghcr.io/synergy-au/cactus-teststack-init:23-synergy
+    image: cactusimageregistry.azurecr.io/cactus-teststack-init:34-synergy
     restart: "no"
     environment:
       - ENVOY_DATABASE_URL=postgresql://test_user:test_pwd@cactus-envoy-db/test_db
@@ -57,7 +57,7 @@ services:
         condition: service_completed_successfully
 
   taskiq-worker:
-    image: ghcr.io/synergy-au/cactus-envoy:23-synergy
+    image: cactusimageregistry.azurecr.io/cactus-envoy:34-synergy
     environment:
       <<: *common-env
     command: taskiq worker envoy.notification.main:broker envoy.notification.task
@@ -71,7 +71,7 @@ services:
         condition: service_completed_successfully
 
   cactus-envoy:
-    image: ghcr.io/synergy-au/cactus-envoy:23-synergy
+    image: cactusimageregistry.azurecr.io/cactus-envoy:34-synergy
     ports:
       - 127.0.0.1:8000:8000
     restart: unless-stopped
@@ -92,7 +92,7 @@ services:
       - shared:/shared
 
   cactus-envoy-admin:
-    image: ghcr.io/synergy-au/cactus-envoy:23-synergy
+    image: cactusimageregistry.azurecr.io/cactus-envoy:34-synergy
     ports:
       - 127.0.0.1:8001:8001
     restart: unless-stopped
