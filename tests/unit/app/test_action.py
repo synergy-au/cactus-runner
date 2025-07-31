@@ -320,6 +320,7 @@ async def test_action_create_der_control_no_group(pg_base_config, envoy_admin_cl
         "pow_10_multipliers": -1,
         "primacy": 2,
         "randomizeStart_seconds": 0,
+        "ramp_time_seconds": 0,
         "opModEnergize": 0,
         "opModConnect": 0,
         "opModImpLimW": 0,
@@ -390,6 +391,7 @@ async def test_action_create_der_control_existing_group(pg_base_config, envoy_ad
         "pow_10_multipliers": -1,
         "primacy": 2,
         "randomizeStart_seconds": 0,
+        "ramp_time_seconds": 0,
         "opModEnergize": 0,
         "opModConnect": 0,
         "opModImpLimW": 0,
@@ -451,6 +453,7 @@ async def test_action_create_der_control_control_values(pg_base_config, envoy_ad
         "opModLoadLimW": gen_float(value_seed, 6),
         "opModFixedW": gen_float(value_seed, 7),
         "opModStorageTargetW": gen_float(value_seed, 8),
+        "ramp_time_seconds": gen_float(value_seed, 8),
     }
     for k in list(resolved_params.keys()):
         if resolved_params[k] is None:
@@ -472,6 +475,7 @@ async def test_action_create_der_control_control_values(pg_base_config, envoy_ad
         assert doe.load_limit_active_watts == gen_float(value_seed, 6)
         assert doe.set_point_percentage == gen_float(value_seed, 7)
         assert doe.storage_target_active_watts == gen_float(value_seed, 8)
+        assert doe.ramp_time_seconds == gen_float(value_seed, 8)
 
 
 @pytest.mark.anyio
@@ -564,11 +568,12 @@ async def test_action_set_comms_rate_no_values(pg_base_config, envoy_admin_clien
         assert site.post_rate_seconds == 123, "This value shouldn't have changed"
 
 
+@pytest.mark.parametrize("agg_id", [0, 1])
 @pytest.mark.anyio
-async def test_action_register_end_device(pg_base_config):
+async def test_action_register_aggregator_end_device(pg_base_config, agg_id: int):
     # Arrange
     active_test_procedure = generate_class_instance(
-        ActiveTestProcedure, step_status={"1": StepStatus.PENDING}, finished_zip_data=None
+        ActiveTestProcedure, step_status={"1": StepStatus.PENDING}, finished_zip_data=None, client_aggregator_id=agg_id
     )
     resolved_params = {
         "nmi": "abc",
@@ -580,7 +585,7 @@ async def test_action_register_end_device(pg_base_config):
         await action_register_end_device(active_test_procedure, resolved_params, session)
 
     # Assert
-    assert pg_base_config.execute("select count(*) from site;").fetchone()[0] == 1
+    assert pg_base_config.execute(f"select count(*) from site where aggregator_id = {agg_id};").fetchone()[0] == 1
 
 
 @pytest.mark.parametrize(

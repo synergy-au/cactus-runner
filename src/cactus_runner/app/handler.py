@@ -1,6 +1,7 @@
 import http
 import logging
 from datetime import datetime, timezone
+from typing import cast
 
 from aiohttp import web
 from envoy.server.api.depends.lfdi_auth import LFDIAuthDepends
@@ -16,8 +17,8 @@ from cactus_runner.app.env import (
 from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
 from cactus_runner.app.schema_validator import validate_proxy_request_schema
 from cactus_runner.app.shared import (
-    APPKEY_AGGREGATOR,
     APPKEY_ENVOY_ADMIN_CLIENT,
+    APPKEY_INITIALISED_CERTS,
     APPKEY_RUNNER_STATE,
     APPKEY_TEST_PROCEDURES,
 )
@@ -91,9 +92,22 @@ async def init_handler(request: web.Request):
         return web.Response(status=http.HTTPStatus.BAD_REQUEST, text="Missing 'test' query parameter.")
 
     # Get the certificate of the aggregator to register
-    aggregator_certificate = request.query["certificate"]
+    aggregator_certificate = request.query.get("aggregator_certificate", None)
     if aggregator_certificate is None:
-        return web.Response(status=http.HTTPStatus.BAD_REQUEST, text="Missing 'certificate' query parameter.")
+        aggregator_lfdi = None
+        logger.info("No aggregator certificate is loaded. All EndDevice's must be registered via a device certificate")
+    else:
+        aggregator_lfdi = LFDIAuthDepends.generate_lfdi_from_pem(aggregator_certificate)
+        logger.info(f"Aggregator will created with certificate lfdi {aggregator_lfdi}.")
+
+    # Get the device certificate to register
+    device_certificate = request.query.get("device_certificate", None)
+    if device_certificate is None:
+        device_lfdi = None
+        logger.info("No device certificate is loaded. All EndDevice's must be registered via aggregator certificate")
+    else:
+        device_lfdi = LFDIAuthDepends.generate_lfdi_from_pem(device_certificate)
+        logger.info(f"Device certificates will only be supported with certificate lfdi {device_lfdi}.")
 
     subscription_domain = request.query.get("subscription_domain", None)
     if subscription_domain is None:
@@ -108,16 +122,35 @@ async def init_handler(request: web.Request):
         sanitized_run_id = run_id.replace("\n", "").replace("\r", "")
         logger.info(f"run ID {sanitized_run_id} has been assigned to this test.")
 
-    # Get the lfdi of the aggregator to register
-    aggregator_lfdi = LFDIAuthDepends.generate_lfdi_from_pem(aggregator_certificate)
-    await precondition.register_aggregator(lfdi=aggregator_lfdi, subscription_domain=subscription_domain)
+    # Need EITHER device certificate or an aggregator certificate. Can't run both.
+    if device_lfdi is not None and aggregator_lfdi is not None:
+        return web.Response(
+            status=http.HTTPStatus.BAD_REQUEST,
+            text="Cannot use 'aggregator_certificate' and 'device_certificate' at the same time.",
+        )
+    elif device_lfdi is None and aggregator_lfdi is None:
+        return web.Response(
+            status=http.HTTPStatus.BAD_REQUEST, text="Need one of 'aggregator_certificate' or 'device_certificate'."
+        )
 
-    # Save the aggregator details for later request validation
-    request.app[APPKEY_AGGREGATOR].certificate = aggregator_certificate
-    request.app[APPKEY_AGGREGATOR].lfdi = aggregator_lfdi
+    # Now install the certificate we intend to use
+    client_aggregator_id = await precondition.register_aggregator(
+        lfdi=aggregator_lfdi, subscription_domain=subscription_domain
+    )
+    if aggregator_lfdi is None:
+        client_type = "Device"
+        client_lfdi = cast(str, device_lfdi)  # we know its set due to checks above
+        client_certificate = cast(str, device_certificate)  # we know its set due to checks above
+    else:
+        client_type = "Aggregator"
+        client_lfdi = cast(str, aggregator_lfdi)  # we know its set due to checks above
+        client_certificate = cast(str, aggregator_certificate)  # we know its set due to checks above
+    logger.info(f"Registering a {client_type} certificate {client_lfdi} under aggregator id {client_aggregator_id}")
 
-    logger.debug(f"{aggregator_certificate=}")
-    logger.debug(f"{aggregator_lfdi=}")
+    # Save the certificate details for later request validation
+    request.app[APPKEY_INITIALISED_CERTS].client_certificate_type = client_type
+    request.app[APPKEY_INITIALISED_CERTS].client_lfdi = client_lfdi
+    request.app[APPKEY_INITIALISED_CERTS].client_certificate = client_certificate
 
     # Get the definition of the test procedure
     try:
@@ -141,8 +174,10 @@ async def init_handler(request: web.Request):
         started_at=None,  # Test hasn't started yet
         listeners=listeners,
         step_status={step: StepStatus.PENDING for step in definition.steps.keys()},
-        client_lfdi=aggregator_lfdi,
-        client_sfdi=convert_lfdi_to_sfdi(aggregator_lfdi),
+        client_lfdi=client_lfdi,
+        client_sfdi=convert_lfdi_to_sfdi(client_lfdi),
+        client_aggregator_id=client_aggregator_id,
+        client_certificate_type=client_type,
         run_id=run_id,
     )
 
@@ -268,7 +303,11 @@ async def finalize_handler(request):
         async with begin_session() as session:
             # This will either force the active test procedure to finish
             # (or it will return the results of an earlier finish)
-            zip_contents = await finalize.finish_active_test(runner_state, session)
+            try:
+                zip_contents = await finalize.finish_active_test(runner_state, session)
+            except Exception as exc:
+                logger.error("Exception trying to finish_active_test. Will yield error zip", exc_info=exc)
+                zip_contents = finalize.safely_get_error_zip([f"Exception generating zip: {exc}"])
 
         # Clear the active test procedure and request history
         runner_state.active_test_procedure = None

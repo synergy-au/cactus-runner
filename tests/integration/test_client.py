@@ -10,7 +10,7 @@ from assertical.asserts.type import assert_dict_type
 from cactus_test_definitions import TestProcedureId
 from pytest_aiohttp.plugin import TestClient
 
-from cactus_runner.client import RunnerClient
+from cactus_runner.client import RunnerClient, RunnerClientException
 from cactus_runner.models import (
     ClientInteraction,
     InitResponseBody,
@@ -18,25 +18,41 @@ from cactus_runner.models import (
     StartResponseBody,
     StepStatus,
 )
-from tests.integration.certificate1 import TEST_CERTIFICATE_PEM
+from tests.integration.certificate1 import (
+    TEST_CERTIFICATE_PEM as TEST_CERTIFICATE_1_PEM,
+)
+from tests.integration.certificate2 import (
+    TEST_CERTIFICATE_PEM as TEST_CERTIFICATE_2_PEM,
+)
 
-RAW_CERT = TEST_CERTIFICATE_PEM.decode()
-URI_ENCODED_CERT = quote(RAW_CERT)
+RAW_CERT_1 = TEST_CERTIFICATE_1_PEM.decode()
+URI_ENCODED_CERT_1 = quote(RAW_CERT_1)
+
+RAW_CERT_2 = TEST_CERTIFICATE_2_PEM.decode()
+URI_ENCODED_CERT_2 = quote(RAW_CERT_2)
 
 
 @pytest.mark.parametrize(
-    "test_procedure_id, sub_domain", [(TestProcedureId.ALL_01, None), (TestProcedureId.ALL_02, "my.example.domain")]
+    "test_procedure_id, sub_domain, aggregator_cert, device_cert",
+    [
+        (TestProcedureId.ALL_01, None, RAW_CERT_1, None),
+        (TestProcedureId.ALL_02, "my.example.domain", None, RAW_CERT_2),
+    ],
 )
 @pytest.mark.slow
 @pytest.mark.anyio
 async def test_client_interactions(
-    cactus_runner_client: TestClient, test_procedure_id: TestProcedureId, sub_domain: str | None
+    cactus_runner_client: TestClient,
+    test_procedure_id: TestProcedureId,
+    sub_domain: str | None,
+    aggregator_cert: str | None,
+    device_cert: str | None,
 ):
     """Tests that the embedded client can interact with a full test stack"""
 
     # Interrogate the init response
     async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(30)) as session:
-        init_response = await RunnerClient.init(session, test_procedure_id, RAW_CERT, sub_domain)
+        init_response = await RunnerClient.init(session, test_procedure_id, aggregator_cert, device_cert, sub_domain)
     assert isinstance(init_response, InitResponseBody)
     assert init_response.test_procedure == test_procedure_id.value
     assert isinstance(init_response.status, str)
@@ -78,3 +94,33 @@ async def test_client_interactions(
     assert len(summary_data) > 0
     summary = RunnerStatus.from_json(summary_data.decode())
     assert summary.step_status == status_response.step_status, "This shouldn't have changed between status and finalize"
+
+
+@pytest.mark.parametrize(
+    "aggregator_cert, device_cert",
+    [
+        (RAW_CERT_1, RAW_CERT_2),  # Can't register two certs at the same time
+        (None, None),  # Must register one cert
+    ],
+)
+@pytest.mark.slow
+@pytest.mark.anyio
+async def test_client_init_bad_cert_combos(
+    cactus_runner_client: TestClient,
+    aggregator_cert: str | None,
+    device_cert: str | None,
+):
+    """Tests that the embedded client handles failures where the combination of certificates is wrong"""
+
+    # Interrogate the init response
+    async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(30)) as session:
+        # Look for a BAD_REQUEST (http 400)
+        with pytest.raises(RunnerClientException, check=lambda e: "400" in str(e)):
+            await RunnerClient.init(
+                session,
+                TestProcedureId.ALL_01,
+                aggregator_certificate=aggregator_cert,
+                device_certificate=device_cert,
+                subscription_domain=None,
+                run_id="abc123",
+            )

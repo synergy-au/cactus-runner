@@ -95,7 +95,8 @@ async def test_register_aggregator(pg_empty_config, subscription_domain: str | N
 
     lfdi = "abc123lfdi"
     async with generate_async_session(pg_empty_config) as session:
-        await precondition.register_aggregator(lfdi, subscription_domain)
+        returned_agg_id = await precondition.register_aggregator(lfdi, subscription_domain)
+        assert returned_agg_id > 0, "We should always be getting aggregator ID 1"
 
     async with generate_async_session(pg_empty_config) as session:
         null_agg = (
@@ -108,6 +109,7 @@ async def test_register_aggregator(pg_empty_config, subscription_domain: str | N
                 select(Aggregator).where(Aggregator.aggregator_id == 1).options(selectinload(Aggregator.domains))
             )
         ).scalar_one()
+        assert cactus_agg.aggregator_id == returned_agg_id
 
         # Make sure domains are set (or not set)
         if subscription_domain is None:
@@ -123,3 +125,27 @@ async def test_register_aggregator(pg_empty_config, subscription_domain: str | N
         cert_assignments = (await session.execute(select(AggregatorCertificateAssignment))).scalars().all()
         assert len(cert_assignments) == 1, "Single cert assigned to a single aggregator"
         assert cert_assignments[0].aggregator_id == 1, "Should be assigned to the cactus aggregator"
+
+
+@pytest.mark.parametrize("subscription_domain", [None, "my.domain.name"])
+@pytest.mark.anyio
+async def test_register_no_aggregator(pg_empty_config, subscription_domain: str | None):
+    """Does some basic checks on register_aggregator to ensure it sets up the basics in the database if there is
+    no aggregator client (should still install null agg)"""
+
+    async with generate_async_session(pg_empty_config) as session:
+        returned_agg_id = await precondition.register_aggregator(None, subscription_domain)
+        assert returned_agg_id == 0, "Should be defaulting to the default aggregator ID"
+
+    async with generate_async_session(pg_empty_config) as session:
+        null_agg = (
+            await session.execute(select(Aggregator).where(Aggregator.aggregator_id == NULL_AGGREGATOR_ID))
+        ).scalar_one_or_none()
+        assert null_agg is not None
+        assert null_agg.aggregator_id == returned_agg_id
+
+        assert (await session.execute(select(func.count()).select_from(Certificate))).scalar_one() == 0
+        assert (await session.execute(select(func.count()).select_from(Aggregator))).scalar_one() == 1
+        assert (
+            await session.execute(select(func.count()).select_from(AggregatorCertificateAssignment))
+        ).scalar_one() == 0

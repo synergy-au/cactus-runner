@@ -32,6 +32,8 @@ from cactus_runner.app.check import (
     CheckResult,
     FailedCheckError,
     UnknownCheckError,
+    ParamsDERSettingsContents,
+    ParamsDERCapabilityContents,
     all_checks_passing,
     check_all_notifications_transmitted,
     check_all_steps_complete,
@@ -43,6 +45,7 @@ from cactus_runner.app.check import (
     check_subscription_contents,
     do_check_readings_for_types,
     do_check_site_readings_and_params,
+    is_nth_bit_set_properly,
     response_type_to_string,
     run_check,
 )
@@ -110,6 +113,31 @@ def assert_check_result(cr: CheckResult, expected: bool):
 
 
 @pytest.mark.parametrize(
+    "value, n, expected, expected_output",
+    [
+        (0, 0, True, False),
+        (0, 0, False, True),
+        (1, 0, True, True),
+        (1, 0, False, False),
+        (0, 4, True, False),
+        (0, 4, False, True),
+        (8, 3, False, False),
+        (8, 3, True, True),
+        (8, 4, False, True),
+        (8, 4, True, False),
+        (6, 0, False, True),
+        (6, 1, True, True),
+        (6, 2, True, True),
+        (6, 3, False, True),
+    ],
+)
+def test_is_nth_bit_set_properly(value: int, n: int, expected: bool, expected_output: bool):
+    actual_output = is_nth_bit_set_properly(value, n, expected)
+    assert isinstance(actual_output, bool)
+    assert actual_output is expected_output
+
+
+@pytest.mark.parametrize(
     "active_test_procedure, resolved_parameters, expected",
     [
         (generate_active_test_procedure_steps([], []), {}, True),
@@ -161,6 +189,34 @@ async def test_check_connectionpoint_contents(
     assert_check_result(result, expected)
 
     assert_mock_session(mock_session)
+
+
+def der_setting_bool_param_scenario(param: str, expected: bool) -> tuple[list, dict[str, bool], bool]:
+    """Convenience for generating scenarios for testing the settings boolean param checks"""
+    return (
+        [
+            generate_class_instance(
+                Site,
+                seed=101,
+                aggregator_id=1,
+                site_ders=[
+                    generate_class_instance(
+                        SiteDER,
+                        site_der_setting=generate_class_instance(SiteDERSetting),
+                    )
+                ],
+            )
+        ],
+        {param: expected},
+        expected,
+    )
+
+
+DERSETTING_BOOL_PARAM_SCENARIOS = [
+    der_setting_bool_param_scenario(p, e)
+    for p in ["setMaxW", "setMaxVA", "setMaxVar", "setMaxChargeRateW", "setMaxDischargeRateW", "setMaxWh"]
+    for e in [True, False]
+]
 
 
 @pytest.mark.parametrize(
@@ -250,6 +306,143 @@ async def test_check_connectionpoint_contents(
             {},
             False,
         ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=int("ff", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesEnabled_set": "03"},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=int("fe", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesEnabled_set": "03"},
+            False,
+        ),  # Bit flag 1 not set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, modes_enabled=int("ff", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"modesEnabled_set": "03"},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, modes_enabled=int("fe", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"modesEnabled_set": "03"},
+            False,
+        ),  # Bit flag 1 not set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=int("fc", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesEnabled_unset": "03"},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=int("fd", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesEnabled_unset": "03"},
+            False,
+        ),  # Bit flag 1 set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, modes_enabled=int("fc", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"modesEnabled_unset": "03"},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, modes_enabled=int("fd", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"modesEnabled_unset": "03"},
+            False,
+        ),  # Bit flag 1 set on actual value
+        *DERSETTING_BOOL_PARAM_SCENARIOS,
     ],
 )
 @pytest.mark.anyio
@@ -265,10 +458,38 @@ async def test_check_der_settings_contents(
         assert_check_result(result, expected)
 
 
+def der_rating_bool_param_scenario(param: str, expected: bool) -> tuple[list, dict[str, bool], bool]:
+    """Convenience for generating scenarios for testing the ratings boolean param checks"""
+    return (
+        [
+            generate_class_instance(
+                Site,
+                seed=101,
+                aggregator_id=1,
+                site_ders=[
+                    generate_class_instance(
+                        SiteDER,
+                        site_der_rating=generate_class_instance(SiteDERRating),
+                    )
+                ],
+            )
+        ],
+        {param: expected},
+        expected,
+    )
+
+
+DERRATING_BOOL_PARAM_SCENARIOS = [
+    der_rating_bool_param_scenario(p, e)
+    for p in ["rtgMaxW", "rtgMaxVA", "rtgMaxVar", "rtgMaxChargeRateW", "rtgMaxDischargeRateW", "rtgMaxWh"]
+    for e in [True, False]
+]
+
+
 @pytest.mark.parametrize(
-    "existing_sites, expected",
+    "existing_sites, resolved_params, expected",
     [
-        ([], False),
+        ([], {}, False),
         (
             [
                 generate_class_instance(
@@ -280,6 +501,7 @@ async def test_check_der_settings_contents(
                     ],
                 )
             ],
+            {},
             True,
         ),
         (
@@ -293,6 +515,7 @@ async def test_check_der_settings_contents(
                     ],
                 )
             ],
+            {},
             False,
         ),  # Is setting DERSetting not DERCapability
         (
@@ -304,6 +527,7 @@ async def test_check_der_settings_contents(
                     site_ders=[generate_class_instance(SiteDER)],
                 )
             ],
+            {},
             False,
         ),
         (
@@ -314,18 +538,158 @@ async def test_check_der_settings_contents(
                     aggregator_id=1,
                 )
             ],
+            {},
             False,
         ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, doe_modes_supported=int("ff", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesSupported_set": "03"},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, doe_modes_supported=int("fe", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesSupported_set": "03"},
+            False,
+        ),  # Bit flag 1 not set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, modes_supported=int("ff", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"modesSupported_set": "03"},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, modes_supported=int("fe", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"modesSupported_set": "03"},
+            False,
+        ),  # Bit flag 1 not set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, doe_modes_supported=int("fc", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesSupported_unset": "03"},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, doe_modes_supported=int("fd", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesSupported_unset": "03"},
+            False,
+        ),  # Bit flag 1 set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, modes_supported=int("fc", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"modesSupported_unset": "03"},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, modes_supported=int("fd", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"modesSupported_unset": "03"},
+            False,
+        ),  # Bit flag 1 set on actual value
+        *DERRATING_BOOL_PARAM_SCENARIOS,
     ],
 )
 @pytest.mark.anyio
-async def test_check_der_capability_contents(pg_base_config, existing_sites: list[Site], expected: bool):
+async def test_check_der_capability_contents(
+    pg_base_config, existing_sites: list[Site], resolved_params: dict[str, Any], expected: bool
+):
     async with generate_async_session(pg_base_config) as session:
         session.add_all(existing_sites)
         await session.commit()
 
     async with generate_async_session(pg_base_config) as session:
-        result = await check_der_capability_contents(session)
+        result = await check_der_capability_contents(session, resolved_params)
         assert_check_result(result, expected)
 
 
@@ -346,6 +710,139 @@ async def test_check_der_capability_contents(pg_base_config, existing_sites: lis
             ],
             {},
             True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_status=generate_class_instance(
+                                SiteDERStatus, generator_connect_status=5, operational_mode_status=999
+                            ),
+                        )
+                    ],
+                )
+            ],
+            {"genConnectStatus_bit0": True, "genConnectStatus_bit1": False, "genConnectStatus_bit2": True},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_status=generate_class_instance(
+                                SiteDERStatus, generator_connect_status=None, operational_mode_status=999
+                            ),
+                        )
+                    ],
+                )
+            ],
+            {"genConnectStatus_bit0": False},
+            False,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_status=generate_class_instance(
+                                SiteDERStatus, generator_connect_status=None, operational_mode_status=999
+                            ),
+                        )
+                    ],
+                )
+            ],
+            {"genConnectStatus_bit1": False},
+            False,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_status=generate_class_instance(
+                                SiteDERStatus, generator_connect_status=None, operational_mode_status=999
+                            ),
+                        )
+                    ],
+                )
+            ],
+            {"genConnectStatus_bit2": False},
+            False,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_status=generate_class_instance(
+                                SiteDERStatus, generator_connect_status=5, operational_mode_status=999
+                            ),
+                        )
+                    ],
+                )
+            ],
+            {"genConnectStatus_bit0": False, "genConnectStatus_bit1": False, "genConnectStatus_bit2": True},
+            False,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_status=generate_class_instance(
+                                SiteDERStatus, generator_connect_status=5, operational_mode_status=999
+                            ),
+                        )
+                    ],
+                )
+            ],
+            {"genConnectStatus_bit0": True, "genConnectStatus_bit1": True, "genConnectStatus_bit2": True},
+            False,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_status=generate_class_instance(
+                                SiteDERStatus, generator_connect_status=5, operational_mode_status=999
+                            ),
+                        )
+                    ],
+                )
+            ],
+            {"genConnectStatus_bit0": True, "genConnectStatus_bit1": False, "genConnectStatus_bit2": False},
+            False,
         ),
         (
             [
@@ -1126,3 +1623,21 @@ async def test_all_checks_passing(
 
     # Assert
     assert_mock_session(mock_session)
+
+
+def test_params_der_settings_contents_model_has_correct_fields():
+    """Ensures aliases for fields matches expected in the param definitions"""
+    dscm = ParamsDERSettingsContents()
+
+    assert sorted([f.alias for f in dscm.__pydantic_fields__.values()]) == sorted(
+        [f for f in CHECK_PARAMETER_SCHEMA["der-settings-contents"]]
+    )
+
+
+def test_params_der_capability_contents_model_has_correct_fields():
+    """Ensures aliases for fields matches expected in the param definitions"""
+    dccm = ParamsDERCapabilityContents()
+
+    assert sorted([f.alias for f in dccm.__pydantic_fields__.values()]) == sorted(
+        [f for f in CHECK_PARAMETER_SCHEMA["der-capability-contents"]]
+    )
