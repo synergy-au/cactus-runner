@@ -17,7 +17,7 @@ from envoy.server.model.site import (
 from envoy.server.model.site_reading import SiteReading
 from envoy.server.model.subscription import Subscription, TransmitNotificationLog
 from envoy_schema.server.schema.sep2.response import ResponseType
-from envoy_schema.server.schema.sep2.types import DataQualifierType, UomType
+from envoy_schema.server.schema.sep2.types import DataQualifierType, UomType, KindType
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,6 +58,9 @@ class ParamsDERSettingsContents(pydantic.BaseModel):
     set_max_charge_rate_w: bool | None = None
     set_max_discharge_rate_w: bool | None = None
     set_max_wh: bool | None = None
+    set_min_wh: bool | None = None
+    vpp_modes_enabled_set: Annotated[str | None, pydantic.Field(alias="vppModesEnabled_set")] = None
+    vpp_modes_enabled_unset: Annotated[str | None, pydantic.Field(alias="vppModesEnabled_unset")] = None
 
 
 class ParamsDERCapabilityContents(pydantic.BaseModel):
@@ -75,6 +78,8 @@ class ParamsDERCapabilityContents(pydantic.BaseModel):
     rtg_max_charge_rate_w: bool | None = None
     rtg_max_discharge_rate_w: bool | None = None
     rtg_max_wh: bool | None = None
+    vpp_modes_supported_set: Annotated[str | None, pydantic.Field(alias="vppModesSupported_set")] = None
+    vpp_modes_supported_unset: Annotated[str | None, pydantic.Field(alias="vppModesSupported_unset")] = None
 
 
 @dataclass
@@ -174,14 +179,14 @@ async def check_der_settings_contents(session: AsyncSession, resolved_parameters
         if k == "set_grad_w" and der_settings.grad_w != params.set_grad_w:
             soft_checker.add(f"DERSetting.setGradW {der_settings.grad_w} doesn't match expected {params.set_grad_w}")
 
-        elif k in ["doe_modes_enabled_set", "modes_enabled_set"]:
+        elif k in ["doe_modes_enabled_set", "modes_enabled_set", "vpp_modes_enabled_set"]:
             # Bitwise assert hi (==1) checks
             params_val = int(getattr(params, k), 16)
             if (getattr(der_settings, k.rstrip("_set")) & params_val) != params_val:
                 field = params.__pydantic_fields__[k]
                 soft_checker.add(f"DERSetting.{field.alias} minimum flag setting check hi (==1) failed")
 
-        elif k in ["doe_modes_enabled_unset", "modes_enabled_unset"]:
+        elif k in ["doe_modes_enabled_unset", "modes_enabled_unset", "vpp_modes_enabled_unset"]:
             # Bitwise assert lo (==0) checks
             params_val = int(getattr(params, k), 16)
             if (getattr(der_settings, k.rstrip("_unset")) & params_val) != 0:
@@ -220,14 +225,14 @@ async def check_der_capability_contents(session: AsyncSession, resolved_paramete
 
     # Perform parameter checks
     for k in params.model_fields_set:
-        if k in ["doe_modes_supported_set", "modes_supported_set"]:
+        if k in ["doe_modes_supported_set", "modes_supported_set", "vpp_modes_supported_set"]:
             # Bitwise-and checks
             params_val = int(getattr(params, k), 16)
             if (getattr(der_rating, k.rstrip("_set")) & params_val) != params_val:
                 field = params.__pydantic_fields__[k]
                 soft_checker.add(f"DERCapability.{field.alias} minimum flag setting check hi (==1) failed")
 
-        if k in ["doe_modes_supported_unset", "modes_supported_unset"]:
+        if k in ["doe_modes_supported_unset", "modes_supported_unset", "vpp_modes_supported_unset"]:
             # Bitwise-and checks
             params_val = int(getattr(params, k), 16)
             if (getattr(der_rating, k.rstrip("_unset")) & params_val) != 0:
@@ -351,8 +356,9 @@ async def do_check_site_readings_and_params(
     uom: UomType,
     reading_location: ReadingLocation,
     data_qualifier: DataQualifierType,
+    kind: KindType = KindType.POWER,
 ) -> CheckResult:
-    average_reading_types = await get_csip_aus_site_reading_types(session, uom, reading_location, data_qualifier)
+    average_reading_types = await get_csip_aus_site_reading_types(session, uom, reading_location, kind, data_qualifier)
     if not average_reading_types:
         return CheckResult(False, f"No site level {data_qualifier}/{uom} MirrorUsagePoint for the active EndDevice.")
 
@@ -432,6 +438,20 @@ async def check_readings_der_voltage(session: AsyncSession, resolved_parameters:
         UomType.VOLTAGE,
         ReadingLocation.DEVICE_READING,
         DataQualifierType.AVERAGE,
+    )
+
+
+async def check_readings_der_stored_energy(session: AsyncSession, resolved_parameters: dict[str, Any]) -> CheckResult:
+    """Implements the readings-der-stored-energy check.
+
+    Will only consider the mandatory "Instantaneous" readings"""
+    return await do_check_site_readings_and_params(
+        session,
+        resolved_parameters,
+        UomType.REAL_ENERGY_WATT_HOURS,
+        ReadingLocation.DEVICE_READING,
+        DataQualifierType.NOT_APPLICABLE,  # TODO: Currently corresponds to 0 but should be called Instantaneous?
+        KindType.ENERGY,
     )
 
 
@@ -596,6 +616,9 @@ async def run_check(check: Check, active_test_procedure: ActiveTestProcedure, se
 
             case "readings-der-voltage":
                 check_result = await check_readings_der_voltage(session, resolved_parameters)
+
+            case "readings-der-stored-energy":
+                check_result = await check_readings_der_stored_energy(session, resolved_parameters)
 
             case "all-notifications-transmitted":
                 check_result = await check_all_notifications_transmitted(session)
