@@ -97,7 +97,7 @@ async def get_readings(reading_specifiers: list[ReadingSpecifier]) -> dict[SiteR
                 uom=reading_specifier.uom,
                 location=reading_specifier.location,
                 kind=reading_specifier.kind,
-                qualifier=reading_specifier.qualifier
+                qualifier=reading_specifier.qualifier,
             )
             for reading_type in reading_types:
                 reading_data = await get_site_readings(session=session, site_reading_type=reading_type)

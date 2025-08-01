@@ -1289,7 +1289,12 @@ async def test_do_check_site_readings_and_params(
 
     # Act
     result = await do_check_site_readings_and_params(
-        mock_session, resolved_parameters, uom, reading_location, qualifier, kind,
+        mock_session,
+        resolved_parameters,
+        uom,
+        reading_location,
+        qualifier,
+        kind,
     )
 
     # Assert
