@@ -683,6 +683,8 @@ def generate_site_der_rating_table(site_der_rating: SiteDERRating, stylesheet: S
         "v_nom_value",
         "der_type",
         "doe_modes_supported",
+        # Storage extension
+        "vpp_modes_supported",
     ]
     table_data = generate_der_table_data(site_der_rating, attributes_to_include)
     table_data.insert(0, ["DER Rating", "Value"])
@@ -728,6 +730,9 @@ def generate_site_der_setting_table(site_der_setting: SiteDERSetting, stylesheet
         "v_ref_value",
         "v_ref_ofs_value",
         "doe_modes_enabled",
+        # Storage extension
+        "vpp_modes_enabled",
+        "min_wh_value",
     ]
     table_data = generate_der_table_data(site_der_setting, attributes_to_include)
     table_data.insert(0, ["DER Setting", "Value"])
@@ -871,11 +876,12 @@ def generate_controls_table(controls: list[DynamicOperatingEnvelope], stylesheet
             "-" if control.import_limit_active_watts is None else control.import_limit_active_watts,
             "-" if control.export_limit_watts is None else control.export_limit_watts,
             "-" if control.load_limit_active_watts is None else control.load_limit_active_watts,
+            "-" if control.storage_target_active_watts is None else control.storage_target_active_watts,
         ]
         for i, control in enumerate(controls, start=1)
     ]
-    table_data.insert(0, ["", "Start (UTC)", "Duration (s)", "Import Limit (W)", "Export Limit (W)", "Load Limit (W)"])
-    column_widths = [int(fraction * stylesheet.table_width) for fraction in [0.06, 0.35, 0.11, 0.16, 0.16, 0.16]]
+    table_data.insert(0, ["", "Start(UTC)", "Duration(s)", "ImportLimW", "ExportLimW", "LoadLimW", "StorageLimW"])
+    column_widths = [int(fraction * stylesheet.table_width) for fraction in [0.06, 0.34, 0.12, 0.12, 0.12, 0.12, 0.12]]
     table = Table(table_data, colWidths=column_widths)
     table.setStyle(stylesheet.table)
     elements.append(table)

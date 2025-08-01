@@ -25,7 +25,7 @@ from envoy.server.model.subscription import (
     TransmitNotificationLog,
 )
 from envoy_schema.server.schema.sep2.response import ResponseType
-from envoy_schema.server.schema.sep2.types import DataQualifierType, UomType
+from envoy_schema.server.schema.sep2.types import DataQualifierType, UomType, KindType
 from sqlalchemy import select
 
 from cactus_runner.app.check import (
@@ -69,6 +69,7 @@ CHECK_TYPE_TO_HANDLER: dict[str, str] = {
     "all-notifications-transmitted": "check_all_notifications_transmitted",
     "subscription-contents": "check_subscription_contents",
     "response-contents": "check_response_contents",
+    "readings-der-stored-energy": "check_readings_der_stored_energy",
 }
 
 
@@ -442,6 +443,125 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
             {"modesEnabled_unset": "03"},
             False,
         ),  # Bit flag 1 set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("ff", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesEnabled_set": "03"},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("fe", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesEnabled_set": "03"},
+            False,
+        ),  # Bit flag 1 not set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("fc", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesEnabled_unset": "03"},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("fd", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesEnabled_unset": "03"},
+            False,
+        ),  # Bit flag 1 set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(
+                                SiteDERSetting, min_wh_value=12345, min_wh_multiplier=1
+                            ),
+                        )
+                    ],
+                )
+            ],
+            {"setMinWh": True},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER, site_der_setting=generate_class_instance(SiteDERSetting, min_wh_value=12345)
+                        )
+                    ],
+                )
+            ],
+            {"setMinWh": True},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER, site_der_setting=generate_class_instance(SiteDERSetting, min_wh_value=0)
+                        )
+                    ],
+                )
+            ],
+            {"setMinWh": False},
+            False,
+        ),
         *DERSETTING_BOOL_PARAM_SCENARIOS,
     ],
 )
@@ -675,6 +795,74 @@ DERRATING_BOOL_PARAM_SCENARIOS = [
                 )
             ],
             {"modesSupported_unset": "03"},
+            False,
+        ),  # Bit flag 1 set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, vpp_modes_supported=int("ff", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesSupported_set": "03"},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, vpp_modes_supported=int("fe", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesSupported_set": "03"},
+            False,
+        ),  # Bit flag 1 not set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, vpp_modes_supported=int("fc", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesSupported_unset": "03"},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, vpp_modes_supported=int("fd", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesSupported_unset": "03"},
             False,
         ),  # Bit flag 1 set on actual value
         *DERRATING_BOOL_PARAM_SCENARIOS,
@@ -1015,9 +1203,18 @@ async def test_do_check_readings_for_types(
 
 
 @pytest.mark.parametrize(
-    "resolved_parameters, uom, reading_location, qualifier, site_reading_types, expected_srt_ids, expected_min_count",
+    "resolved_parameters, uom, reading_location, qualifier, site_reading_types, expected_srt_ids, expected_min_count, kind",  # noqa
     [
-        ({}, UomType.REAL_POWER_WATT, ReadingLocation.SITE_READING, DataQualifierType.AVERAGE, [], [], None),
+        (
+            {},
+            UomType.REAL_POWER_WATT,
+            ReadingLocation.SITE_READING,
+            DataQualifierType.AVERAGE,
+            [],
+            [],
+            None,
+            KindType.POWER,
+        ),
         (
             {},
             UomType.APPARENT_ENERGY_VAH,
@@ -1028,6 +1225,7 @@ async def test_do_check_readings_for_types(
             ],
             [1],
             None,
+            KindType.POWER,
         ),
         (
             {"minimum_count": 123, "foo": 456},
@@ -1040,6 +1238,7 @@ async def test_do_check_readings_for_types(
             ],
             [4, 2],
             123,
+            KindType.POWER,
         ),
         (
             {"minimum_count": 0},
@@ -1051,6 +1250,17 @@ async def test_do_check_readings_for_types(
             ],
             [2],
             0,
+            KindType.POWER,
+        ),
+        (
+            {"minimum_count": 1},
+            UomType.REAL_ENERGY_WATT_HOURS,
+            ReadingLocation.DEVICE_READING,
+            DataQualifierType.NOT_APPLICABLE,
+            [generate_class_instance(SiteReadingType, seed=303, site_reading_type_id=1)],
+            [1],
+            1,
+            KindType.ENERGY,
         ),
     ],
 )
@@ -1067,6 +1277,7 @@ async def test_do_check_site_readings_and_params(
     site_reading_types: list[SiteReadingType],
     expected_srt_ids: list[int],
     expected_min_count: int | None,
+    kind: KindType,
 ):
     """Tests that do_check_site_readings_and_params does the basic logic it needs before offloading to
     do_check_readings_for_types"""
@@ -1078,12 +1289,17 @@ async def test_do_check_site_readings_and_params(
 
     # Act
     result = await do_check_site_readings_and_params(
-        mock_session, resolved_parameters, uom, reading_location, qualifier
+        mock_session,
+        resolved_parameters,
+        uom,
+        reading_location,
+        qualifier,
+        kind,
     )
 
     # Assert
     assert_mock_session(mock_session)
-    mock_get_csip_aus_site_reading_types.assert_called_once_with(mock_session, uom, reading_location, qualifier)
+    mock_get_csip_aus_site_reading_types.assert_called_once_with(mock_session, uom, reading_location, kind, qualifier)
 
     # If we have 0 SiteReadingTypes - instant failure, no need to run the reading checks
     if len(expected_srt_ids) != 0:
