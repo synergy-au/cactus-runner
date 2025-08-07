@@ -162,6 +162,13 @@ class CriteriaEntry(JSONWizard):
 
 
 @dataclass
+class PreconditionCheckEntry(JSONWizard):
+    success: bool
+    type: str
+    details: str
+
+
+@dataclass
 class RunnerStatus(JSONWizard):
     timestamp_status: datetime  # when was this status generated?
     timestamp_initialise: datetime | None  # When did the test initialise
@@ -171,6 +178,8 @@ class RunnerStatus(JSONWizard):
     csip_aus_version: str  # The CSIPAus version that is registered in the active test procedure (can be empty)
     log_envoy: str  # Snapshot of the current envoy logs
     criteria: list[CriteriaEntry] = field(default_factory=list)
+    precondition_checks: list[PreconditionCheckEntry] = field(default_factory=list)
+    instructions: list[str] | None = field(default=None)
     test_procedure_name: str = field(default="-")  # '-' represents no active procedure
     step_status: dict[str, StepStatus] | None = field(default=None)
     request_history: list[RequestEntry] = field(default_factory=list)
