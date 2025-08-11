@@ -56,6 +56,11 @@ async def resolve_variable(session: AsyncSession, v: NamedVariable | Expression 
                 return await resolvers.resolve_named_variable_der_rating_max_discharge_rate_w(session)
             case NamedVariableType.DERCAPABILITY_RTG_MAX_WH:
                 return await resolvers.resolve_named_variable_der_rating_max_wh(session)
+            # Storage extension
+            case NamedVariableType.DERSETTING_SET_MIN_WH:
+                return await resolvers.resolve_named_variable_der_setting_min_wh(session)
+            case NamedVariableType.DERCAPABILITY_NEG_RTG_MAX_CHARGE_RATE_W:
+                return await resolvers.resolve_named_variable_neg_der_rating_max_charge_rate_w(session)
         raise UnresolvableVariableError(f"Unable to resolve NamedVariable of type {v.variable} ({int(v.variable)})")
     elif isinstance(v, Expression):
         lhs = await resolve_variable(session, v.lhs_operand)

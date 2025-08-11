@@ -21,7 +21,7 @@ classifiers = [
 ]
 dependencies = [
   "aiohttp>=3.11.12,<4",
-  "cactus-test-definitions @ git+https://github.com/synergy-au/cactus-test-definitions.git@csipaus.org/ns/v1.3-beta/storage",
+  "cactus-test-definitions @ git+https://github.com/synergy-au/cactus-test-definitions.git@196646-create-tests-interconnection-handbook",
   "envoy @ git+https://github.com/synergy-au/envoy.git@v0.15.0-synergy.0.1.0",
   "psycopg[binary]>=3.2.5,<4",
   "asyncpg>=0.30.0,<1",
