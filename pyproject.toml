@@ -5,8 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cactus-runner"
 dynamic = ["version", "readme"]
-authors = [{ name = "Mike Turner", email = "mike.turner@anu.edu.au" }]
-maintainers = [{ name = "Mike Turner", email = "mike.turner@anu.edu.au" }]
+authors = [
+  { name = "Mike Turner", email = "mike.turner@anu.edu.au" }, 
+  { name = "Joe Crowley", email = "joseph.crowley@synergy.net.au" },
+]
+maintainers = [
+  { name = "Mike Turner", email = "mike.turner@anu.edu.au" }, 
+  { name = "Joe Crowley", email = "joseph.crowley@synergy.net.au" },
+]
 description = "Cactus Test Procedure Runner (CSIP-AUS Client Test Harness)"
 keywords = ["CSIP-AUS", "client", "testing", "runner"]
 requires-python = ">=3.12"

@@ -104,6 +104,16 @@ async def resolve_named_variable_der_setting_max_wh(session: AsyncSession) -> fl
     return float(set_max_wh)
 
 
+# Storage extension
+async def resolve_named_variable_der_setting_min_wh(session: AsyncSession) -> float:
+    site_der_setting = await _select_single_site_der_setting(session, "setMinWh")
+    set_max_wh = common.pow10_to_decimal_value(site_der_setting.min_wh_value, site_der_setting.min_wh_multiplier)
+    if set_max_wh is None:
+        raise errors.UnresolvableVariableError("Unable to extract setMaxWh from DERSetting")
+
+    return float(set_max_wh)
+
+
 """DER Capability"""
 
 
@@ -163,3 +173,8 @@ async def resolve_named_variable_der_rating_max_wh(session: AsyncSession) -> flo
         raise errors.UnresolvableVariableError("Unable to extract rtgMaxWh from DERCapability")
 
     return float(rtg_max_wh)
+
+
+# Storage extension
+async def resolve_named_variable_neg_der_rating_max_charge_rate_w(session: AsyncSession) -> float:
+    return -1.0 * await resolve_named_variable_der_rating_max_charge_rate_w(session)
