@@ -5,8 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "cactus-runner"
 dynamic = ["version", "readme"]
-authors = [{ name = "Mike Turner", email = "mike.turner@anu.edu.au" }]
-maintainers = [{ name = "Mike Turner", email = "mike.turner@anu.edu.au" }]
+authors = [
+  { name = "Mike Turner", email = "mike.turner@anu.edu.au" }, 
+  { name = "Joe Crowley", email = "joseph.crowley@synergy.net.au" },
+]
+maintainers = [
+  { name = "Mike Turner", email = "mike.turner@anu.edu.au" }, 
+  { name = "Joe Crowley", email = "joseph.crowley@synergy.net.au" },
+]
 description = "Cactus Test Procedure Runner (CSIP-AUS Client Test Harness)"
 keywords = ["CSIP-AUS", "client", "testing", "runner"]
 requires-python = ">=3.12"
@@ -21,7 +27,7 @@ classifiers = [
 ]
 dependencies = [
   "aiohttp>=3.11.12,<4",
-  "cactus-test-definitions @ git+https://github.com/synergy-au/cactus-test-definitions.git@196646-create-tests-interconnection-handbook",
+  "cactus-test-definitions @ git+https://github.com/synergy-au/cactus-test-definitions.git@csipaus.org/ns/v1.3-beta/storage",
   "envoy @ git+https://github.com/synergy-au/envoy.git@v0.15.0-synergy.0.1.0",
   "psycopg[binary]>=3.2.5,<4",
   "asyncpg>=0.30.0,<1",
