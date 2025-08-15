@@ -49,6 +49,7 @@ async def test_get_readings(mocker, pg_base_config):
             data_qualifier=DataQualifierType.AVERAGE,
             kind=KindType.POWER,
             role_flags=ReadingLocation.DEVICE_READING,
+            mrid="100000000000000000001",
         )
         voltage = generate_class_instance(
             SiteReadingType,
@@ -60,6 +61,7 @@ async def test_get_readings(mocker, pg_base_config):
             data_qualifier=DataQualifierType.AVERAGE,
             kind=KindType.POWER,
             role_flags=ReadingLocation.SITE_READING,
+            mrid="200000000000000000002",
         )
         reactive = generate_class_instance(
             SiteReadingType,
@@ -71,6 +73,7 @@ async def test_get_readings(mocker, pg_base_config):
             data_qualifier=DataQualifierType.AVERAGE,
             kind=KindType.POWER,
             role_flags=ReadingLocation.SITE_READING,
+            mrid="300000000000000000003",
         )
         energy = generate_class_instance(
             SiteReadingType,
@@ -82,6 +85,7 @@ async def test_get_readings(mocker, pg_base_config):
             data_qualifier=DataQualifierType.NOT_APPLICABLE,
             kind=KindType.ENERGY,
             role_flags=ReadingLocation.DEVICE_READING,
+            mrid="400000000000000000004",
         )
         session.add_all([power, voltage, reactive, energy])
 

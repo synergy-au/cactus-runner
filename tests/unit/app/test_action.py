@@ -452,8 +452,8 @@ async def test_action_create_der_control_control_values(pg_base_config, envoy_ad
         "opModGenLimW": gen_float(value_seed, 5),
         "opModLoadLimW": gen_float(value_seed, 6),
         "opModFixedW": gen_float(value_seed, 7),
-        "opModStorageTargetW": gen_float(value_seed, 8),
         "ramp_time_seconds": gen_float(value_seed, 8),
+        "opModStorageTargetW": gen_float(value_seed, 9),
     }
     for k in list(resolved_params.keys()):
         if resolved_params[k] is None:
@@ -474,8 +474,8 @@ async def test_action_create_der_control_control_values(pg_base_config, envoy_ad
         assert doe.generation_limit_active_watts == gen_float(value_seed, 5)
         assert doe.load_limit_active_watts == gen_float(value_seed, 6)
         assert doe.set_point_percentage == gen_float(value_seed, 7)
-        assert doe.storage_target_active_watts == gen_float(value_seed, 8)
         assert doe.ramp_time_seconds == gen_float(value_seed, 8)
+        assert doe.storage_target_active_watts == gen_float(value_seed, 9)
 
 
 @pytest.mark.anyio
