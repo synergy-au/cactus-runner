@@ -4,7 +4,7 @@ from typing import Sequence
 
 import pandas as pd
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
-from envoy_schema.server.schema.sep2.types import UomType, KindType, DataQualifierType
+from envoy_schema.server.schema.sep2.types import DataQualifierType, KindType, UomType
 
 from cactus_runner.app.database import (
     begin_session,

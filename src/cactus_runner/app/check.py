@@ -18,7 +18,7 @@ from envoy.server.model.site import (
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
 from envoy.server.model.subscription import Subscription, TransmitNotificationLog
 from envoy_schema.server.schema.sep2.response import ResponseType
-from envoy_schema.server.schema.sep2.types import DataQualifierType, UomType, KindType
+from envoy_schema.server.schema.sep2.types import DataQualifierType, KindType, UomType
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -207,14 +207,22 @@ async def check_der_settings_contents(session: AsyncSession, resolved_parameters
         if k == "set_grad_w" and der_settings.grad_w != params.set_grad_w:
             soft_checker.add(f"DERSetting.setGradW {der_settings.grad_w} doesn't match expected {params.set_grad_w}")
 
-        elif k in ["doe_modes_enabled_set", "modes_enabled_set", "vpp_modes_enabled_set"]:
+        elif k in [
+            "doe_modes_enabled_set",
+            "modes_enabled_set",
+            "vpp_modes_enabled_set",
+        ]:
             # Bitwise assert hi (==1) checks
             params_val = int(getattr(params, k), 16)
             if (getattr(der_settings, k.rstrip("_set")) & params_val) != params_val:
                 field = params.__pydantic_fields__[k]
                 soft_checker.add(f"DERSetting.{field.alias} minimum flag setting check hi (==1) failed")
 
-        elif k in ["doe_modes_enabled_unset", "modes_enabled_unset", "vpp_modes_enabled_unset"]:
+        elif k in [
+            "doe_modes_enabled_unset",
+            "modes_enabled_unset",
+            "vpp_modes_enabled_unset",
+        ]:
             # Bitwise assert lo (==0) checks
             params_val = int(getattr(params, k), 16)
             if (getattr(der_settings, k.rstrip("_unset")) & params_val) != 0:
@@ -253,14 +261,22 @@ async def check_der_capability_contents(session: AsyncSession, resolved_paramete
 
     # Perform parameter checks
     for k in params.model_fields_set:
-        if k in ["doe_modes_supported_set", "modes_supported_set", "vpp_modes_supported_set"]:
+        if k in [
+            "doe_modes_supported_set",
+            "modes_supported_set",
+            "vpp_modes_supported_set",
+        ]:
             # Bitwise-and checks
             params_val = int(getattr(params, k), 16)
             if (getattr(der_rating, k.rstrip("_set")) & params_val) != params_val:
                 field = params.__pydantic_fields__[k]
                 soft_checker.add(f"DERCapability.{field.alias} minimum flag setting check hi (==1) failed")
 
-        if k in ["doe_modes_supported_unset", "modes_supported_unset", "vpp_modes_supported_unset"]:
+        if k in [
+            "doe_modes_supported_unset",
+            "modes_supported_unset",
+            "vpp_modes_supported_unset",
+        ]:
             # Bitwise-and checks
             params_val = int(getattr(params, k), 16)
             if (getattr(der_rating, k.rstrip("_unset")) & params_val) != 0:

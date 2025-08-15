@@ -28,8 +28,8 @@ from envoy_schema.server.schema.sep2.response import ResponseType
 from envoy_schema.server.schema.sep2.types import (
     DataQualifierType,
     DeviceCategory,
-    UomType,
     KindType,
+    UomType,
 )
 from sqlalchemy import select
 
@@ -1444,59 +1444,59 @@ async def test_do_check_readings_on_minute_boundary(pg_base_config, srt_ids: lis
 
 
 @pytest.mark.parametrize(
-    "resolved_parameters, uom, reading_location, qualifier, site_reading_types, expected_min_count, kind",
+    "resolved_parameters, uom, reading_location, qualifier, kind, site_reading_types, expected_min_count",
     [
         (
             {},
             UomType.REAL_POWER_WATT,
             ReadingLocation.SITE_READING,
             DataQualifierType.AVERAGE,
+            KindType.POWER,
             [],
             None,
-            KindType.POWER,
         ),
         (
             {},
             UomType.APPARENT_ENERGY_VAH,
             ReadingLocation.DEVICE_READING,
             DataQualifierType.MINIMUM,
+            KindType.POWER,
             [
                 generate_class_instance(SiteReadingType, seed=101, site_reading_type_id=1),
             ],
             None,
-            KindType.POWER,
         ),
         (
             {"minimum_count": 123, "foo": 456},
             UomType.BRITISH_THERMAL_UNIT,
             ReadingLocation.DEVICE_READING,
             DataQualifierType.STANDARD,
+            KindType.POWER,
             [
                 generate_class_instance(SiteReadingType, seed=101, site_reading_type_id=4),
                 generate_class_instance(SiteReadingType, seed=202, site_reading_type_id=2),
             ],
             123,
-            KindType.POWER,
         ),
         (
             {"minimum_count": 0},
             UomType.FREQUENCY_HZ,
             ReadingLocation.SITE_READING,
             DataQualifierType.MAXIMUM,
+            KindType.ENERGY,
             [
                 generate_class_instance(SiteReadingType, seed=101, site_reading_type_id=2),
             ],
             0,
-            KindType.POWER,
         ),
         (
             {"minimum_count": 1},
             UomType.REAL_ENERGY_WATT_HOURS,
             ReadingLocation.DEVICE_READING,
             DataQualifierType.NOT_APPLICABLE,
+            KindType.ENERGY,
             [generate_class_instance(SiteReadingType, seed=303, site_reading_type_id=1)],
             1,
-            KindType.ENERGY,
         ),
     ],
 )
@@ -1512,9 +1512,9 @@ async def test_do_check_site_readings_and_params(
     uom: UomType,
     reading_location: ReadingLocation,
     qualifier: DataQualifierType,
+    kind: KindType,
     site_reading_types: list[SiteReadingType],
     expected_min_count: int | None,
-    kind: KindType,
 ):
     """Tests that do_check_site_readings_and_params does the basic logic it needs before offloading to
     do_check_readings_for_types"""

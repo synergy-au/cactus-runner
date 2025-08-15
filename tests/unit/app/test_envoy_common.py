@@ -52,7 +52,7 @@ async def test_get_active_site_many_sites(pg_base_config):
 async def test_get_csip_aus_site_reading_types_no_sites(pg_base_config):
     async with generate_async_session(pg_base_config) as session:
         result = await get_csip_aus_site_reading_types(
-            session, UomType.REAL_POWER_WATT, ReadingLocation.SITE_READING, DataQualifierType.AVERAGE
+            session, UomType.REAL_POWER_WATT, ReadingLocation.SITE_READING, KindType.POWER, DataQualifierType.AVERAGE
         )
         assert_list_type(SiteReadingType, result, count=0)
 
@@ -65,7 +65,7 @@ async def test_get_csip_aus_site_reading_types_no_mups(pg_base_config):
 
     async with generate_async_session(pg_base_config) as session:
         result = await get_csip_aus_site_reading_types(
-            session, UomType.REAL_POWER_WATT, ReadingLocation.SITE_READING, DataQualifierType.AVERAGE
+            session, UomType.REAL_POWER_WATT, ReadingLocation.SITE_READING, KindType.POWER, DataQualifierType.AVERAGE
         )
         assert_list_type(SiteReadingType, result, count=0)
 
@@ -169,6 +169,7 @@ async def test_get_csip_aus_site_reading_types_many_mups(pg_base_config):
                 role_flags=ReadingLocation.DEVICE_READING,
             )
         )  # Valid
+
         await session.commit()
 
     async with generate_async_session(pg_base_config) as session:
@@ -327,7 +328,7 @@ async def test_get_reading_counts_grouped_by_reading_type(pg_base_config):
         )
         energy = generate_class_instance(
             SiteReadingType,
-            seed=303,
+            seed=404,
             aggregator_id=1,
             site_reading_type_id=3,
             site=site1,

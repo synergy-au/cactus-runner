@@ -58,7 +58,8 @@ async def get_csip_aus_site_reading_types(
     UomType.REACTIVE_POWER_VAR = MANDATORY
     UomType.FREQUENCY_HZ = OPTIONAL
     UomType.VOLTAGE = MANDATORY (at least 1 site or voltage MUP is required)
-    UomType.REAL_ENERGY_WATT_HOUR = MANDATORY
+    UomType.REAL_ENERGY_WATT_HOUR = MANDATORY (for 1.3 storage extensions)
+
 
     qualifier will filter the returned DataQualifierType - certain types are optional/mandatory under CSIP-Aus
 
@@ -66,7 +67,8 @@ async def get_csip_aus_site_reading_types(
     DataQualifierType.NORMAL = OPTIONAL
     DataQualifierType.MINIMUM = OPTIONAL
     DataQualifierType.MAXIMUM = OPTIONAL
-    DataQualifierType.INSTANTANEOUS = OPTIONAL
+    DataQualifierType.INSTANTANEOUS = OPTIONAL (for 1.3 storage extensions)
+
 
     Returns the list of all SiteReadingType's that meet this criteria. Expect multiple if multiple phases or
     accumulation behaviors are being reported."""
