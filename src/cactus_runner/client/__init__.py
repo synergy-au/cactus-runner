@@ -1,7 +1,7 @@
 import logging
 
 from aiohttp import ClientResponse, ClientSession, ClientTimeout, ConnectionTimeoutError
-from cactus_test_definitions import TestProcedureId
+from cactus_test_definitions.test_procedures import CSIPAusVersion, TestProcedureId
 
 from cactus_runner.models import (
     ClientInteraction,
@@ -15,7 +15,17 @@ __all__ = ["ClientSession", "ClientTimeout", "RunnerClientException", "TestProce
 logger = logging.getLogger(__name__)
 
 
-class RunnerClientException(Exception): ...  # noqa: E701
+class RunnerClientException(Exception):
+    http_status_code: int | None  # The HTTP status code received (if any) from the underlying client request
+    error_message: str | None  # The error message extracted from the underlying client
+
+    def __init__(self, message: str, http_status_code: int | None = None, error_message: str | None = None) -> None:
+        super().__init__(message)
+        # Capturing status code in the exception to allow more detailed exception handling by client code.
+        # Taking this a step further, we could define app-specific exception codes that can be imported across
+        # components.
+        self.http_status_code = http_status_code
+        self.error_message = error_message
 
 
 async def ensure_success_response(response: ClientResponse) -> None:
@@ -30,7 +40,11 @@ async def ensure_success_response(response: ClientResponse) -> None:
         logger.error(
             f"Received HTTP {response.status} response for {response.request_info.url}. Response: {response_body}"
         )
-        raise RunnerClientException(f"Received HTTP {response.status} response from server. Response: {response_body}")
+        raise RunnerClientException(
+            f"Received HTTP {response.status} response from server. Response: {response_body}",
+            http_status_code=response.status,
+            error_message=response_body,  # We will just pass along the whole body - expecting plaintext
+        )
 
 
 class RunnerClient:
@@ -38,6 +52,7 @@ class RunnerClient:
     async def init(
         session: ClientSession,
         test_id: TestProcedureId,
+        csip_aus_version: CSIPAusVersion,
         aggregator_certificate: str | None,
         device_certificate: str | None,
         subscription_domain: str | None = None,
@@ -46,13 +61,14 @@ class RunnerClient:
         """
         Args:
             test_id: The TestProcedureId to initialise the runner with
+            csip_aus_version: What CSIP Aus version of envoy is this runner communicating with?
             aggregator_certificate: The PEM encoded public certificate to be installed as the "aggregator" cert
             device_certificate: The PEM encoded public certificate to be reserved for use by a "device"
             subscription_domain: The FQDN that will be added to the allow list for subscription notifications
             run_id: The upstream identifier for this run (to be used in report metadata)"""
 
         try:
-            params = {"test": test_id.value}
+            params = {"test": test_id.value, "csip_aus_version": csip_aus_version.value}
             if aggregator_certificate is not None:
                 params["aggregator_certificate"] = aggregator_certificate
             if device_certificate is not None:

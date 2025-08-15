@@ -49,6 +49,7 @@ async def test_get_readings(mocker, pg_base_config):
             data_qualifier=DataQualifierType.AVERAGE,
             kind=KindType.POWER,
             role_flags=ReadingLocation.DEVICE_READING,
+            mrid="100000000000000000001",
         )
         voltage = generate_class_instance(
             SiteReadingType,
@@ -60,6 +61,7 @@ async def test_get_readings(mocker, pg_base_config):
             data_qualifier=DataQualifierType.AVERAGE,
             kind=KindType.POWER,
             role_flags=ReadingLocation.SITE_READING,
+            mrid="200000000000000000002",
         )
         reactive = generate_class_instance(
             SiteReadingType,
@@ -71,10 +73,11 @@ async def test_get_readings(mocker, pg_base_config):
             data_qualifier=DataQualifierType.AVERAGE,
             kind=KindType.POWER,
             role_flags=ReadingLocation.SITE_READING,
+            mrid="300000000000000000003",
         )
         energy = generate_class_instance(
             SiteReadingType,
-            seed=404,
+            seed=505,
             aggregator_id=1,
             site_reading_type_id=4,
             site=site1,
@@ -82,15 +85,14 @@ async def test_get_readings(mocker, pg_base_config):
             data_qualifier=DataQualifierType.NOT_APPLICABLE,
             kind=KindType.ENERGY,
             role_flags=ReadingLocation.DEVICE_READING,
+            mrid="400000000000000000004",
         )
         session.add_all([power, voltage, reactive, energy])
 
         # Add readings
         def gen_sr(seed: int, srt: SiteReadingType) -> SiteReading:
             """Shorthand for generating a new SiteReading with the specified type"""
-            inst = generate_class_instance(SiteReading, seed=seed, site_reading_type=srt)
-            inst.site_reading_id = None  # type: ignore[assignment]
-            return inst
+            return generate_class_instance(SiteReading, seed=seed, site_reading_type=srt, site_reading_id=None)
 
         num_power_readings = 5
         power_readings = [gen_sr(i, power) for i in range(1, num_power_readings + 1)]
@@ -144,7 +146,7 @@ async def test_get_readings(mocker, pg_base_config):
     # Assert
     assert_dict_type(
         SiteReadingType, DataFrame, readings_map, count=3
-    )  # three reading types with data (voltage, power, energy)  # noqa
+    )  # three reading types with data (voltage, power, energy)
     assert sorted([num_power_readings, num_voltage_readings, num_energy_readings]) == sorted(
         [len(readings) for readings in readings_map.values()]
     )

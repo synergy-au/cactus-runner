@@ -214,8 +214,9 @@ async def action_create_der_control(
                 generation_limit_watts=gen_limit_watts,
                 load_limit_watts=load_limit_watts,
                 set_point_percentage=set_point_percent,
-                storage_target_watts=storage_target_watts,
                 ramp_time_seconds=ramp_time_seconds,
+                # Storage extension
+                storage_target_watts=storage_target_watts,
             )
         ],
     )
