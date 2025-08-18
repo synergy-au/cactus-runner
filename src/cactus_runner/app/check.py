@@ -8,6 +8,7 @@ import pydantic.alias_generators
 from cactus_test_definitions.checks import Check
 from envoy.server.exception import InvalidMappingError
 from envoy.server.mapper.sep2.pub_sub import SubscriptionMapper
+from envoy.server.model.doe import DynamicOperatingEnvelope
 from envoy.server.model.response import DynamicOperatingEnvelopeResponse
 from envoy.server.model.site import (
     SiteDER,
@@ -48,6 +49,7 @@ class ParamsDERSettingsContents(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(alias_generator=pydantic.alias_generators.to_camel)
 
+    doe_modes_enabled: Annotated[bool | None, pydantic.Field(alias="doeModesEnabled")] = None
     doe_modes_enabled_set: Annotated[str | None, pydantic.Field(alias="doeModesEnabled_set")] = None
     doe_modes_enabled_unset: Annotated[str | None, pydantic.Field(alias="doeModesEnabled_unset")] = None
     modes_enabled_set: Annotated[str | None, pydantic.Field(alias="modesEnabled_set")] = None
@@ -69,6 +71,7 @@ class ParamsDERCapabilityContents(pydantic.BaseModel):
 
     model_config = pydantic.ConfigDict(alias_generator=pydantic.alias_generators.to_camel)
 
+    doe_modes_supported: Annotated[bool | None, pydantic.Field(alias="doeModesSupported")] = None
     doe_modes_supported_set: Annotated[str | None, pydantic.Field(alias="doeModesSupported_set")] = None
     doe_modes_supported_unset: Annotated[str | None, pydantic.Field(alias="doeModesSupported_unset")] = None
     modes_supported_set: Annotated[str | None, pydantic.Field(alias="modesSupported_set")] = None
@@ -206,6 +209,14 @@ async def check_der_settings_contents(session: AsyncSession, resolved_parameters
     for k in params.model_fields_set:
         if k == "set_grad_w" and der_settings.grad_w != params.set_grad_w:
             soft_checker.add(f"DERSetting.setGradW {der_settings.grad_w} doesn't match expected {params.set_grad_w}")
+        elif k == "doe_modes_enabled":
+            params_val: bool | int = bool(getattr(params, k))
+            field = params.__pydantic_fields__[k]
+            if params_val is True and der_settings.doe_modes_enabled is None:
+                soft_checker.add(f"DERSetting.{field.alias} must be set.")
+            elif params_val is False and der_settings.doe_modes_enabled is not None:
+                soft_checker.add(f"DERSetting.{field.alias} must be unset.")
+            continue
 
         elif k in ["doe_modes_enabled_set", "modes_enabled_set"]:
             # Bitwise assert hi (==1) checks
@@ -253,6 +264,14 @@ async def check_der_capability_contents(session: AsyncSession, resolved_paramete
 
     # Perform parameter checks
     for k in params.model_fields_set:
+        if k == "doe_modes_supported":
+            params_val: bool | int = bool(getattr(params, k))
+            field = params.__pydantic_fields__[k]
+            if params_val is True and der_rating.doe_modes_supported is None:
+                soft_checker.add(f"DERCapability.{field.alias} must be set.")
+            elif params_val is False and der_rating.doe_modes_supported is not None:
+                soft_checker.add(f"DERCapability.{field.alias} must be unset.")
+            continue
         if k in ["doe_modes_supported_set", "modes_supported_set"]:
             # Bitwise-and checks
             params_val = int(getattr(params, k), 16)
@@ -622,10 +641,37 @@ def response_type_to_string(t: int | ResponseType | None) -> str:
         return f"{t}"
 
 
+def match_all_responses(
+    status_str: str,
+    controls: Sequence[DynamicOperatingEnvelope],
+    responses: Sequence[DynamicOperatingEnvelopeResponse],
+) -> CheckResult:
+    responses_by_doe_id: dict[int, list[DynamicOperatingEnvelopeResponse]] = {}
+    for r in responses:
+        existing = responses_by_doe_id.get(r.dynamic_operating_envelope_id, None)
+        if existing is None:
+            responses_by_doe_id[r.dynamic_operating_envelope_id] = [r]
+        else:
+            existing.append(r)
+
+    unmatched_controls: int = 0
+    for c in controls:
+        if c.dynamic_operating_envelope_id not in responses_by_doe_id:
+            unmatched_controls += 1
+
+    if unmatched_controls > 0:
+        return CheckResult(
+            False, f"{unmatched_controls} DERControl(s) failed to receive a Response with a status of {status_str}"
+        )
+    else:
+        return CheckResult(True, f"All DERControl(s) have a Response with a status of {status_str}")
+
+
 async def check_response_contents(resolved_parameters: dict[str, Any], session: AsyncSession) -> CheckResult:
     """Implements the response-contents check by inspecting the response table for site controls"""
 
     is_latest: bool = resolved_parameters.get("latest", False)
+    is_all: bool = resolved_parameters.get("all", False)
     status_filter: int | None = resolved_parameters.get("status", None)
     status_filter_string = response_type_to_string(status_filter)
 
@@ -651,6 +697,15 @@ async def check_response_contents(resolved_parameters: dict[str, Any], session: 
             )
 
         return CheckResult(True, f"Latest DERControl response of type {rt_string} matches check.")
+    elif is_all:
+        # All queries look at every SiteControl and try to match them to a response
+        # if every SiteControl has a matching response - the check will pass
+        controls = (await session.execute(select(DynamicOperatingEnvelope))).scalars().all()
+        response_stmt = select(DynamicOperatingEnvelopeResponse)
+        if status_filter is not None:
+            response_stmt = response_stmt.where(DynamicOperatingEnvelopeResponse.response_type == status_filter)
+        responses = (await session.execute(response_stmt)).scalars().all()
+        return match_all_responses(status_filter_string, controls, responses)
     else:
         # Otherwise we look for ANY responses that match our request
         any_query = (
