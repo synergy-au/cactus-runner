@@ -160,10 +160,18 @@ def check_all_steps_complete(
         return CheckResult(True, None)
 
 
-async def check_end_device_contents(session: AsyncSession, resolved_parameters: dict[str, Any]) -> CheckResult:
+async def check_end_device_contents(
+    active_test_procedure: ActiveTestProcedure, session: AsyncSession, resolved_parameters: dict[str, Any]
+) -> CheckResult:
     """Implements the end-device-contents check
 
-    Returns pass if there is an active test site (an optionally checks the contents of that EndDevice)"""
+    Returns pass if there is an active test site.
+
+    Optionally checks:
+    - has connection point id set
+    - has a non-zero device catgory set
+    - PEN matches the last 32 bits of the aggregator lfdi (PEN ignored if using device lfdi)
+    """
 
     site = await get_active_site(session)
     if site is None:
@@ -179,6 +187,19 @@ async def check_end_device_contents(session: AsyncSession, resolved_parameters: 
             False,
             f"EndDevice {site.site_id} has none of the expected ({deviceCategory_anyset:b}) deviceCategory bits set.",
         )
+
+    check_pen_in_aggregator_cert: bool = resolved_parameters.get("check_pen", False)
+    if check_pen_in_aggregator_cert and active_test_procedure.client_certificate_type == "Aggregator":
+        # The last 32 bits (8 hex digits) of the aggregator lfdi should match the pen
+        pen = active_test_procedure.pen
+        try:
+            pen_from_lfdi = int(active_test_procedure.client_lfdi[-8:], 16)
+        except ValueError:
+            return CheckResult(False, "Unable to extract PEN from Aggregator LFDI.")
+        if pen != pen_from_lfdi:
+            return CheckResult(
+                False, f"PEN from aggregator lfdi, '{pen_from_lfdi}' does not match supplied PEN, '{pen}'."
+            )
 
     return CheckResult(True, None)
 
@@ -470,9 +491,48 @@ async def do_check_readings_on_minute_boundary(
     return CheckResult(True, None)
 
 
+def mrid_matches_pen(pen: int, mrid: str) -> bool:
+    # The last 32 bits (8 hex digits) of mrid should match the pen
+    try:
+        pen_from_mrid = int(mrid[-8:], 16)
+    except ValueError:
+        return False
+
+    return pen_from_mrid == pen
+
+
+async def do_check_reading_type_mrids_match_pen(site_reading_types: Sequence[SiteReadingType], pen: int) -> CheckResult:
+    if site_reading_types:
+        group_mrid_checks = [mrid_matches_pen(pen, srt.group_mrid) for srt in site_reading_types]
+        mrid_checks = [mrid_matches_pen(pen, srt.mrid) for srt in site_reading_types]
+
+        srt_count = len(site_reading_types)
+        group_mrid_mismatches = group_mrid_checks.count(False)
+        mrid_mismatches = mrid_checks.count(False)
+
+        group_mrid_msg = (
+            f"{group_mrid_mismatches}/{srt_count} group MRIDS do not match the supplied PEN."
+            if group_mrid_mismatches
+            else ""
+        )
+        mrid_msg = f"{mrid_mismatches}/{srt_count} MRIDS do not match the supplied PEN." if mrid_mismatches else ""
+        if group_mrid_msg and mrid_msg:
+            mrid_msg = f" {mrid_msg}"
+
+        if group_mrid_mismatches or mrid_mismatches:
+            return CheckResult(False, f"{group_mrid_msg}{mrid_msg}")
+        return CheckResult(
+            True,
+            "All MRIDS and group MRIDS for the site readings types match the supplied Private Enterprise Number (PEN).",
+        )  # noqa: E501
+
+    return CheckResult(True, None)
+
+
 async def do_check_site_readings_and_params(
     session,
     resolved_parameters: dict[str, Any],
+    pen: int,
     uom: UomType,
     reading_location: ReadingLocation,
     data_qualifier: DataQualifierType,
@@ -485,90 +545,116 @@ async def do_check_site_readings_and_params(
     minimum_count: int | None = resolved_parameters.get("minimum_count", None)
     type_check = await do_check_readings_for_types(session, site_reading_types, minimum_count)
     boundary_check = await do_check_readings_on_minute_boundary(session, site_reading_types)
-    return merge_checks([type_check, boundary_check])
+    pen_check = await do_check_reading_type_mrids_match_pen(site_reading_types, pen)
+    return merge_checks([type_check, boundary_check, pen_check])
 
 
-async def check_readings_site_active_power(session: AsyncSession, resolved_parameters: dict[str, Any]) -> CheckResult:
+async def check_readings_site_active_power(
+    session: AsyncSession, resolved_parameters: dict[str, Any], pen: int
+) -> CheckResult:
     """Implements the readings-site-active-power check.
 
     Will only consider the mandatory "Average" readings"""
     return await do_check_site_readings_and_params(
-        session, resolved_parameters, UomType.REAL_POWER_WATT, ReadingLocation.SITE_READING, DataQualifierType.AVERAGE
+        session,
+        resolved_parameters,
+        pen,
+        UomType.REAL_POWER_WATT,
+        ReadingLocation.SITE_READING,
+        DataQualifierType.AVERAGE,
     )
 
 
-async def check_readings_site_reactive_power(session: AsyncSession, resolved_parameters: dict[str, Any]) -> CheckResult:
+async def check_readings_site_reactive_power(
+    session: AsyncSession, resolved_parameters: dict[str, Any], pen: int
+) -> CheckResult:
     """Implements the readings-site-reactive-power check.
 
     Will only consider the mandatory "Average" readings"""
     return await do_check_site_readings_and_params(
         session,
         resolved_parameters,
+        pen,
         UomType.REACTIVE_POWER_VAR,
         ReadingLocation.SITE_READING,
         DataQualifierType.AVERAGE,
     )
 
 
-async def check_readings_site_voltage(session: AsyncSession, resolved_parameters: dict[str, Any]) -> CheckResult:
+async def check_readings_site_voltage(
+    session: AsyncSession, resolved_parameters: dict[str, Any], pen: int
+) -> CheckResult:
     """Implements the readings-site-voltage check.
 
     Will only consider the mandatory "Average" readings"""
     return await do_check_site_readings_and_params(
         session,
         resolved_parameters,
+        pen,
         UomType.VOLTAGE,
         ReadingLocation.SITE_READING,
         DataQualifierType.AVERAGE,
     )
 
 
-async def check_readings_der_active_power(session: AsyncSession, resolved_parameters: dict[str, Any]) -> CheckResult:
+async def check_readings_der_active_power(
+    session: AsyncSession, resolved_parameters: dict[str, Any], pen: int
+) -> CheckResult:
     """Implements the readings-der-active-power check.
 
     Will only consider the mandatory "Average" readings"""
     return await do_check_site_readings_and_params(
         session,
         resolved_parameters,
+        pen,
         UomType.REAL_POWER_WATT,
         ReadingLocation.DEVICE_READING,
         DataQualifierType.AVERAGE,
     )
 
 
-async def check_readings_der_reactive_power(session: AsyncSession, resolved_parameters: dict[str, Any]) -> CheckResult:
+async def check_readings_der_reactive_power(
+    session: AsyncSession, resolved_parameters: dict[str, Any], pen: int
+) -> CheckResult:
     """Implements the readings-der-reactive-power check.
 
     Will only consider the mandatory "Average" readings"""
     return await do_check_site_readings_and_params(
         session,
         resolved_parameters,
+        pen,
         UomType.REACTIVE_POWER_VAR,
         ReadingLocation.DEVICE_READING,
         DataQualifierType.AVERAGE,
     )
 
 
-async def check_readings_der_voltage(session: AsyncSession, resolved_parameters: dict[str, Any]) -> CheckResult:
+async def check_readings_der_voltage(
+    session: AsyncSession, resolved_parameters: dict[str, Any], pen: int
+) -> CheckResult:
     """Implements the readings-der-voltage check.
 
     Will only consider the mandatory "Average" readings"""
     return await do_check_site_readings_and_params(
         session,
         resolved_parameters,
+        pen,
         UomType.VOLTAGE,
         ReadingLocation.DEVICE_READING,
         DataQualifierType.AVERAGE,
     )
 
 
-async def check_readings_der_stored_energy(session: AsyncSession, resolved_parameters: dict[str, Any]) -> CheckResult:
+async def check_readings_der_stored_energy(
+    session: AsyncSession, resolved_parameters: dict[str, Any], pen: int
+) -> CheckResult:
     """Implements the readings-der-stored-energy check.
 
     Will only consider the mandatory "Instantaneous" readings"""
     return await do_check_site_readings_and_params(
         session,
         resolved_parameters,
+        pen,
         UomType.REAL_ENERGY_WATT_HOURS,
         ReadingLocation.DEVICE_READING,
         DataQualifierType.NOT_APPLICABLE,  # TODO: Currently corresponds to 0 but should be called Instantaneous?
@@ -738,6 +824,7 @@ async def run_check(check: Check, active_test_procedure: ActiveTestProcedure, se
     """
     resolved_parameters = await resolve_variable_expressions_from_parameters(session, check.parameters)
     check_result: CheckResult | None = None
+    pen: int = active_test_procedure.pen
     try:
         match check.type:
 
@@ -745,7 +832,7 @@ async def run_check(check: Check, active_test_procedure: ActiveTestProcedure, se
                 check_result = check_all_steps_complete(active_test_procedure, resolved_parameters)
 
             case "end-device-contents":
-                check_result = await check_end_device_contents(session, resolved_parameters)
+                check_result = await check_end_device_contents(active_test_procedure, session, resolved_parameters)
 
             case "der-settings-contents":
                 check_result = await check_der_settings_contents(session, resolved_parameters)
@@ -757,25 +844,25 @@ async def run_check(check: Check, active_test_procedure: ActiveTestProcedure, se
                 check_result = await check_der_status_contents(session, resolved_parameters)
 
             case "readings-site-active-power":
-                check_result = await check_readings_site_active_power(session, resolved_parameters)
+                check_result = await check_readings_site_active_power(session, resolved_parameters, pen)
 
             case "readings-site-reactive-power":
-                check_result = await check_readings_site_reactive_power(session, resolved_parameters)
+                check_result = await check_readings_site_reactive_power(session, resolved_parameters, pen)
 
             case "readings-site-voltage":
-                check_result = await check_readings_site_voltage(session, resolved_parameters)
+                check_result = await check_readings_site_voltage(session, resolved_parameters, pen)
 
             case "readings-der-active-power":
-                check_result = await check_readings_der_active_power(session, resolved_parameters)
+                check_result = await check_readings_der_active_power(session, resolved_parameters, pen)
 
             case "readings-der-reactive-power":
-                check_result = await check_readings_der_reactive_power(session, resolved_parameters)
+                check_result = await check_readings_der_reactive_power(session, resolved_parameters, pen)
 
             case "readings-der-voltage":
-                check_result = await check_readings_der_voltage(session, resolved_parameters)
+                check_result = await check_readings_der_voltage(session, resolved_parameters, pen)
 
             case "readings-der-stored-energy":
-                check_result = await check_readings_der_stored_energy(session, resolved_parameters)
+                check_result = await check_readings_der_stored_energy(session, resolved_parameters, pen)
 
             case "all-notifications-transmitted":
                 check_result = await check_all_notifications_transmitted(session)
