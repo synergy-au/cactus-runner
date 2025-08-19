@@ -213,3 +213,16 @@ async def test_status_steps_immediate_start(
 
     assert step_status_counts.get(StepStatus.ACTIVE, 0) == 1, "One step should initially be active"
     assert step_status_counts.get(StepStatus.RESOLVED, 0) == 0, "No steps should be resolved at the start"
+
+
+@pytest.mark.slow
+@pytest.mark.anyio
+async def test_pre_init_status(cactus_runner_client: TestClient):
+    """Tests that the embedded client will allow fetching of a status before init"""
+
+    # Init and then fetch status
+    async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(30)) as session:
+        status_response = await RunnerClient.status(session)
+    assert isinstance(status_response, RunnerStatus)
+    assert isinstance(status_response.status_summary, str)
+    assert status_response.status_summary
