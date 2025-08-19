@@ -21,8 +21,9 @@ class Listener:
 
 
 class StepStatus(Enum):
-    PENDING = 0
-    RESOLVED = auto()
+    PENDING = 0  # The step is not yet active
+    ACTIVE = auto()  # The step is currently active but not complete
+    RESOLVED = auto()  # The step has been full resolved
 
 
 @dataclass
@@ -39,6 +40,7 @@ class ActiveTestProcedure:
     client_lfdi: str  # The LFDI of the client certificate expected for the test (Either aggregator or device client)
     client_sfdi: int  # The SFDI of the client certificate expected for the test (Either aggregator or device client)
     run_id: str | None  # Metadata about what "id" has been assigned to this test (from external) - if any
+    pen: int  # Private Enterprise Number (PEN). A value of 0 means no valid PEN avaiable.
     communications_disabled: bool = False
     finished_zip_data: bytes | None = (
         None  # Finalised ZIP file. If not None - this test is "done" and shouldn't update any events/state
@@ -145,6 +147,9 @@ class InitResponseBody(JSONWizard):
     status: str
     test_procedure: str
     timestamp: datetime
+    is_started: bool = (
+        False  # True if the run has progressed to the started state. False if it's still waiting for a call to start it
+    )
 
 
 @dataclass

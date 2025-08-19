@@ -48,12 +48,14 @@ from cactus_runner.app.check import (
     check_end_device_contents,
     check_response_contents,
     check_subscription_contents,
+    do_check_reading_type_mrids_match_pen,
     do_check_readings_for_types,
     do_check_readings_on_minute_boundary,
     do_check_site_readings_and_params,
     first_failing_check,
     is_nth_bit_set_properly,
     merge_checks,
+    mrid_matches_pen,
     response_type_to_string,
     run_check,
     timestamp_on_minute_boundary,
@@ -188,14 +190,21 @@ def test_check_all_steps_complete(
 async def test_check_end_device_contents_connection_point(
     mock_get_active_site: mock.MagicMock, active_site: Site | None, has_connection_point_id: bool | None, expected: bool
 ):
-
+    mock_active_test_procedure = generate_class_instance(
+        ActiveTestProcedure,
+        pen=0,
+        client_certificate_type="Device",
+        client_lfdi="",
+        step_status={},
+        finished_zip_data=None,
+    )
     mock_get_active_site.return_value = active_site
     mock_session = create_mock_session()
     resolved_params = {}
     if has_connection_point_id is not None:
         resolved_params["has_connection_point_id"] = has_connection_point_id
 
-    result = await check_end_device_contents(mock_session, resolved_params)
+    result = await check_end_device_contents(mock_active_test_procedure, mock_session, resolved_params)
     assert_check_result(result, expected)
 
     assert_mock_session(mock_session)
@@ -223,6 +232,14 @@ async def test_check_end_device_contents_connection_point(
 async def test_check_end_device_contents_device_category(
     mock_get_active_site: mock.MagicMock, active_site: Site | None, deviceCategory_anyset: str | None, expected: bool
 ):
+    mock_active_test_procedure = generate_class_instance(
+        ActiveTestProcedure,
+        pen=0,
+        client_certificate_type="Device",
+        client_lfdi="",
+        step_status={},
+        finished_zip_data=None,
+    )
 
     mock_get_active_site.return_value = active_site
     mock_session = create_mock_session()
@@ -230,10 +247,82 @@ async def test_check_end_device_contents_device_category(
     if deviceCategory_anyset is not None:
         resolved_params["deviceCategory_anyset"] = deviceCategory_anyset
 
-    result = await check_end_device_contents(mock_session, resolved_params)
+    result = await check_end_device_contents(mock_active_test_procedure, mock_session, resolved_params)
     assert_check_result(result, expected)
 
     assert_mock_session(mock_session)
+
+
+@pytest.mark.parametrize(
+    "active_test_procedure, check_pen, expected",
+    [
+        (
+            generate_class_instance(
+                ActiveTestProcedure,
+                pen=0,
+                client_certificate_type="Device",
+                client_lfdi="",
+                step_status={},
+                finished_zip_data=None,
+            ),
+            None,
+            True,
+        ),  # check_pen param not supplied
+        (
+            generate_class_instance(
+                ActiveTestProcedure,
+                pen=64,
+                client_certificate_type="Device",
+                client_lfdi="FFFFFFFFFF",
+                step_status={},
+                finished_zip_data=None,
+            ),
+            True,
+            True,
+        ),  # pen shouldn't be checked with certificate type "Device"
+        (
+            generate_class_instance(
+                ActiveTestProcedure,
+                pen=887878,
+                client_certificate_type="Aggregator",
+                client_lfdi="FF000D8C46",
+                step_status={},
+                finished_zip_data=None,
+            ),
+            True,
+            True,
+        ),  # check pen and pen matches
+        (
+            generate_class_instance(
+                ActiveTestProcedure,
+                pen=887878,
+                client_certificate_type="Aggregator",
+                client_lfdi="FFFFFFFFFF",
+                step_status={},
+                finished_zip_data=None,
+            ),
+            True,
+            False,
+        ),  # check pen and pen doesn't match
+    ],
+)
+@mock.patch("cactus_runner.app.check.get_active_site")
+@pytest.mark.anyio
+async def test_check_end_device_pen(
+    mock_get_active_site: mock.MagicMock,
+    active_test_procedure: ActiveTestProcedure,
+    check_pen: bool | None,
+    expected: bool,
+):
+    active_site = generate_class_instance(Site, device_category=DeviceCategory(int("22A8B", 16)))
+    mock_get_active_site.return_value = active_site
+    mock_session = create_mock_session()
+    resolved_params = {}
+    if check_pen is not None:
+        resolved_params["check_pen"] = check_pen
+
+    result = await check_end_device_contents(active_test_procedure, mock_session, resolved_params)
+    assert_check_result(result, expected)
 
 
 def der_setting_bool_param_scenario(param: str, expected: bool) -> tuple[list, dict[str, bool], bool]:
@@ -349,6 +438,74 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
                 )
             ],
             {},
+            False,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=int("ff", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesEnabled": True},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=None),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesEnabled": True},
+            False,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=None),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesEnabled": False},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=int("ff", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesEnabled": False},
             False,
         ),
         (
@@ -773,6 +930,74 @@ DERRATING_BOOL_PARAM_SCENARIOS = [
             {"modesSupported_set": "03"},
             False,
         ),  # Bit flag 1 not set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, doe_modes_supported=int("fc", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesSupported": True},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, doe_modes_supported=None),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesSupported": True},
+            False,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, doe_modes_supported=None),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesSupported": False},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, doe_modes_supported=int("fc", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"doeModesSupported": False},
+            False,
+        ),
         (
             [
                 generate_class_instance(
@@ -1444,7 +1669,115 @@ async def test_do_check_readings_on_minute_boundary(pg_base_config, srt_ids: lis
 
 
 @pytest.mark.parametrize(
-    "resolved_parameters, uom, reading_location, qualifier, kind, site_reading_types, expected_min_count",
+    "mrid,pen,expected_result",
+    [
+        ("", 0, False),
+        ("FF00000000", 0, True),
+        ("FF0001E240", 123456, True),
+        ("FF0001E241", 123456, False),  # off by 1
+        ("FF0001E240", 123457, False),  # off by 1
+        ("FFFFFFFFFF", 4294967295, True),  # the largest pen 2^32-1
+    ],
+)
+def test_mrid_matches_pen(mrid: str, pen: int, expected_result: bool):
+    assert mrid_matches_pen(pen=pen, mrid=mrid) == expected_result
+
+
+@pytest.mark.parametrize(
+    "mrid1,mrid2,group_mrid,pen,expected_result",
+    [
+        (None, None, None, 0, CheckResult(True, None)),
+        (
+            "110001E240",
+            "220001E240",
+            "330001E240",
+            123456,
+            CheckResult(
+                True,
+                "All MRIDS and group MRIDS for the site readings types match the supplied Private Enterprise Number (PEN).",  # noqa: E501
+            ),
+        ),
+        (
+            "1100000000",  # mrid doesn't match pen
+            "220001E240",
+            "330001E240",
+            123456,
+            CheckResult(
+                False,
+                "1/2 MRIDS do not match the supplied PEN.",
+            ),
+        ),
+        (
+            "1100000000",  # mrid doesn't match pen
+            "2200000000",  # mrid doesn't match pen
+            "330001E240",
+            123456,
+            CheckResult(
+                False,
+                "2/2 MRIDS do not match the supplied PEN.",
+            ),
+        ),
+        (
+            "110001E240",
+            "220001E240",
+            "3300000000",  # group mrid doesn't match pen
+            123456,
+            CheckResult(
+                False,
+                "2/2 group MRIDS do not match the supplied PEN.",
+            ),
+        ),
+        (
+            "1100000000",  # mrid doesn't match pen
+            "2200000000",  # mrid doesn't match pen
+            "3300000000",  # group mrid doesn't match pen
+            123456,
+            CheckResult(
+                False,
+                "2/2 group MRIDS do not match the supplied PEN. 2/2 MRIDS do not match the supplied PEN.",
+            ),
+        ),
+    ],
+)
+@pytest.mark.anyio
+async def test_do_check_reading_type_mrids_match_pen(
+    mrid1: str | None, mrid2: str | None, group_mrid: str | None, pen: int, expected_result: CheckResult
+):
+    # Arrange
+    site = generate_class_instance(Site, aggregator_id=1, site_id=1)
+    srts = []
+    if mrid1 is not None and group_mrid is not None:
+        srt1 = generate_class_instance(
+            SiteReadingType,
+            seed=101,
+            site_reading_type_id=1,
+            aggregator_id=1,
+            site=site,
+            mrid=mrid1,
+            group_mrid=group_mrid,
+        )
+        srts.append(srt1)
+    if mrid2 is not None and group_mrid is not None:
+        srt2 = generate_class_instance(
+            SiteReadingType,
+            seed=101,
+            site_reading_type_id=1,
+            aggregator_id=1,
+            site=site,
+            mrid=mrid2,
+            group_mrid=group_mrid,
+        )
+        srts.append(srt2)
+
+    # Act
+    result = await do_check_reading_type_mrids_match_pen(site_reading_types=srts, pen=pen)
+
+    # Assert
+    assert result == expected_result
+
+
+@pytest.mark.parametrize(
+    "resolved_parameters, uom, reading_location, qualifier, kind, site_reading_types, pen, expected_min_count",
     [
         (
             {},
@@ -1453,6 +1786,7 @@ async def test_do_check_readings_on_minute_boundary(pg_base_config, srt_ids: lis
             DataQualifierType.AVERAGE,
             KindType.POWER,
             [],
+            0,
             None,
         ),
         (
@@ -1464,6 +1798,7 @@ async def test_do_check_readings_on_minute_boundary(pg_base_config, srt_ids: lis
             [
                 generate_class_instance(SiteReadingType, seed=101, site_reading_type_id=1),
             ],
+            64,
             None,
         ),
         (
@@ -1476,6 +1811,7 @@ async def test_do_check_readings_on_minute_boundary(pg_base_config, srt_ids: lis
                 generate_class_instance(SiteReadingType, seed=101, site_reading_type_id=4),
                 generate_class_instance(SiteReadingType, seed=202, site_reading_type_id=2),
             ],
+            888,
             123,
         ),
         (
@@ -1488,6 +1824,7 @@ async def test_do_check_readings_on_minute_boundary(pg_base_config, srt_ids: lis
                 generate_class_instance(SiteReadingType, seed=101, site_reading_type_id=2),
             ],
             0,
+            0,
         ),
         (
             {"minimum_count": 1},
@@ -1496,6 +1833,7 @@ async def test_do_check_readings_on_minute_boundary(pg_base_config, srt_ids: lis
             DataQualifierType.NOT_APPLICABLE,
             KindType.ENERGY,
             [generate_class_instance(SiteReadingType, seed=303, site_reading_type_id=1)],
+            666,
             1,
         ),
     ],
@@ -1503,8 +1841,10 @@ async def test_do_check_readings_on_minute_boundary(pg_base_config, srt_ids: lis
 @mock.patch("cactus_runner.app.check.get_csip_aus_site_reading_types")
 @mock.patch("cactus_runner.app.check.do_check_readings_for_types")
 @mock.patch("cactus_runner.app.check.do_check_readings_on_minute_boundary")
+@mock.patch("cactus_runner.app.check.do_check_reading_type_mrids_match_pen")
 @pytest.mark.anyio
 async def test_do_check_site_readings_and_params(
+    mock_do_check_reading_type_mrids_match_pen: mock.MagicMock,
     mock_do_check_readings_on_minute_boundary: mock.MagicMock,
     mock_do_check_readings_for_types: mock.MagicMock,
     mock_get_csip_aus_site_reading_types: mock.MagicMock,
@@ -1514,6 +1854,7 @@ async def test_do_check_site_readings_and_params(
     qualifier: DataQualifierType,
     kind: KindType,
     site_reading_types: list[SiteReadingType],
+    pen: int,
     expected_min_count: int | None,
 ):
     """Tests that do_check_site_readings_and_params does the basic logic it needs before offloading to
@@ -1524,15 +1865,11 @@ async def test_do_check_site_readings_and_params(
     mock_get_csip_aus_site_reading_types.return_value = site_reading_types
     mock_do_check_readings_for_types.return_value = expected_result
     mock_do_check_readings_on_minute_boundary.return_value = CheckResult(True, description=None)
+    mock_do_check_reading_type_mrids_match_pen.return_value = CheckResult(True, description=None)
 
     # Act
     result = await do_check_site_readings_and_params(
-        mock_session,
-        resolved_parameters,
-        uom,
-        reading_location,
-        qualifier,
-        kind,
+        mock_session, resolved_parameters, pen, uom, reading_location, qualifier, kind
     )
 
     # Assert
@@ -1544,6 +1881,7 @@ async def test_do_check_site_readings_and_params(
         assert result == expected_result
         mock_do_check_readings_for_types.assert_called_once_with(mock_session, site_reading_types, expected_min_count)
         mock_do_check_readings_on_minute_boundary.assert_called_once_with(mock_session, site_reading_types)
+        mock_do_check_reading_type_mrids_match_pen.assert_called_once_with(site_reading_types, pen)
     else:
         assert_check_result(result, False)
         mock_do_check_readings_for_types.assert_not_called()
@@ -1925,6 +2263,73 @@ async def test_check_response_contents_latest(pg_base_config):
         )
 
 
+@pytest.mark.parametrize(
+    "status, control_ids, response_status_values, expected",
+    [
+        (1, [], [], True),
+        (1, [1], [], False),
+        (1, [1], [(1, 2), (1, 1)], True),
+        (3, [1], [(1, 2), (1, 1)], False),  # No items with response_status 3
+        (None, [1], [(1, 2), (1, 1)], True),
+        (1, [1, 2], [(1, 2), (1, 1)], False),  # Control 2 has no responses
+        (1, [1, 2], [(1, 2), (1, 1), (2, 2)], False),  # Control 2 has no responses of type 2
+        (2, [1, 2], [(1, 2), (1, 1), (2, 2)], True),
+    ],
+)
+@pytest.mark.anyio
+async def test_check_response_contents_all(
+    pg_base_config,
+    status: int | None,
+    control_ids: list[int],
+    response_status_values: list[tuple[int, int]],
+    expected: bool,
+):
+    """check_response_contents should behave correctly when looking at all controls having responses
+
+    response_status_values: tuple[control_id, response_status_type]"""
+
+    # Fill up the DB with responses
+    async with generate_async_session(pg_base_config) as session:
+
+        site_control_group = generate_class_instance(SiteControlGroup, seed=101)
+        session.add(site_control_group)
+
+        site1 = generate_class_instance(Site, seed=202, site_id=1, aggregator_id=1)
+        session.add(site1)
+
+        control_by_id = {}
+        for idx, control_id in enumerate(control_ids):
+            control = generate_class_instance(
+                DynamicOperatingEnvelope,
+                seed=idx,
+                site=site1,
+                site_control_group=site_control_group,
+                calculation_log_id=None,
+                dynamic_operating_envelope_id=control_id,
+            )
+            control_by_id[control_id] = control
+            session.add(control)
+
+        for idx, t in enumerate(response_status_values):
+            (response_control_id, response_status) = t
+            session.add(
+                generate_class_instance(
+                    DynamicOperatingEnvelopeResponse,
+                    seed=idx,
+                    site=site1,
+                    response_type=response_status,
+                    dynamic_operating_envelope=control_by_id[response_control_id],
+                )
+            )
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        params: dict[str, Any] = {"all": True}
+        if status is not None:
+            params["status"] = status
+        assert_check_result(await check_response_contents(params, session), expected)
+
+
 @pytest.mark.anyio
 async def test_check_response_contents_any(pg_base_config):
     """check_response_contents should behave correctly when looking at ANY of the Responses"""
@@ -2059,7 +2464,7 @@ async def test_first_failing_check(
 
     # Arrange
     mock_session = create_mock_session()
-    side_effects = []
+    side_effects: list[bool | type[Exception] | CheckResult] = []
     for r in run_check_results:
         if isinstance(r, type):
             side_effects.append(r)
@@ -2109,7 +2514,7 @@ async def test_all_checks_passing(
 
     # Arrange
     mock_session = create_mock_session()
-    side_effects = []
+    side_effects: list[bool | type[Exception] | CheckResult] = []
     for r in run_check_results:
         if isinstance(r, type):
             side_effects.append(r)
