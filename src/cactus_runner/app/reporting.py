@@ -20,7 +20,12 @@ from envoy.server.model import (
     SiteDERStatus,
 )
 from envoy.server.model.site_reading import SiteReadingType
-from envoy_schema.server.schema.sep2.types import DataQualifierType, PhaseCode, UomType
+from envoy_schema.server.schema.sep2.types import (
+    DataQualifierType,
+    DeviceCategory,
+    PhaseCode,
+    UomType,
+)
 from reportlab.lib.colors import Color, HexColor
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import (
@@ -34,6 +39,7 @@ from reportlab.platypus import (
     BaseDocTemplate,
     Flowable,
     Image,
+    KeepTogether,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -45,6 +51,7 @@ from cactus_runner import __version__ as cactus_runner_version
 from cactus_runner.app import event
 from cactus_runner.app.check import CheckResult
 from cactus_runner.models import (
+    ClientCertificateType,
     ClientInteraction,
     ClientInteractionType,
     RequestEntry,
@@ -236,8 +243,9 @@ def generate_overview_section(
     test_run_id: str,
     init_timestamp: datetime,
     start_timestamp: datetime,
-    client_cert_type: str,
+    client_cert_type: ClientCertificateType,
     client_lfdi: str,
+    client_pen: int,
     duration: timedelta,
     stylesheet: StyleSheet,
 ) -> list[Flowable]:
@@ -246,7 +254,7 @@ def generate_overview_section(
     elements.append(Paragraph(test_procedure_description, style=stylesheet.subheading))
     elements.append(stylesheet.spacer)
 
-    doe_data = [
+    overview_data = [
         [
             "Run ID",
             test_run_id,
@@ -261,10 +269,16 @@ def generate_overview_section(
             "Start time (UTC)",
             start_timestamp.strftime(stylesheet.date_format),
         ],
-        ["", "", "", "Duration", str(duration).split(".")[0]],  # remove microseconds from output
+        [
+            "PEN",
+            str(client_pen) if client_pen else "Not supplied",
+            "",
+            "Duration",
+            str(duration).split(".")[0],
+        ],  # remove microseconds from output
     ]
     column_widths = [int(fraction * stylesheet.table_width) for fraction in [0.15, 0.4, 0.05, 0.2, 0.2]]
-    table = Table(doe_data, colWidths=column_widths)
+    table = Table(overview_data, colWidths=column_widths)
     tstyle = TableStyle(
         [
             ("BACKGROUND", (0, 0), (1, 2), OVERVIEW_BACKGROUND),
@@ -280,6 +294,13 @@ def generate_overview_section(
     )
     table.setStyle(tstyle)
     elements.append(table)
+    if client_cert_type is ClientCertificateType.DEVICE:
+        elements.append(
+            Paragraph(
+                "The device LFDI is the LFDI encoded in the certificate used for authentication, not be confused with the LFDI of any devices registered during this test procedure.",  # noqa 501
+                style=ParagraphStyle(name="TableNote", fontSize=6),
+            )
+        )
     elements.append(stylesheet.spacer)
     return elements
 
@@ -807,17 +828,69 @@ def generate_site_der_status_table(site_der_status: SiteDERStatus, stylesheet: S
     return elements
 
 
+def device_category_to_string(device_category: DeviceCategory) -> str:
+    if device_category == 0:
+        return "Unspecified device category (0)"
+    flags = [flag.replace("_", " ").lower() for flag in repr(device_category).split(".")[1].split(":")[0].split("|")]
+    return " | ".join(flags)
+
+
+def generate_device_overview_table(
+    site: Site,
+    generation_method: str,
+    stylesheet: StyleSheet,
+) -> list[Flowable]:
+    elements: list[Flowable] = []
+
+    # Convert device category to a useful string
+    device_data = [
+        [
+            "NMI",
+            site.nmi if site.nmi else "Unspecified",
+        ],
+        [
+            "LFDI",
+            site.lfdi,
+        ],
+        [
+            "Device Category",
+            device_category_to_string(device_category=DeviceCategory(site.device_category)),
+        ],
+        [
+            "Site Generation",
+            generation_method,
+        ],
+    ]
+    column_widths = [int(fraction * stylesheet.table_width) for fraction in [0.2, 0.5]]
+    table = Table(device_data, colWidths=column_widths)
+    tstyle = TableStyle(
+        [
+            ("BACKGROUND", (0, 0), (-1, -1), OVERVIEW_BACKGROUND),
+            ("TEXTCOLOR", (0, 0), (-1, -1), TABLE_TEXT_COLOR),
+            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+        ]
+    )
+    table.setStyle(tstyle)
+    elements.append(KeepTogether(table))
+    return elements
+
+
 def generate_site_section(site: Site, stylesheet: StyleSheet) -> list[Flowable]:
     elements: list[Flowable] = []
 
     if site.nmi:
         section_title = f"EndDevice {site.site_id} (nmi: {site.nmi})"
-        site_description = f"Created at {site.created_time.strftime(stylesheet.date_format)}"
+        generation_method = f"Created at {site.created_time.strftime(stylesheet.date_format)}"
     else:
         section_title = f"EndDevice {site.site_id}"
-        site_description = "Generated as part of test procedure precondition."
+        generation_method = "Generated as part of test procedure precondition."
     elements.append(Paragraph(section_title, stylesheet.subheading))
-    elements.append(Paragraph(site_description))
+    elements.append(stylesheet.spacer)
+    elements.extend(
+        generate_device_overview_table(site=site, generation_method=generation_method, stylesheet=stylesheet)
+    )
     elements.append(stylesheet.spacer)
     if site.site_ders:
         site_der = site.site_ders[0]
@@ -919,7 +992,7 @@ def generate_readings_timeline(
     alternative_x_axis_label = "Time relative to test start (s)"
     if time_relative_to_test_start and base_timestamp is not None:
         new_x_axis_column = "timedelta_from_start"
-        readings_df[new_x_axis_column] = readings_df[x_axis_column] - base_timestamp
+        readings_df[new_x_axis_column] = readings_df[x_axis_column] - base_timestamp  # type: ignore
         x_axis_column = new_x_axis_column
         x_axis_label = alternative_x_axis_label
 
@@ -1063,6 +1136,7 @@ def generate_page_elements(
                 start_timestamp=start_timestamp,
                 client_lfdi=active_test_procedure.client_lfdi,
                 client_cert_type=active_test_procedure.client_certificate_type,
+                client_pen=active_test_procedure.pen,
                 duration=duration,
                 stylesheet=stylesheet,
             )

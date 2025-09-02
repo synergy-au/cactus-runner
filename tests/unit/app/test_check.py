@@ -280,7 +280,7 @@ async def test_check_end_device_contents_device_category(
                 step_status={},
                 finished_zip_data=None,
             ),
-            "3e4f45ab31edfe5b67e343e5e4562e31984e23e5",
+            "3E4F45AB31EDFE5B67E343E5E4562E31984E23E5",
             167261211391,
             True,
             True,
@@ -288,12 +288,12 @@ async def test_check_end_device_contents_device_category(
         (
             generate_class_instance(
                 ActiveTestProcedure,
-                pen=int("984e23e5", 16),
+                pen=98492395,
                 client_certificate_type="Aggregator",
                 step_status={},
                 finished_zip_data=None,
             ),
-            "3e4f45ab31edfe5b67e343e5e4562e31984e23e5",
+            "3E4F45AB31EDFE5B67E343E5E4562E3198492395",
             167261211391,
             True,
             True,
@@ -306,7 +306,20 @@ async def test_check_end_device_contents_device_category(
                 step_status={},
                 finished_zip_data=None,
             ),
-            "3e4f45ab31edfe5b6Xe343e5e4562e31984e23e5",
+            "3E4F45AB31EDFE5B67e343E5E4562E31984E23E5",  # single lowercase e in the middle
+            167261211391,
+            True,
+            False,
+        ),  # only upper case hex characters are allowed
+        (
+            generate_class_instance(
+                ActiveTestProcedure,
+                pen=int("984e23e5", 16),
+                client_certificate_type="Aggregator",
+                step_status={},
+                finished_zip_data=None,
+            ),
+            "3E4F45AB31EDFE5B6XE343E5E4562E31984E23E5",
             167261211391,
             True,
             False,
@@ -319,7 +332,7 @@ async def test_check_end_device_contents_device_category(
                 step_status={},
                 finished_zip_data=None,
             ),
-            "3e4f45ab31edfe5b67fe343e5e4562e31984e23e5",
+            "3E4F45AB31EDFE5B67FE343E5E4562E31984E23E5",
             167261211391,
             True,
             False,
@@ -332,7 +345,7 @@ async def test_check_end_device_contents_device_category(
                 step_status={},
                 finished_zip_data=None,
             ),
-            "3e4f45ab31edfe5b67e343e5e4562e31984e23e5",
+            "3E4F45AB31EDFE5B67E343E5E4562E31984E23E5",
             167261211391,
             True,
             False,
@@ -345,7 +358,7 @@ async def test_check_end_device_contents_device_category(
                 step_status={},
                 finished_zip_data=None,
             ),
-            "3e4f45ab31edfe5b67e343e5e4562e31984e23e5",
+            "3E4F45AB31EDFE5B67E343E5E4562E31984E23E5",
             1234,
             True,
             False,
@@ -374,37 +387,57 @@ async def test_check_end_device_lfdi(
     result = await check_end_device_contents(active_test_procedure, mock_session, resolved_params)
     assert_check_result(result, expected)
 
-    # upper/lower case LFDI shouldn't change things
-    active_site.lfdi = active_site.lfdi.upper()
-    result = await check_end_device_contents(active_test_procedure, mock_session, resolved_params)
-    assert_check_result(result, expected)
 
-
-def der_setting_bool_param_scenario(param: str, expected: bool) -> tuple[list, dict[str, bool], bool]:
-    """Convenience for generating scenarios for testing the settings boolean param checks"""
-    return (
+def der_bool_param_scenario(
+    der_key: str,
+    der_type: type,
+    param: str,
+    param_value: bool,
+    db_property: str,
+    db_property_value: Any,
+    expected: bool,
+) -> tuple[list, dict[str, bool], bool]:
+    """Convenience for generating scenarios for testing the der settings/capability boolean param checks"""
+    der_props = {der_key: generate_class_instance(der_type, **{db_property: db_property_value})}
+    # raise Exception(f"der_key={der_key} der={der}")
+    return pytest.param(
         [
             generate_class_instance(
                 Site,
                 seed=101,
                 aggregator_id=1,
-                site_ders=[
-                    generate_class_instance(
-                        SiteDER,
-                        site_der_setting=generate_class_instance(SiteDERSetting),
-                    )
-                ],
+                site_ders=[generate_class_instance(SiteDER, **der_props)],
             )
         ],
-        {param: expected},
+        {param: param_value},
         expected,
+        id=f"boolcheck-{param}-{param_value}-{db_property}-{db_property_value}-expecting-{expected}",
     )
 
 
 DERSETTING_BOOL_PARAM_SCENARIOS = [
-    der_setting_bool_param_scenario(p, e)
-    for p in ["setMaxW", "setMaxVA", "setMaxVar", "setMaxChargeRateW", "setMaxDischargeRateW", "setMaxWh"]
-    for e in [True, False]
+    der_bool_param_scenario("site_der_setting", SiteDERSetting, param, param_value, db_prop, db_prop_value, expected)
+    for param, db_prop in [
+        ("doeModesEnabled", "doe_modes_enabled"),
+        ("setMaxVA", "max_va_value"),
+        ("setMaxVar", "max_var_value"),
+        ("setMaxVarNeg", "max_var_neg_value"),
+        ("setMaxChargeRateW", "max_charge_rate_w_value"),
+        ("setMaxDischargeRateW", "max_discharge_rate_w_value"),
+        ("setMaxWh", "max_wh_value"),
+        ("setMinPFOverExcited", "min_pf_over_excited_displacement"),
+        ("setMinPFUnderExcited", "min_pf_under_excited_displacement"),
+    ]
+    for param_value, db_prop_value, expected in [
+        (True, 2, True),
+        (True, None, False),
+        (False, None, True),
+        (False, 2, False),
+    ]
+] + [
+    # These values can't be nulled - so we do a cursory check of the value being set
+    der_bool_param_scenario("site_der_setting", SiteDERSetting, "setMaxW", True, "max_w_value", 2, True),
+    der_bool_param_scenario("site_der_setting", SiteDERSetting, "setMaxW", False, "max_w_value", 2, False),
 ]
 
 
@@ -493,74 +526,6 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
                 )
             ],
             {},
-            False,
-        ),
-        (
-            [
-                generate_class_instance(
-                    Site,
-                    seed=101,
-                    aggregator_id=1,
-                    site_ders=[
-                        generate_class_instance(
-                            SiteDER,
-                            site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=int("ff", 16)),
-                        )
-                    ],
-                )
-            ],
-            {"doeModesEnabled": True},
-            True,
-        ),
-        (
-            [
-                generate_class_instance(
-                    Site,
-                    seed=101,
-                    aggregator_id=1,
-                    site_ders=[
-                        generate_class_instance(
-                            SiteDER,
-                            site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=None),
-                        )
-                    ],
-                )
-            ],
-            {"doeModesEnabled": True},
-            False,
-        ),
-        (
-            [
-                generate_class_instance(
-                    Site,
-                    seed=101,
-                    aggregator_id=1,
-                    site_ders=[
-                        generate_class_instance(
-                            SiteDER,
-                            site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=None),
-                        )
-                    ],
-                )
-            ],
-            {"doeModesEnabled": False},
-            True,
-        ),
-        (
-            [
-                generate_class_instance(
-                    Site,
-                    seed=101,
-                    aggregator_id=1,
-                    site_ders=[
-                        generate_class_instance(
-                            SiteDER,
-                            site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=int("ff", 16)),
-                        )
-                    ],
-                )
-            ],
-            {"doeModesEnabled": False},
             False,
         ),
         (
@@ -834,31 +799,29 @@ async def test_check_der_settings_contents(
         assert_check_result(result, expected)
 
 
-def der_rating_bool_param_scenario(param: str, expected: bool) -> tuple[list, dict[str, bool], bool]:
-    """Convenience for generating scenarios for testing the ratings boolean param checks"""
-    return (
-        [
-            generate_class_instance(
-                Site,
-                seed=101,
-                aggregator_id=1,
-                site_ders=[
-                    generate_class_instance(
-                        SiteDER,
-                        site_der_rating=generate_class_instance(SiteDERRating),
-                    )
-                ],
-            )
-        ],
-        {param: expected},
-        expected,
-    )
-
-
 DERRATING_BOOL_PARAM_SCENARIOS = [
-    der_rating_bool_param_scenario(p, e)
-    for p in ["rtgMaxW", "rtgMaxVA", "rtgMaxVar", "rtgMaxChargeRateW", "rtgMaxDischargeRateW", "rtgMaxWh"]
-    for e in [True, False]
+    der_bool_param_scenario("site_der_rating", SiteDERRating, param, param_value, db_prop, db_prop_value, expected)
+    for param, db_prop in [
+        ("doeModesSupported", "doe_modes_supported"),
+        ("rtgMaxVA", "max_va_value"),
+        ("rtgMaxVar", "max_var_value"),
+        ("rtgMaxVarNeg", "max_var_neg_value"),
+        ("rtgMaxChargeRateW", "max_charge_rate_w_value"),
+        ("rtgMaxDischargeRateW", "max_discharge_rate_w_value"),
+        ("rtgMaxWh", "max_wh_value"),
+        ("rtgMinPFOverExcited", "min_pf_over_excited_displacement"),
+        ("rtgMinPFUnderExcited", "min_pf_under_excited_displacement"),
+    ]
+    for param_value, db_prop_value, expected in [
+        (True, 2, True),
+        (True, None, False),
+        (False, None, True),
+        (False, 2, False),
+    ]
+] + [
+    # These are non nullable and so we only do a cursory check
+    der_bool_param_scenario("site_der_rating", SiteDERRating, "rtgMaxW", True, "max_w_value", 2, True),
+    der_bool_param_scenario("site_der_rating", SiteDERRating, "rtgMaxW", False, "max_w_value", 2, False),
 ]
 
 
@@ -985,74 +948,6 @@ DERRATING_BOOL_PARAM_SCENARIOS = [
             {"modesSupported_set": "03"},
             False,
         ),  # Bit flag 1 not set on actual value
-        (
-            [
-                generate_class_instance(
-                    Site,
-                    seed=101,
-                    aggregator_id=1,
-                    site_ders=[
-                        generate_class_instance(
-                            SiteDER,
-                            site_der_rating=generate_class_instance(SiteDERRating, doe_modes_supported=int("fc", 16)),
-                        )
-                    ],
-                )
-            ],
-            {"doeModesSupported": True},
-            True,
-        ),
-        (
-            [
-                generate_class_instance(
-                    Site,
-                    seed=101,
-                    aggregator_id=1,
-                    site_ders=[
-                        generate_class_instance(
-                            SiteDER,
-                            site_der_rating=generate_class_instance(SiteDERRating, doe_modes_supported=None),
-                        )
-                    ],
-                )
-            ],
-            {"doeModesSupported": True},
-            False,
-        ),
-        (
-            [
-                generate_class_instance(
-                    Site,
-                    seed=101,
-                    aggregator_id=1,
-                    site_ders=[
-                        generate_class_instance(
-                            SiteDER,
-                            site_der_rating=generate_class_instance(SiteDERRating, doe_modes_supported=None),
-                        )
-                    ],
-                )
-            ],
-            {"doeModesSupported": False},
-            True,
-        ),
-        (
-            [
-                generate_class_instance(
-                    Site,
-                    seed=101,
-                    aggregator_id=1,
-                    site_ders=[
-                        generate_class_instance(
-                            SiteDER,
-                            site_der_rating=generate_class_instance(SiteDERRating, doe_modes_supported=int("fc", 16)),
-                        )
-                    ],
-                )
-            ],
-            {"doeModesSupported": False},
-            False,
-        ),
         (
             [
                 generate_class_instance(
@@ -1728,10 +1623,10 @@ async def test_do_check_readings_on_minute_boundary(pg_base_config, srt_ids: lis
     [
         ("", 0, False),
         ("FF00000000", 0, True),
-        ("FF0001E240", 123456, True),
-        ("FF0001E241", 123456, False),  # off by 1
-        ("FF0001E240", 123457, False),  # off by 1
-        ("FFFFFFFFFF", 4294967295, True),  # the largest pen 2^32-1
+        ("FF00123456", 123456, True),
+        ("FF00123466", 123456, False),  # off by 1
+        ("FF00123456", 123457, False),  # off by 1
+        ("FF99999999", 99999999, True),  # the largest pen 99999999
     ],
 )
 def test_mrid_matches_pen(mrid: str, pen: int, expected_result: bool):
@@ -1741,62 +1636,23 @@ def test_mrid_matches_pen(mrid: str, pen: int, expected_result: bool):
 @pytest.mark.parametrize(
     "mrid1,mrid2,group_mrid,pen,expected_result",
     [
-        (None, None, None, 0, CheckResult(True, None)),
-        (
-            "110001E240",
-            "220001E240",
-            "330001E240",
-            123456,
-            CheckResult(
-                True,
-                "All MRIDS and group MRIDS for the site readings types match the supplied Private Enterprise Number (PEN).",  # noqa: E501
-            ),
-        ),
-        (
-            "1100000000",  # mrid doesn't match pen
-            "220001E240",
-            "330001E240",
-            123456,
-            CheckResult(
-                False,
-                "1/2 MRIDS do not match the supplied PEN.",
-            ),
-        ),
-        (
-            "1100000000",  # mrid doesn't match pen
-            "2200000000",  # mrid doesn't match pen
-            "330001E240",
-            123456,
-            CheckResult(
-                False,
-                "2/2 MRIDS do not match the supplied PEN.",
-            ),
-        ),
-        (
-            "110001E240",
-            "220001E240",
-            "3300000000",  # group mrid doesn't match pen
-            123456,
-            CheckResult(
-                False,
-                "2/2 group MRIDS do not match the supplied PEN.",
-            ),
-        ),
+        (None, None, None, 0, True),
+        ("1100123456", "2200123456", "3300123456", 123456, True),
+        ("1100120056", "2200123456", "3300123456", 123456, False),  # mrid doesn't match pen
+        ("1100000000", "2200000000", "3300123456", 123456, False),  # mrid doesn't match pen  # mrid doesn't match pen
+        ("1100123456", "2200123456", "3300000000", 123456, False),  # group mrid doesn't match pen
         (
             "1100000000",  # mrid doesn't match pen
             "2200000000",  # mrid doesn't match pen
             "3300000000",  # group mrid doesn't match pen
             123456,
-            CheckResult(
-                False,
-                "2/2 group MRIDS do not match the supplied PEN. 2/2 MRIDS do not match the supplied PEN.",
-            ),
+            False,
         ),
     ],
 )
 @pytest.mark.anyio
 async def test_do_check_reading_type_mrids_match_pen(
-    mrid1: str | None, mrid2: str | None, group_mrid: str | None, pen: int, expected_result: CheckResult
+    mrid1: str | None, mrid2: str | None, group_mrid: str | None, pen: int, expected_result: bool
 ):
     # Arrange
     site = generate_class_instance(Site, aggregator_id=1, site_id=1)
@@ -1828,7 +1684,7 @@ async def test_do_check_reading_type_mrids_match_pen(
     result = await do_check_reading_type_mrids_match_pen(site_reading_types=srts, pen=pen)
 
     # Assert
-    assert result == expected_result
+    assert_check_result(result, expected_result)
 
 
 @pytest.mark.parametrize(

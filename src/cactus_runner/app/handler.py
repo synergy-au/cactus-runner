@@ -17,7 +17,7 @@ from cactus_runner.app.env import (
     SERVER_URL,
 )
 from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
-from cactus_runner.app.health import is_healthy
+from cactus_runner.app.health import is_admin_api_healthy, is_db_healthy
 from cactus_runner.app.schema_validator import validate_proxy_request_schema
 from cactus_runner.app.shared import (
     APPKEY_ENVOY_ADMIN_CLIENT,
@@ -27,6 +27,7 @@ from cactus_runner.app.shared import (
 )
 from cactus_runner.models import (
     ActiveTestProcedure,
+    ClientCertificateType,
     ClientInteraction,
     ClientInteractionType,
     InitResponseBody,
@@ -258,11 +259,11 @@ async def init_handler(request: web.Request):  # noqa: C901
         lfdi=aggregator_lfdi, subscription_domain=subscription_domain
     )
     if aggregator_lfdi is None:
-        client_type = "Device"
+        client_type = ClientCertificateType.DEVICE
         client_lfdi = cast(str, device_lfdi)  # we know its set due to checks above
         client_certificate = cast(str, device_certificate)  # we know its set due to checks above
     else:
-        client_type = "Aggregator"
+        client_type = ClientCertificateType.AGGREGATOR
         client_lfdi = cast(str, aggregator_lfdi)  # we know its set due to checks above
         client_certificate = cast(str, aggregator_certificate)  # we know its set due to checks above
     logger.info(f"Registering a {client_type} certificate {client_lfdi} under aggregator id {client_aggregator_id}")
@@ -428,7 +429,7 @@ async def health_handler(request):
     Returns:
         aiohttp.web.Response: No response body - Either a HTTP 200 on success or 503 on failure.
     """
-    if await is_healthy():
+    if await is_db_healthy() and await is_admin_api_healthy(request.app[APPKEY_ENVOY_ADMIN_CLIENT]):
         return web.Response(status=http.HTTPStatus.OK)
     else:
         return web.Response(status=http.HTTPStatus.SERVICE_UNAVAILABLE)
