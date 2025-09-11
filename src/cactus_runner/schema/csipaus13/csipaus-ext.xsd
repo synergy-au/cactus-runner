@@ -1,8 +1,8 @@
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" 
     elementFormDefault="qualified"
-    xmlns="https://csipaus.org/ns/v1.3-beta/storage" 
+    xmlns="https://csipaus.org/ns" 
     xmlns:bs="urn:ieee:std:2030.5:ns" 
-    targetNamespace="https://csipaus.org/ns/v1.3-beta/storage"> 
+    targetNamespace="https://csipaus.org/ns"> 
 
     <xs:import namespace="urn:ieee:std:2030.5:ns" schemaLocation="sep.xsd"/>
     
