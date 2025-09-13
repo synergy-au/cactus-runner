@@ -1,10 +1,16 @@
 from datetime import datetime
+from decimal import Decimal
 
 import pytest
 from assertical.asserts.type import assert_list_type
 from assertical.fake.generator import generate_class_instance
 from assertical.fixtures.postgres import generate_async_session
-from envoy.server.model.site import Site
+from envoy.server.model.archive.doe import (
+    ArchiveDynamicOperatingEnvelope,
+)
+from envoy.server.model.archive.site import ArchiveDefaultSiteControl
+from envoy.server.model.doe import DynamicOperatingEnvelope, SiteControlGroup
+from envoy.server.model.site import DefaultSiteControl, Site
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
 from envoy_schema.server.schema.sep2.types import (
     DataQualifierType,
@@ -18,6 +24,8 @@ from cactus_runner.app.envoy_common import (
     get_active_site,
     get_csip_aus_site_reading_types,
     get_reading_counts_grouped_by_reading_type,
+    get_site_controls_active_deleted,
+    get_site_defaults_with_archive,
     get_site_readings,
 )
 
@@ -386,3 +394,204 @@ async def test_get_reading_counts_grouped_by_reading_type(pg_base_config):
         assert count_by_reading_type[power_type] == num_power_readings
         assert count_by_reading_type[voltage_type] == num_voltage_readings
         assert count_by_reading_type[energy_type] == num_energy_readings
+
+
+@pytest.mark.anyio
+async def test_get_site_defaults_with_archive_empty_db(pg_empty_config):
+    async with generate_async_session(pg_empty_config) as session:
+        result = await get_site_defaults_with_archive(session)
+        assert isinstance(result, list)
+        assert len(result) == 0
+
+
+@pytest.mark.anyio
+async def test_get_site_defaults_with_archive(pg_base_config):
+    """Really simple test - can get_site_defaults_with_archive fetch all active/archive site defaults"""
+    # Arrange
+    async with generate_async_session(pg_base_config) as session:
+        site1 = generate_class_instance(Site, seed=101, aggregator_id=1, site_id=1)
+        session.add(site1)
+
+        session.add(generate_class_instance(DefaultSiteControl, seed=101, site=site1, ramp_rate_percent_per_second=1))
+        session.add(generate_class_instance(DefaultSiteControl, seed=202, site=site1, ramp_rate_percent_per_second=2))
+        session.add(
+            generate_class_instance(
+                ArchiveDefaultSiteControl, seed=303, site_id=1, optional_is_none=True, ramp_rate_percent_per_second=3
+            )
+        )
+        session.add(
+            generate_class_instance(ArchiveDefaultSiteControl, seed=404, site_id=1, ramp_rate_percent_per_second=4)
+        )
+        session.add(
+            generate_class_instance(ArchiveDefaultSiteControl, seed=505, site_id=2, ramp_rate_percent_per_second=5)
+        )
+
+        await session.commit()
+
+    # Act / Assert
+    async with generate_async_session(pg_base_config) as session:
+        result = await get_site_defaults_with_archive(session)
+        assert isinstance(result, list)
+        assert len(result) == 4
+
+        assert (
+            len(
+                list(
+                    filter(
+                        lambda sc: isinstance(sc, DefaultSiteControl) and sc.ramp_rate_percent_per_second == 1, result
+                    )
+                )
+            )
+            == 1
+        )
+        assert (
+            len(
+                list(
+                    filter(
+                        lambda sc: isinstance(sc, DefaultSiteControl) and sc.ramp_rate_percent_per_second == 2, result
+                    )
+                )
+            )
+            == 1
+        )
+        assert (
+            len(
+                list(
+                    filter(
+                        lambda sc: isinstance(sc, ArchiveDefaultSiteControl) and sc.ramp_rate_percent_per_second == 3,
+                        result,
+                    )
+                )
+            )
+            == 1
+        )
+        assert (
+            len(
+                list(
+                    filter(
+                        lambda sc: isinstance(sc, ArchiveDefaultSiteControl) and sc.ramp_rate_percent_per_second == 4,
+                        result,
+                    )
+                )
+            )
+            == 1
+        )
+
+
+@pytest.mark.anyio
+async def test_get_site_controls_active_deleted_empty_db(pg_empty_config):
+    async with generate_async_session(pg_empty_config) as session:
+        result = await get_site_controls_active_deleted(session)
+        assert isinstance(result, list)
+        assert len(result) == 0
+
+
+@pytest.mark.anyio
+async def test_get_site_controls_active_deleted(pg_base_config):
+    """Really simple test - can get_site_controls_active_deleted fetch all active/archive controls for a site"""
+    # Arrange
+    async with generate_async_session(pg_base_config) as session:
+        # Add active site
+        site1 = generate_class_instance(Site, seed=101, aggregator_id=1, site_id=1)
+        session.add(site1)
+
+        session.add(
+            generate_class_instance(
+                SiteControlGroup,
+                site_control_group_id=1,
+                dynamic_operating_envelopes=[
+                    generate_class_instance(
+                        DynamicOperatingEnvelope,
+                        seed=101,
+                        import_limit_active_watts=Decimal("1.11"),
+                        site=site1,
+                        calculation_log_id=None,
+                    ),
+                    generate_class_instance(
+                        DynamicOperatingEnvelope,
+                        seed=202,
+                        import_limit_active_watts=Decimal("2.22"),
+                        site=site1,
+                        calculation_log_id=None,
+                    ),
+                    generate_class_instance(
+                        DynamicOperatingEnvelope,
+                        seed=303,
+                        import_limit_active_watts=Decimal("3.33"),
+                        site=site1,
+                        calculation_log_id=None,
+                    ),
+                ],
+            )
+        )
+
+        session.add(
+            generate_class_instance(
+                ArchiveDynamicOperatingEnvelope,
+                seed=404,
+                deleted_time=None,
+                site_id=1,
+                import_limit_active_watts=Decimal("4.44"),
+            )
+        )
+        session.add(
+            generate_class_instance(
+                ArchiveDynamicOperatingEnvelope, seed=505, site_id=1, import_limit_active_watts=Decimal("5.55")
+            )
+        )
+        await session.commit()
+
+    # Act / Assert
+    async with generate_async_session(pg_base_config) as session:
+        result = await get_site_controls_active_deleted(session)
+        assert isinstance(result, list)
+        assert len(result) == 4
+
+        assert (
+            len(
+                list(
+                    filter(
+                        lambda sc: isinstance(sc, DynamicOperatingEnvelope)
+                        and sc.import_limit_active_watts == Decimal("1.11"),
+                        result,
+                    )
+                )
+            )
+            == 1
+        )
+        assert (
+            len(
+                list(
+                    filter(
+                        lambda sc: isinstance(sc, DynamicOperatingEnvelope)
+                        and sc.import_limit_active_watts == Decimal("2.22"),
+                        result,
+                    )
+                )
+            )
+            == 1
+        )
+        assert (
+            len(
+                list(
+                    filter(
+                        lambda sc: isinstance(sc, DynamicOperatingEnvelope)
+                        and sc.import_limit_active_watts == Decimal("3.33"),
+                        result,
+                    )
+                )
+            )
+            == 1
+        )
+        assert (
+            len(
+                list(
+                    filter(
+                        lambda sc: isinstance(sc, ArchiveDynamicOperatingEnvelope)
+                        and sc.import_limit_active_watts == Decimal("5.55"),
+                        result,
+                    )
+                )
+            )
+            == 1
+        )
