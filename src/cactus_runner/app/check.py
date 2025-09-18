@@ -447,6 +447,8 @@ async def check_der_capability_contents(
     # Perform parameter checks
     for k in params.model_fields_set:
         raw_value: Any = getattr(params, k)
+        field = params.__pydantic_fields__[k]
+
         if k in [
             "doe_modes_supported_set",
             "modes_supported_set",

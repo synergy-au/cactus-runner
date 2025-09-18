@@ -709,7 +709,7 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
                     ],
                 )
             ],
-            {"vppModesEnabled_set": "03"},
+            {"vppModesEnabled_set": evaluator.ResolvedParam("03")},
             True,
         ),
         (
@@ -726,7 +726,7 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
                     ],
                 )
             ],
-            {"vppModesEnabled_set": "03"},
+            {"vppModesEnabled_set": evaluator.ResolvedParam("03")},
             False,
         ),  # Bit flag 1 not set on actual value
         (
@@ -743,7 +743,7 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
                     ],
                 )
             ],
-            {"vppModesEnabled_unset": "03"},
+            {"vppModesEnabled_unset": evaluator.ResolvedParam("03")},
             True,
         ),
         (
@@ -760,7 +760,7 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
                     ],
                 )
             ],
-            {"vppModesEnabled_unset": "03"},
+            {"vppModesEnabled_unset": evaluator.ResolvedParam("03")},
             False,
         ),  # Bit flag 1 set on actual value
         (
@@ -779,7 +779,7 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
                     ],
                 )
             ],
-            {"setMinWh": True},
+            {"setMinWh": evaluator.ResolvedParam(True)},
             True,
         ),
         (
@@ -795,7 +795,7 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
                     ],
                 )
             ],
-            {"setMinWh": True},
+            {"setMinWh": evaluator.ResolvedParam(True)},
             True,
         ),
         (
@@ -811,7 +811,7 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
                     ],
                 )
             ],
-            {"setMinWh": False},
+            {"setMinWh": evaluator.ResolvedParam(False)},
             False,
         ),
         *DERSETTING_BOOL_PARAM_SCENARIOS,
@@ -1061,7 +1061,7 @@ DERRATING_BOOL_PARAM_SCENARIOS = [
                     ],
                 )
             ],
-            {"vppModesSupported_set": "03"},
+            {"vppModesSupported_set": evaluator.ResolvedParam("03")},
             True,
         ),
         (
@@ -1078,7 +1078,7 @@ DERRATING_BOOL_PARAM_SCENARIOS = [
                     ],
                 )
             ],
-            {"vppModesSupported_set": "03"},
+            {"vppModesSupported_set": evaluator.ResolvedParam("03")},
             False,
         ),  # Bit flag 1 not set on actual value
         (
@@ -1095,7 +1095,7 @@ DERRATING_BOOL_PARAM_SCENARIOS = [
                     ],
                 )
             ],
-            {"vppModesSupported_unset": "03"},
+            {"vppModesSupported_unset": evaluator.ResolvedParam("03")},
             True,
         ),
         (
@@ -1112,7 +1112,7 @@ DERRATING_BOOL_PARAM_SCENARIOS = [
                     ],
                 )
             ],
-            {"vppModesSupported_unset": "03"},
+            {"vppModesSupported_unset": evaluator.ResolvedParam("03")},
             False,
         ),  # Bit flag 1 set on actual value
         *DERRATING_BOOL_PARAM_SCENARIOS,
