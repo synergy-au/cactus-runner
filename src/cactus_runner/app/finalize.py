@@ -20,7 +20,12 @@ from cactus_runner.app.envoy_common import (
     get_reading_counts_grouped_by_reading_type,
     get_sites,
 )
-from cactus_runner.app.log import LOG_FILE_CACTUS_RUNNER, LOG_FILE_ENVOY
+from cactus_runner.app.log import (
+    LOG_FILE_CACTUS_RUNNER,
+    LOG_FILE_ENVOY_ADMIN,
+    LOG_FILE_ENVOY_NOTIFICATION,
+    LOG_FILE_ENVOY_SERVER,
+)
 from cactus_runner.app.readings import (
     MANDATORY_READING_SPECIFIERS,
     get_readings,
@@ -39,10 +44,23 @@ class NoActiveTestProcedure(Exception):
     pass
 
 
+def get_file_name_no_extension(file_path: str) -> str:
+    """Simple utility for parsing a file path, extracting the file name and removing the last extension (if any).
+
+    eg: turns "/foo.bar/example/file.name.pdf" into "file.name"
+    """
+    name = Path(file_path).name
+    dot_parts = name.split(".")
+
+    if len(dot_parts) == 1:
+        return dot_parts[0]  # We don't have a dot in the path name
+    else:
+        return ".".join(dot_parts[:-1])
+
+
 def get_zip_contents(
     json_status_summary: str | None,
-    runner_logfile: str,
-    envoy_logfile: str,
+    log_file_paths: list[str],
     pdf_data: bytes | None,
     errors: list[str],
     filename_infix: str = "",
@@ -65,21 +83,15 @@ def get_zip_contents(
             with open(file_path, "w") as f:
                 f.write(json_status_summary)
 
-        # Copy Cactus Runner log file into archive
-        destination = archive_dir / f"CactusRunnerLog{filename_infix}.jsonl"
-        try:
-            shutil.copyfile(runner_logfile, destination)
-        except Exception as exc:
-            logger.error(f"Unable to copy {runner_logfile} to {destination}", exc_info=exc)
-            writeable_errors.append(f"Error fetching cactus runner logs: {exc}")
-
-        # Copy Envoy log file into archive
-        destination = archive_dir / f"EnvoyLog{filename_infix}.jsonl"
-        try:
-            shutil.copyfile(envoy_logfile, destination)
-        except Exception as exc:
-            logger.error(f"Unable to copy {envoy_logfile} to {destination}", exc_info=exc)
-            writeable_errors.append(f"Error fetching envoy logs: {exc}")
+        # Copy all log files into the archive - preserving the names
+        for log_file_path in log_file_paths:
+            log_file_name = get_file_name_no_extension(log_file_path)
+            destination = archive_dir / f"{log_file_name}{filename_infix}.log"  # We are assuming .jsonl
+            try:
+                shutil.copyfile(log_file_path, destination)
+            except Exception as exc:
+                logger.error(f"Unable to copy {log_file_path} to {destination}", exc_info=exc)
+                writeable_errors.append(f"Error fetching cactus logs for {log_file_path}: {exc}")
 
         # Write pdf report
         if pdf_data is not None:
@@ -149,6 +161,52 @@ def safely_get_error_zip(errors: list[str]) -> bytes:
         # for analysis
         logger.error("Failure to safely generate an error zip.", exc_info=exc)
         return f"Complete failure to generate output zip with data {errors}\nException to follow\n{exc}".encode()
+
+
+async def generate_pdf(
+    runner_state,
+    check_results,
+    readings,
+    reading_counts,
+    sites,
+    timeline,
+    errors,
+) -> bytes | None:
+    try:
+        # Generate the pdf (as bytes)
+        pdf_data = reporting.pdf_report_as_bytes(
+            runner_state=runner_state,
+            check_results=check_results,
+            readings=readings,
+            reading_counts=reading_counts,
+            sites=sites,
+            timeline=timeline,
+        )
+    except Exception as exc:
+        logger.error("Error generating PDF report.", exc_info=exc)
+        errors.append(f"Error generating PDF report: {exc}")
+        pdf_data = None
+
+    # Try generating the report a second time this time without any spacers
+    # which seem to be the source of pdf layout issues.
+    if pdf_data is None:
+        try:
+            # Generate the pdf (as bytes) this time excluding any spacers
+            pdf_data = reporting.pdf_report_as_bytes(
+                runner_state=runner_state,
+                check_results=check_results,
+                readings=readings,
+                reading_counts=reading_counts,
+                sites=sites,
+                timeline=timeline,
+                no_spacers=True,
+            )
+        except Exception as exc:
+            logger.error("Error generating PDF report without Spacers. Omitting report from final zip.", exc_info=exc)
+            errors.append(f"Error generating PDF report: {exc}")
+            pdf_data = None
+
+    return pdf_data
 
 
 async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -> bytes:
@@ -225,29 +283,28 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
     readings = await get_readings(session, reading_specifiers=MANDATORY_READING_SPECIFIERS)
     reading_counts = await get_reading_counts_grouped_by_reading_type(session)
 
-    try:
-        # Generate the pdf (as bytes)
-        pdf_data = reporting.pdf_report_as_bytes(
-            runner_state=runner_state,
-            check_results=check_results,
-            readings=readings,
-            reading_counts=reading_counts,
-            sites=sites,
-            timeline=test_timeline,
-        )
-    except Exception as exc:
-        logger.error("Error generating PDF report. Omitting report from final zip.", exc_info=exc)
-        errors.append(f"Error generating PDF report: {exc}")
-        pdf_data = None
+    pdf_data = await generate_pdf(
+        runner_state=runner_state,
+        check_results=check_results,
+        readings=readings,
+        reading_counts=reading_counts,
+        sites=sites,
+        timeline=test_timeline,
+        errors=errors,
+    )
 
     generation_timestamp = now.replace(microsecond=0)
 
     active_test_procedure.finished_zip_data = get_zip_contents(
         json_status_summary=json_status_summary,
-        runner_logfile=LOG_FILE_CACTUS_RUNNER,
-        envoy_logfile=LOG_FILE_ENVOY,
+        log_file_paths=[
+            LOG_FILE_ENVOY_SERVER,
+            LOG_FILE_ENVOY_ADMIN,
+            LOG_FILE_ENVOY_NOTIFICATION,
+            LOG_FILE_CACTUS_RUNNER,
+        ],
         pdf_data=pdf_data,
-        filename_infix=f"_{generation_timestamp.isoformat()}_{active_test_procedure.name}",
+        filename_infix=f"_{int(generation_timestamp.timestamp())}_{active_test_procedure.name}",
         errors=errors,
     )
     return active_test_procedure.finished_zip_data
