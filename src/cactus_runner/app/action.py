@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from cactus_test_definitions import Action
+from cactus_test_definitions.client import Action
 from envoy.server.model.site import Site
 from envoy_schema.admin.schema.config import (
     ControlDefaultRequest,
@@ -353,8 +353,8 @@ async def apply_action(
     if not active_test_procedure:
         return
 
-    resolved_parameters = await resolve_variable_expressions_from_parameters(session, action.parameters)
-
+    resolved_with_metadata_parameters = await resolve_variable_expressions_from_parameters(session, action.parameters)
+    resolved_parameters = {k: v.value for k, v in resolved_with_metadata_parameters.items()}
     logger.info(f"Executing action {action} with parameters {resolved_parameters}")
     try:
         match action.type:

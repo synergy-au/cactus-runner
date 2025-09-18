@@ -4,11 +4,8 @@ from datetime import datetime, timezone
 from enum import Enum, StrEnum, auto
 from typing import Any
 
-from cactus_test_definitions import (
-    CSIPAusVersion,
-    Event,
-    TestProcedure,
-)
+from cactus_test_definitions import CSIPAusVersion
+from cactus_test_definitions.client import Event, TestProcedure
 from dataclass_wizard import JSONWizard
 
 
@@ -179,6 +176,27 @@ class PreconditionCheckEntry(JSONWizard):
 
 
 @dataclass
+class DataStreamPoint(JSONWizard):
+    watts: int | None  # The data point value (in watts)
+    offset: str  # Label for identifying the relative start - usually something like "2m20s"
+
+
+@dataclass
+class TimelineDataStreamEntry(JSONWizard):
+    label: str  # Descriptive label of this data stream
+    data: list[DataStreamPoint]
+    stepped: bool  # If True - this data should be presented as a stepped line chart
+    dashed: bool  # If True - this data should be a dashed line
+
+
+@dataclass
+class TimelineStatus(JSONWizard):
+    data_streams: list[TimelineDataStreamEntry]  # The set of data streams that should be rendered on the timeline
+    set_max_w: int | None  # The currently set set_max_w (if any)
+    now_offset: str  # The name of the DataStreamPoint.offset that corresponds with "now" (when this was calculated)
+
+
+@dataclass
 class RunnerStatus(JSONWizard):
     timestamp_status: datetime  # when was this status generated?
     timestamp_initialise: datetime | None  # When did the test initialise
@@ -193,3 +211,5 @@ class RunnerStatus(JSONWizard):
     test_procedure_name: str = field(default="-")  # '-' represents no active procedure
     step_status: dict[str, StepStatus] | None = field(default=None)
     request_history: list[RequestEntry] = field(default_factory=list)
+    set_max_w: int | None = None  # Snapshot of the current MaxW DERSetting value of the active end device (if any)
+    timeline: TimelineStatus | None = None  # Streaming timeline data snapshot

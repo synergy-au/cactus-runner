@@ -1,9 +1,14 @@
 import logging
 from enum import IntEnum
+from itertools import chain
 from typing import Sequence
 
+from envoy.server.model.archive.doe import (
+    ArchiveDynamicOperatingEnvelope,
+)
+from envoy.server.model.archive.site import ArchiveDefaultSiteControl
 from envoy.server.model.doe import DynamicOperatingEnvelope
-from envoy.server.model.site import Site, SiteDER
+from envoy.server.model.site import DefaultSiteControl, Site, SiteDER
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
 from envoy_schema.server.schema.sep2.types import (
     DataQualifierType,
@@ -142,7 +147,7 @@ async def get_reading_counts_grouped_by_reading_type(session: AsyncSession) -> d
     return count_by_site_reading_type
 
 
-async def get_sites(session: AsyncSession) -> Sequence[Site] | None:
+async def get_sites(session: AsyncSession) -> Sequence[Site]:
     statement = (
         select(Site)
         .order_by(Site.site_id.asc())
@@ -157,15 +162,59 @@ async def get_sites(session: AsyncSession) -> Sequence[Site] | None:
     return response.scalars().all()
 
 
-async def get_csip_aus_site_controls(session: AsyncSession) -> Sequence[DynamicOperatingEnvelope] | None:
+async def get_site_controls_active_deleted(
+    session: AsyncSession,
+) -> list[DynamicOperatingEnvelope | ArchiveDynamicOperatingEnvelope]:
+    """Includes both active and deleted/cancelled SiteControls. Updates are NOT included."""
     site = await get_active_site(session)
     if not site:
         return []
 
-    statement = (
-        select(DynamicOperatingEnvelope)
-        .order_by(DynamicOperatingEnvelope.start_time.asc())
-        .where(DynamicOperatingEnvelope.site_id == site.site_id)
+    active_controls = (
+        (
+            await session.execute(
+                select(DynamicOperatingEnvelope).where(DynamicOperatingEnvelope.site_id == site.site_id)
+            )
+        )
+        .scalars()
+        .all()
     )
-    response = await session.execute(statement)
-    return response.scalars().all()
+
+    deleted_controls = (
+        (
+            await session.execute(
+                select(ArchiveDynamicOperatingEnvelope).where(
+                    (ArchiveDynamicOperatingEnvelope.site_id == site.site_id)
+                    & (ArchiveDynamicOperatingEnvelope.deleted_time.is_not(None))
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return list(chain(active_controls, deleted_controls))
+
+
+async def get_site_defaults_with_archive(session: AsyncSession) -> list[DefaultSiteControl | ArchiveDefaultSiteControl]:
+    """Fetches all DefaultSiteControl's for the active site, both current and historic (including update values)"""
+    site = await get_active_site(session)
+    if not site:
+        return []
+
+    active_control_groups = (
+        (await session.execute(select(DefaultSiteControl).where(DefaultSiteControl.site_id == site.site_id)))
+        .scalars()
+        .all()
+    )
+    deleted_control_groups = (
+        (
+            await session.execute(
+                select(ArchiveDefaultSiteControl).where(ArchiveDefaultSiteControl.site_id == site.site_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return list(chain(active_control_groups, deleted_control_groups))
