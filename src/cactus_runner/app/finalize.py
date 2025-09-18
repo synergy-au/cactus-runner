@@ -11,20 +11,25 @@ from typing import cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from cactus_runner.app import check, reporting
-from cactus_runner.app.controls import get_controls
+from cactus_runner.app import check, reporting, timeline
 from cactus_runner.app.database import (
     DatabaseNotInitialisedError,
-    begin_session,
     get_postgres_dsn,
 )
-from cactus_runner.app.log import LOG_FILE_CACTUS_RUNNER, LOG_FILE_ENVOY
+from cactus_runner.app.envoy_common import (
+    get_reading_counts_grouped_by_reading_type,
+    get_sites,
+)
+from cactus_runner.app.log import (
+    LOG_FILE_CACTUS_RUNNER,
+    LOG_FILE_ENVOY_ADMIN,
+    LOG_FILE_ENVOY_NOTIFICATION,
+    LOG_FILE_ENVOY_SERVER,
+)
 from cactus_runner.app.readings import (
     MANDATORY_READING_SPECIFIERS,
-    get_reading_counts,
     get_readings,
 )
-from cactus_runner.app.sites import get_sites
 from cactus_runner.app.status import get_active_runner_status
 from cactus_runner.models import RunnerState
 
@@ -39,10 +44,23 @@ class NoActiveTestProcedure(Exception):
     pass
 
 
+def get_file_name_no_extension(file_path: str) -> str:
+    """Simple utility for parsing a file path, extracting the file name and removing the last extension (if any).
+
+    eg: turns "/foo.bar/example/file.name.pdf" into "file.name"
+    """
+    name = Path(file_path).name
+    dot_parts = name.split(".")
+
+    if len(dot_parts) == 1:
+        return dot_parts[0]  # We don't have a dot in the path name
+    else:
+        return ".".join(dot_parts[:-1])
+
+
 def get_zip_contents(
     json_status_summary: str | None,
-    runner_logfile: str,
-    envoy_logfile: str,
+    log_file_paths: list[str],
     pdf_data: bytes | None,
     errors: list[str],
     filename_infix: str = "",
@@ -65,21 +83,15 @@ def get_zip_contents(
             with open(file_path, "w") as f:
                 f.write(json_status_summary)
 
-        # Copy Cactus Runner log file into archive
-        destination = archive_dir / f"CactusRunnerLog{filename_infix}.jsonl"
-        try:
-            shutil.copyfile(runner_logfile, destination)
-        except Exception as exc:
-            logger.error(f"Unable to copy {runner_logfile} to {destination}", exc_info=exc)
-            writeable_errors.append(f"Error fetching cactus runner logs: {exc}")
-
-        # Copy Envoy log file into archive
-        destination = archive_dir / f"EnvoyLog{filename_infix}.jsonl"
-        try:
-            shutil.copyfile(envoy_logfile, destination)
-        except Exception as exc:
-            logger.error(f"Unable to copy {envoy_logfile} to {destination}", exc_info=exc)
-            writeable_errors.append(f"Error fetching envoy logs: {exc}")
+        # Copy all log files into the archive - preserving the names
+        for log_file_path in log_file_paths:
+            log_file_name = get_file_name_no_extension(log_file_path)
+            destination = archive_dir / f"{log_file_name}{filename_infix}.log"  # We are assuming .jsonl
+            try:
+                shutil.copyfile(log_file_path, destination)
+            except Exception as exc:
+                logger.error(f"Unable to copy {log_file_path} to {destination}", exc_info=exc)
+                writeable_errors.append(f"Error fetching cactus logs for {log_file_path}: {exc}")
 
         # Write pdf report
         if pdf_data is not None:
@@ -151,6 +163,52 @@ def safely_get_error_zip(errors: list[str]) -> bytes:
         return f"Complete failure to generate output zip with data {errors}\nException to follow\n{exc}".encode()
 
 
+async def generate_pdf(
+    runner_state,
+    check_results,
+    readings,
+    reading_counts,
+    sites,
+    timeline,
+    errors,
+) -> bytes | None:
+    try:
+        # Generate the pdf (as bytes)
+        pdf_data = reporting.pdf_report_as_bytes(
+            runner_state=runner_state,
+            check_results=check_results,
+            readings=readings,
+            reading_counts=reading_counts,
+            sites=sites,
+            timeline=timeline,
+        )
+    except Exception as exc:
+        logger.error("Error generating PDF report.", exc_info=exc)
+        errors.append(f"Error generating PDF report: {exc}")
+        pdf_data = None
+
+    # Try generating the report a second time this time without any spacers
+    # which seem to be the source of pdf layout issues.
+    if pdf_data is None:
+        try:
+            # Generate the pdf (as bytes) this time excluding any spacers
+            pdf_data = reporting.pdf_report_as_bytes(
+                runner_state=runner_state,
+                check_results=check_results,
+                readings=readings,
+                reading_counts=reading_counts,
+                sites=sites,
+                timeline=timeline,
+                no_spacers=True,
+            )
+        except Exception as exc:
+            logger.error("Error generating PDF report without Spacers. Omitting report from final zip.", exc_info=exc)
+            errors.append(f"Error generating PDF report: {exc}")
+            pdf_data = None
+
+    return pdf_data
+
+
 async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -> bytes:
     """For the specified RunnerState - move the active test into a "Finished" state by calculating the final ZIP
     contents. Raises NoActiveTestProcedure if there isn't an active test procedure for the specified RunnerState
@@ -159,6 +217,7 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
 
     Populates and then returns the finished_zip_data for the active test procedure"""
 
+    now = datetime.now(timezone.utc)
     errors: list[str] = []  # For capturing basic error information to encode in the zip to alert about missing content
 
     active_test_procedure = runner_state.active_test_procedure
@@ -187,13 +246,13 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
         errors.append(f"Failure generating active runner status: {exc}")
         json_status_summary = None
 
-    # Determine all criteria check results
     check_results = {}
+
+    # Determine all criteria check results
     if active_test_procedure.definition.criteria:
-        async with begin_session() as session:
-            check_results = await check.determine_check_results(
-                active_test_procedure.definition.criteria.checks, active_test_procedure, session
-            )
+        check_results = await check.determine_check_results(
+            active_test_procedure.definition.criteria.checks, active_test_procedure, session
+        )
 
     # Add a "virtual" check covering XSD errors in incoming requests
     xsd_error_counts = [len(rh.body_xml_errors) for rh in runner_state.request_history if rh.body_xml_errors]
@@ -205,35 +264,47 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
         xsd_check = check.CheckResult(True, "No XSD errors detected in any requests.")
     check_results["all-requests-xsd-valid"] = xsd_check
 
-    try:
-        # Fetch PDF input data
-        readings = await get_readings(reading_specifiers=MANDATORY_READING_SPECIFIERS)
-        reading_counts = await get_reading_counts()
-        sites = await get_sites()
-        controls = await get_controls()
+    # Figure out the testing timeline
+    test_timeline: timeline.Timeline | None = None
+    if active_test_procedure.started_at is not None:
+        try:
+            timeline_interval_seconds = 20
+            test_timeline = await timeline.generate_timeline(
+                session, start=active_test_procedure.started_at, interval_seconds=timeline_interval_seconds, end=now
+            )
+            if not test_timeline.data_streams:
+                test_timeline = None
+        except Exception as exc:
+            logger.error("Error generating test timeline data.", exc_info=exc)
+            test_timeline = None
 
-        # Generate the pdf (as bytes)
-        pdf_data = reporting.pdf_report_as_bytes(
-            runner_state=runner_state,
-            check_results=check_results,
-            readings=readings,
-            reading_counts=reading_counts,
-            sites=sites,
-            controls=controls,
-        )
-    except Exception as exc:
-        logger.error("Error generating PDF report. Omitting report from final zip.", exc_info=exc)
-        errors.append(f"Error generating PDF report: {exc}")
-        pdf_data = None
+    # Fetch raw DB data
+    sites = await get_sites(session)
+    readings = await get_readings(session, reading_specifiers=MANDATORY_READING_SPECIFIERS)
+    reading_counts = await get_reading_counts_grouped_by_reading_type(session)
 
-    generation_timestamp = datetime.now(timezone.utc).replace(microsecond=0)
+    pdf_data = await generate_pdf(
+        runner_state=runner_state,
+        check_results=check_results,
+        readings=readings,
+        reading_counts=reading_counts,
+        sites=sites,
+        timeline=test_timeline,
+        errors=errors,
+    )
+
+    generation_timestamp = now.replace(microsecond=0)
 
     active_test_procedure.finished_zip_data = get_zip_contents(
         json_status_summary=json_status_summary,
-        runner_logfile=LOG_FILE_CACTUS_RUNNER,
-        envoy_logfile=LOG_FILE_ENVOY,
+        log_file_paths=[
+            LOG_FILE_ENVOY_SERVER,
+            LOG_FILE_ENVOY_ADMIN,
+            LOG_FILE_ENVOY_NOTIFICATION,
+            LOG_FILE_CACTUS_RUNNER,
+        ],
         pdf_data=pdf_data,
-        filename_infix=f"_{generation_timestamp.isoformat()}_{active_test_procedure.name}",
+        filename_infix=f"_{int(generation_timestamp.timestamp())}_{active_test_procedure.name}",
         errors=errors,
     )
     return active_test_procedure.finished_zip_data

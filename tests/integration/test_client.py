@@ -10,7 +10,8 @@ from assertical.asserts.time import assert_nowish
 from assertical.asserts.type import assert_dict_type
 from assertical.fake.generator import generate_class_instance
 from assertical.fixtures.postgres import generate_async_session
-from cactus_test_definitions import CSIPAusVersion, TestProcedureId
+from cactus_test_definitions import CSIPAusVersion
+from cactus_test_definitions.client import TestProcedureId
 from envoy.server.model.site import Site
 from pytest_aiohttp.plugin import TestClient
 
@@ -214,6 +215,8 @@ async def test_status_steps_immediate_start(
 
     assert step_status_counts.get(StepStatus.ACTIVE, 0) == 1, "One step should initially be active"
     assert step_status_counts.get(StepStatus.RESOLVED, 0) == 0, "No steps should be resolved at the start"
+
+    assert status_response.timeline is not None, "Timeline should've generated something"
 
 
 @pytest.mark.slow
