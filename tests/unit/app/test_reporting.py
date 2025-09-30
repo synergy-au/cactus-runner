@@ -264,15 +264,3 @@ def test_pdf_report_with_witness_test():
 
     # Assert - we are mainly checking that no uncaught exceptions are raised generating the pdf report
     assert len(report_bytes) > 0
-
-    with open("/home/lachlan/test.pdf", "wb") as fp:
-        fp.write(report_bytes)
-
-    # import uuid
-
-    # with tempfile.NamedTemporaryFile(
-    #     suffix=".pdf", prefix=f"report_{uuid.uuid4().hex[:8]}_", delete=False
-    # ) as temp_file:
-    #     temp_file.write(report_bytes)Pass/Fail
-    #     temp_file.flush()
-    #     subprocess.run(["xdg-open", temp_file.name])
