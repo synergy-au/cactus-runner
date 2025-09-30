@@ -63,6 +63,8 @@ from cactus_runner.models import (
 
 logger = logging.getLogger(__name__)
 
+WITNESS_TEST_CLASSES: list[str] = ["DER-A", "DER-G", "DER-L"]  # Classes from section 14 of sa-ts-5573-2025
+
 
 class ConditionalSpacer(Spacer):
     """A Spacer that takes up a variable amount of vertical space.
@@ -97,6 +99,7 @@ WARNING_COLOR = HexColor(0xFF4545)
 TEXT_COLOR = HexColor(0x000000)
 PASS_COLOR = HIGHLIGHT_COLOR
 FAIL_COLOR = HexColor(0xF1420E)
+GENTLE_WARNING_COLOR = HexColor(0xFFC107)
 
 DEFAULT_TABLE_STYLE = TableStyle(
     [
@@ -321,7 +324,7 @@ def generate_overview_section(
     return elements
 
 
-def generate_criteria_summary_chart(num_passed: int, num_failed: int) -> Image:
+def generate_criteria_summary_chart(num_passed: int, num_failed: int, requires_witness_testing: bool) -> Image:
     labels = ["Pass", "Fail"]
     values = [num_passed, num_failed]
     total = num_passed + num_failed
@@ -347,7 +350,11 @@ def generate_criteria_summary_chart(num_passed: int, num_failed: int) -> Image:
     fig.update_layout(showlegend=False, margin=dict(l=0, r=0, b=0, t=0, pad=0))
 
     # Add summary annotation to middle of pie doughnut
-    annotation = "<b>All</b><br>passed" if num_passed == total else f"<b>{num_passed}</b> / <b>{total}</b><br>passed"
+    if num_passed == total:
+        annotation = "<b>All</b><br>passed" + ("*" if requires_witness_testing else "")
+    else:
+        annotation = f"<b>{num_passed}</b> / <b>{total}</b><br>passed"
+
     fig.add_annotation(
         x=0.5,
         y=0.5,
@@ -357,7 +364,12 @@ def generate_criteria_summary_chart(num_passed: int, num_failed: int) -> Image:
     )
 
     # Set the colors of the segments
-    fig.update_traces(marker=dict(colors=[rl_to_plotly_color(PASS_COLOR), rl_to_plotly_color(FAIL_COLOR)]))
+    if num_failed == 0 and requires_witness_testing:
+        colors = [rl_to_plotly_color(GENTLE_WARNING_COLOR), rl_to_plotly_color(FAIL_COLOR)]
+    else:
+        colors = [rl_to_plotly_color(PASS_COLOR), rl_to_plotly_color(FAIL_COLOR)]
+
+    fig.update_traces(marker=dict(colors=colors))
 
     # Generate the image from the fig
     content_width = MAX_CONTENT_WIDTH / 2.5  # rescale image to width of KeepTogether column (roughly)
@@ -428,20 +440,33 @@ def generate_criteria_failure_table(check_results: dict[str, CheckResult], style
     return table
 
 
-def generate_criteria_section(check_results: dict[str, CheckResult], stylesheet: StyleSheet) -> list[Flowable]:
+def generate_criteria_section(
+    check_results: dict[str, CheckResult], requires_witness_testing: bool, stylesheet: StyleSheet
+) -> list[Flowable]:
     check_values = [check_result.passed for check_result in check_results.values()]
     num_passed = sum(check_values)
     num_failed = len(check_values) - num_passed
 
     elements: list[Flowable] = []
     elements.append(Paragraph("Criteria", stylesheet.heading))
-    chart = generate_criteria_summary_chart(num_passed=num_passed, num_failed=num_failed)
+    chart = generate_criteria_summary_chart(
+        num_passed=num_passed, num_failed=num_failed, requires_witness_testing=requires_witness_testing
+    )
     table = generate_criteria_summary_table(check_results=check_results, stylesheet=stylesheet)
     elements.append(BalancedColumns([chart, table]))
+    elements.append(stylesheet.spacer)
+
+    if num_failed == 0 and requires_witness_testing:
+        elements.append(
+            Paragraph(
+                "<b>*Self tests have passed. "
+                "<font backColor='#ffe69b'>However, a witness test operator will need to review these results.</font> "
+                "</b>"
+            )
+        )
 
     # Criteria Failure Table (only shown if there are failures present)
     if num_failed > 0:
-        elements.append(stylesheet.spacer)
         elements.append(stylesheet.spacer)
         elements.append(generate_criteria_failure_table(check_results=check_results, stylesheet=stylesheet))
     elements.append(stylesheet.spacer)
@@ -1227,10 +1252,14 @@ def generate_page_elements(
 
     test_procedure_name = active_test_procedure.name
     test_procedure_description = active_test_procedure.definition.description
+    test_procedure_classes = active_test_procedure.definition.classes
 
     # The title is handles by the first page banner
     # We need a space to skip past the banner
     page_elements.append(Spacer(1, MARGIN))
+
+    # Check if the test contains classes that require witness testing
+    requires_witness_testing = any(test_class in WITNESS_TEST_CLASSES for test_class in test_procedure_classes)
 
     # Overview Section
     try:
@@ -1265,7 +1294,11 @@ def generate_page_elements(
         logger.error(f"Unable to add 'test procedure overview' to PDF report. Reason={repr(e)}")
 
     # Criteria Section
-    page_elements.extend(generate_criteria_section(check_results=check_results, stylesheet=stylesheet))
+    page_elements.extend(
+        generate_criteria_section(
+            check_results=check_results, stylesheet=stylesheet, requires_witness_testing=requires_witness_testing
+        )
+    )
 
     # Test Progress Section
     page_elements.extend(generate_test_progress_section(runner_state=runner_state, stylesheet=stylesheet))
