@@ -1,8 +1,5 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-import os
-import tempfile
-import subprocess
 import pandas as pd
 import pytest
 from assertical.fake.generator import generate_class_instance
