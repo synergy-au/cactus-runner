@@ -325,7 +325,7 @@ def generate_overview_section(
 
 
 def generate_criteria_summary_chart(num_passed: int, num_failed: int, requires_witness_testing: bool) -> Image:
-    labels = ["ARGHHHGAHGHAG", "Fail"]
+    labels = ["Pass", "Fail"]
     values = [num_passed, num_failed]
     total = num_passed + num_failed
 
