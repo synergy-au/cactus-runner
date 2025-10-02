@@ -13,9 +13,9 @@ x-envoy-common:
 
 services:
   cactus-runner:
-    image: cactusimageregistry.azurecr.io/cactus-runner:34-synergy
+    image: cactusimageregistry.azurecr.io/cactus-runner:73-v1.3-beta_storage
     ports:
-      - 127.0.0.1:8080:8080
+      - 8080:8080
     networks:
       - cactus-envoy-net
     volumes:
@@ -28,7 +28,7 @@ services:
       - ENVOY_ADMIN_URL=http://cactus-envoy-admin:8001
 
   cactus-teststack-init:
-    image: cactusimageregistry.azurecr.io/cactus-teststack-init:34-synergy
+    image: cactusimageregistry.azurecr.io/cactus-teststack-init:73-v1.3-beta_storage
     restart: "no"
     environment:
       - ENVOY_DATABASE_URL=postgresql://test_user:test_pwd@cactus-envoy-db/test_db
@@ -40,8 +40,8 @@ services:
   rabbit-mq:
     image: rabbitmq:3-management
     ports:
-      - 127.0.0.1:5672:5672
-      - 127.0.0.1:15672:15672
+      - 5672:5672
+      - 15672:15672
     hostname: rabbit-mq
     restart: unless-stopped
     networks:
@@ -57,7 +57,7 @@ services:
         condition: service_completed_successfully
 
   taskiq-worker:
-    image: cactusimageregistry.azurecr.io/cactus-envoy:34-synergy
+    image: cactusimageregistry.azurecr.io/cactus-envoy:73-v1.3-beta_storage
     environment:
       <<: *common-env
     command: taskiq worker envoy.notification.main:broker envoy.notification.task
@@ -71,9 +71,9 @@ services:
         condition: service_completed_successfully
 
   cactus-envoy:
-    image: cactusimageregistry.azurecr.io/cactus-envoy:34-synergy
+    image: cactusimageregistry.azurecr.io/cactus-envoy:73-v1.3-beta_storage
     ports:
-      - 127.0.0.1:8000:8000
+      - 8000:8000
     restart: unless-stopped
     networks:
       - cactus-envoy-net
@@ -92,9 +92,9 @@ services:
       - shared:/shared
 
   cactus-envoy-admin:
-    image: cactusimageregistry.azurecr.io/cactus-envoy:34-synergy
+    image: cactusimageregistry.azurecr.io/cactus-envoy:73-v1.3-beta_storage
     ports:
-      - 127.0.0.1:8001:8001
+      - 8001:8001
     restart: unless-stopped
     networks:
       - cactus-envoy-net
@@ -116,7 +116,7 @@ services:
   cactus-envoy-db:
     image: postgres:16
     ports:
-      - 127.0.0.1:8003:5432
+      - 8003:5432
     networks:
       - cactus-envoy-net
     environment:
