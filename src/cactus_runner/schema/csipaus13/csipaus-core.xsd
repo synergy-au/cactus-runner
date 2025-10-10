@@ -2,8 +2,8 @@
     elementFormDefault="qualified"
     xmlns="urn:ieee:std:2030.5:ns" 
     targetNamespace="urn:ieee:std:2030.5:ns"
-    xmlns:csipaus="https://csipaus.org/ns"> 
-    <xs:import schemaLocation="csipaus-ext.xsd" namespace="https://csipaus.org/ns"/>
+    xmlns:csipaus="https://csipaus.org/ns/v1.3-beta/storage"> 
+    <xs:import schemaLocation="csipaus-ext.xsd" namespace="https://csipaus.org/ns/v1.3-beta/storage"/>
     <xs:redefine schemaLocation="sep.xsd">
       <xs:complexType name="DERControlBase">
         <xs:complexContent>
