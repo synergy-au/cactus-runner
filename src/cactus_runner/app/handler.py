@@ -16,6 +16,7 @@ from cactus_runner.app.database import begin_session
 from cactus_runner.app.env import (
     DEV_SKIP_AUTHORIZATION_CHECK,
     SERVER_URL,
+    ACCEPT_HEADER,
 )
 from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
 from cactus_runner.app.health import is_admin_api_healthy, is_db_healthy
@@ -513,6 +514,22 @@ async def proxied_request_handler(request: web.Request):
         return web.Response(
             status=http.HTTPStatus.GONE,
             text=f"{active_test_procedure.name} has been marked as finished. This request will not be logged.",
+        )
+
+    # Fail the request if the incorrect accept header supplied
+    headers = request.headers.copy()
+    accept = headers.get("accept")
+    if not accept:
+        logger.error(f"Request header 'Accept' missing; should be 'Accept: {ACCEPT_HEADER}")
+        return web.Response(
+            status=http.HTTPStatus.BAD_REQUEST,
+            text=f"Request header 'Accept' missing; should be 'Accept: {ACCEPT_HEADER}",
+        )
+    elif accept != ACCEPT_HEADER:
+        logger.error(f"Request header 'Accept: {accept}' incorrect; should be 'Accept: {ACCEPT_HEADER}'")
+        return web.Response(
+            status=http.HTTPStatus.NOT_ACCEPTABLE,
+            text=f"Request header 'Accept: {accept}' incorrect; should be 'Accept: {ACCEPT_HEADER}'",
         )
 
     # Store timestamp of when the request was received
