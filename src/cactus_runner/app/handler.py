@@ -519,7 +519,7 @@ async def proxied_request_handler(request: web.Request):
     # Fail the request if the incorrect accept header supplied
     headers = request.headers.copy()
     accept = headers.get("accept")
-    accept_sanitized = accept.replace('\r', '').replace('\n', '') if accept else accept
+    accept_sanitized = accept.replace("\r", "").replace("\n", "") if accept else accept
     if not accept:
         logger.error(f"Request header 'Accept' missing; should be 'Accept: {ACCEPT_HEADER}")
         return web.Response(
