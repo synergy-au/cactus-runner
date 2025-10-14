@@ -16,6 +16,7 @@ from cactus_runner.app.database import begin_session
 from cactus_runner.app.env import (
     DEV_SKIP_AUTHORIZATION_CHECK,
     SERVER_URL,
+    ACCEPT_HEADER,
 )
 from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
 from cactus_runner.app.health import is_admin_api_healthy, is_db_healthy
@@ -522,6 +523,23 @@ async def proxied_request_handler(request: web.Request):
     if not (DEV_SKIP_AUTHORIZATION_CHECK or auth.request_is_authorized(request=request)):
         return web.Response(
             status=http.HTTPStatus.FORBIDDEN, text="Forwarded certificate does not match for registered aggregator"
+        )
+
+    # Fail the request if the incorrect accept header supplied
+    headers = request.headers.copy()
+    accept = headers.get("accept")
+    accept_sanitized = accept.replace("\r", "").replace("\n", "") if accept else accept
+    if not accept:
+        logger.error(f"Request header 'Accept' missing; should be 'Accept: {ACCEPT_HEADER}")
+        return web.Response(
+            status=http.HTTPStatus.BAD_REQUEST,
+            text=f"Request header 'Accept' missing; should be 'Accept: {ACCEPT_HEADER}",
+        )
+    elif accept != ACCEPT_HEADER:
+        logger.error(f"Request header 'Accept: {accept_sanitized}' incorrect; should be 'Accept: {ACCEPT_HEADER}'")
+        return web.Response(
+            status=http.HTTPStatus.NOT_ACCEPTABLE,
+            text=f"Request header 'Accept: {accept_sanitized}' incorrect; should be 'Accept: {ACCEPT_HEADER}'",
         )
 
     # Update last client interaction
