@@ -516,6 +516,15 @@ async def proxied_request_handler(request: web.Request):
             text=f"{active_test_procedure.name} has been marked as finished. This request will not be logged.",
         )
 
+    # Store timestamp of when the request was received
+    request_timestamp = datetime.now(timezone.utc)
+
+    # Only proceed if authorized
+    if not (DEV_SKIP_AUTHORIZATION_CHECK or auth.request_is_authorized(request=request)):
+        return web.Response(
+            status=http.HTTPStatus.FORBIDDEN, text="Forwarded certificate does not match for registered aggregator"
+        )
+
     # Fail the request if the incorrect accept header supplied
     headers = request.headers.copy()
     accept = headers.get("accept")
@@ -531,15 +540,6 @@ async def proxied_request_handler(request: web.Request):
         return web.Response(
             status=http.HTTPStatus.NOT_ACCEPTABLE,
             text=f"Request header 'Accept: {accept_sanitized}' incorrect; should be 'Accept: {ACCEPT_HEADER}'",
-        )
-
-    # Store timestamp of when the request was received
-    request_timestamp = datetime.now(timezone.utc)
-
-    # Only proceed if authorized
-    if not (DEV_SKIP_AUTHORIZATION_CHECK or auth.request_is_authorized(request=request)):
-        return web.Response(
-            status=http.HTTPStatus.FORBIDDEN, text="Forwarded certificate does not match for registered aggregator"
         )
 
     # Update last client interaction

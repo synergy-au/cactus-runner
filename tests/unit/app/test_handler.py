@@ -7,6 +7,7 @@ from assertical.asserts.time import assert_nowish
 from assertical.fake.generator import generate_class_instance
 
 from cactus_runner.app import handler
+from cactus_runner.app import env
 from cactus_runner.app.proxy import ProxyResult
 from cactus_runner.app.shared import APPKEY_ENVOY_ADMIN_CLIENT, APPKEY_RUNNER_STATE
 from cactus_runner.models import (
@@ -183,6 +184,7 @@ async def test_proxied_request_handler_before_request_trigger(pg_base_config, mo
     request.path = "/dcap"
     request.path_qs = "/dcap"
     request.method = "GET"
+    request.headers = {"accept": env.ACCEPT_HEADER}
     request.app[APPKEY_RUNNER_STATE].request_history = []
     mock_active_test_procedure = generate_class_instance(
         ActiveTestProcedure,
@@ -270,6 +272,7 @@ async def test_proxied_request_handler_after_request_trigger(pg_base_config, moc
     request.path = "/dcap"
     request.path_qs = "/dcap"
     request.method = "GET"
+    request.headers = {"accept": env.ACCEPT_HEADER}
     request.app[APPKEY_RUNNER_STATE].request_history = []
     mock_active_test_procedure = generate_class_instance(
         ActiveTestProcedure,
@@ -382,3 +385,25 @@ async def test_proxied_request_handler_logs_error_with_finished_test(mocker):
     mock_logger_warning.assert_called_once()
     assert isinstance(response, Response)
     assert response.status == http.HTTPStatus.GONE
+
+
+@pytest.mark.parametrize(
+    "accept_header", ["application/sep+xml", "application/json", "application/xml", "application/csipaus.org", None]
+)
+@pytest.mark.asyncio
+async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str | None) -> None:
+    """Test to ensure 406 returned on bad or missing header"""
+    request = MagicMock()
+    if accept_header is not None or accept_header == env.ACCEPT_HEADER:
+        request.headers = {"accept": accept_header}
+    request.app[APPKEY_RUNNER_STATE].active_test_procedure = generate_class_instance(
+        ActiveTestProcedure,
+        communications_disabled=False,
+        finished_zip_data=None,
+        step_status={"1": StepStatus.PENDING},
+    )
+    mock_logger_warning = mocker.patch("cactus_runner.app.handler.logger.error")
+    response = await handler.proxied_request_handler(request=request)
+
+    mock_logger_warning.assert_called_once()
+    assert response.status == http.HTTPStatus.NOT_ACCEPTABLE
