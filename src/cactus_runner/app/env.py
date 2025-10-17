@@ -25,5 +25,8 @@ MOUNT_POINT = "/"
 # If true skips verifying the forwarded certificate in requests
 DEV_SKIP_AUTHORIZATION_CHECK = os.getenv("DEV_SKIP_AUTHORIZATION_CHECK", "false").lower() in ["true", "1", "t"]
 
+# Request header to perform certificate verifications against
+CERT_HEADER = os.getenv("CERT_HEADER", "ssl-client-cert")
+
 # Storage extension accept header
 ACCEPT_HEADER = "application/csipaus-xml;level=1.3-beta_storage"
