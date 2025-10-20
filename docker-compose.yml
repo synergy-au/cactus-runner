@@ -14,7 +14,7 @@ x-envoy-common:
 
 services:
   cactus-teststack-init:
-    image: cactusimageregistry.azurecr.io/cactus-teststack-init:75-v1.3-beta_storage-rc1
+    image: cactusimageregistry.azurecr.io/cactus-teststack-init:76-v1.3-beta_storage
     restart: "no"
     environment:
       - ENVOY_DATABASE_URL=postgresql://test_user:test_pwd@cactus-envoy-db/test_db
@@ -43,7 +43,7 @@ services:
         condition: service_completed_successfully
 
   taskiq-worker:
-    image: cactusimageregistry.azurecr.io/cactus-envoy:75-v1.3-beta_storage-rc1
+    image: cactusimageregistry.azurecr.io/cactus-envoy:76-v1.3-beta_storage
     environment:
       <<: *common-env
     command: taskiq worker envoy.notification.main:broker envoy.notification.task
@@ -57,7 +57,7 @@ services:
         condition: service_completed_successfully
 
   cactus-envoy:
-    image: cactusimageregistry.azurecr.io/cactus-envoy:75-v1.3-beta_storage-rc1
+    image: cactusimageregistry.azurecr.io/cactus-envoy:76-v1.3-beta_storage
     ports:
       - 8000:8000
     restart: unless-stopped
@@ -79,7 +79,7 @@ services:
       - logs:/app/logs
 
   cactus-envoy-admin:
-    image: cactusimageregistry.azurecr.io/cactus-envoy:75-v1.3-beta_storage-rc1
+    image: cactusimageregistry.azurecr.io/cactus-envoy:76-v1.3-beta_storage
     ports:
       - 8001:8001
     restart: unless-stopped
