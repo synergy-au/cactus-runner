@@ -15,6 +15,7 @@ from cactus_runner.app.check import first_failing_check
 from cactus_runner.app.database import begin_session
 from cactus_runner.app.env import (
     DEV_SKIP_AUTHORIZATION_CHECK,
+    MOUNT_POINT,
     SERVER_URL,
     ACCEPT_HEADER,
 )
@@ -37,7 +38,7 @@ from cactus_runner.models import (
     RequestEntry,
     RunnerState,
     StartResponseBody,
-    StepStatus,
+    StepInfo,
 )
 
 logger = logging.getLogger(__name__)
@@ -289,6 +290,9 @@ async def init_handler(request: web.Request):  # noqa: C901
     for step_name, step in definition.steps.items():
         listeners.append(Listener(step=step_name, event=step.event, actions=step.actions))
 
+    # Set steps to pending (no created/finished time)
+    step_status = {step: StepInfo() for step in definition.steps.keys()}
+
     # Set 'active_test_procedure' to the requested test procedure
     active_test_procedure = ActiveTestProcedure(
         name=requested_test_procedure,
@@ -297,7 +301,7 @@ async def init_handler(request: web.Request):  # noqa: C901
         initialised_at=datetime.now(tz=timezone.utc),
         started_at=None,  # Test hasn't started yet
         listeners=listeners,
-        step_status={step: StepStatus.PENDING for step in definition.steps.keys()},
+        step_status=step_status,
         client_lfdi=client_lfdi,
         client_sfdi=convert_lfdi_to_sfdi(client_lfdi),
         client_aggregator_id=client_aggregator_id,
@@ -557,7 +561,7 @@ async def proxied_request_handler(request: web.Request):
     envoy_client: EnvoyAdminClient = request.app[APPKEY_ENVOY_ADMIN_CLIENT]
     async with begin_session() as session:
         trigger_handled = await event.handle_event_trigger(
-            trigger=event.generate_client_request_trigger(request, before_serving=True),
+            trigger=event.generate_client_request_trigger(request, mount_point=MOUNT_POINT, before_serving=True),
             runner_state=runner_state,
             session=session,
             envoy_client=envoy_client,
@@ -573,7 +577,7 @@ async def proxied_request_handler(request: web.Request):
     if not trigger_handled:
         async with begin_session() as session:
             trigger_handled = await event.handle_event_trigger(
-                trigger=event.generate_client_request_trigger(request, before_serving=False),
+                trigger=event.generate_client_request_trigger(request, mount_point=MOUNT_POINT, before_serving=False),
                 runner_state=runner_state,
                 session=session,
                 envoy_client=envoy_client,
