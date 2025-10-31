@@ -29,4 +29,4 @@ DEV_SKIP_AUTHORIZATION_CHECK = os.getenv("DEV_SKIP_AUTHORIZATION_CHECK", "false"
 CERT_HEADER = os.getenv("CERT_HEADER", "ssl-client-cert")
 
 # Storage extension accept header
-ACCEPT_HEADER = "application/csipaus-xml;level=1.3-beta_storage"
+ACCEPT_HEADER = "application/sep+xml;csipaus=1.3-beta_storage"
