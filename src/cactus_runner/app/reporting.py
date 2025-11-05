@@ -1220,7 +1220,13 @@ def validate_cell(reading_type: SiteReadingType, col_idx: int, row_num: int) -> 
 
     elif col_idx == 3:  # UOM
         uom = UomType(reading_type.uom)
-        if uom not in [UomType.REAL_POWER_WATT, UomType.REACTIVE_POWER_VAR, UomType.FREQUENCY_HZ, UomType.VOLTAGE]:
+        if uom not in [
+            UomType.REAL_POWER_WATT,
+            UomType.REACTIVE_POWER_VAR,
+            UomType.FREQUENCY_HZ,
+            UomType.VOLTAGE,
+            UomType.REAL_ENERGY_WATT_HOURS,
+        ]:
             return f"UOM {uom.name} ({uom.value}) is not supported"
 
     elif col_idx == 4:  # Data qualifier
@@ -1230,13 +1236,14 @@ def validate_cell(reading_type: SiteReadingType, col_idx: int, row_num: int) -> 
             DataQualifierType.STANDARD,
             DataQualifierType.MAXIMUM,
             DataQualifierType.MINIMUM,
+            DataQualifierType.NOT_APPLICABLE,
         ]:
             return f"Data qualifier {qualifier.name} ({qualifier.value}) is not supported"
 
     elif col_idx == 5:  # Kind
         kind = KindType(reading_type.kind)
-        if kind != KindType.POWER:
-            return f"KindType is expected to be Power (37), got {kind.name} ({kind.value})"
+        if kind not in [KindType.POWER, KindType.ENERGY]:
+            return f"KindType {kind.name} ({kind.value}) is not supported."
 
     elif col_idx == 6:  # Phase (Only applicable to voltage readings)
         uom = UomType(reading_type.uom)
