@@ -958,13 +958,16 @@ def generate_timeline_chart(timeline: Timeline, sites: Sequence[Site]) -> Image:
 
     # Generate x-axis labels
     num_intervals = max(len(ds.offset_watt_values) for ds in timeline.data_streams) if timeline.data_streams else 0
-    x_labels = [duration_to_label(timeline.interval_seconds * i) for i in range(num_intervals)]
+    tick_spacing = max(1, num_intervals // 10)
+
+    tickvals = list(range(0, num_intervals, tick_spacing))
+    x_labels = [duration_to_label(timeline.interval_seconds * i) for i in tickvals]
 
     fig.update_xaxes(
         title="Time",
         type="linear",
         tickmode="array",
-        tickvals=list(range(num_intervals)),
+        tickvals=tickvals,
         ticktext=x_labels,
         range=[0, max(num_intervals - 1, 1)],
     )
@@ -1281,8 +1284,8 @@ def generate_reading_count_table(reading_counts, stylesheet):
             truncate_mrid(reading_type.mrid),
             get_site_type(reading_type.role_flags),
             uom_to_string(reading_type.uom),
-            data_qualifier_to_string(reading_type.data_qualifier),
-            kind_to_string(reading_type.kind),
+            str(reading_type.data_qualifier),
+            str(reading_type.kind),
             phase_to_string(reading_type.phase),
             count,
         ]
@@ -1305,10 +1308,10 @@ def generate_reading_count_table(reading_counts, stylesheet):
         else:
             table_row_idx += 1
 
-    headers = ["/MUP", "MMR", "Site type", "Unit", "Data Qualifier", "Kind", "Phase", "# Readings Received"]
+    headers = ["/MUP", "MMR", "Site type", "Unit", "Data Qualifier", "Kind", "Phase", "# Readings"]
     table_data.insert(0, headers)
 
-    fractions = [0.1, 0.1, 0.1, 0.2, 0.15, 0.09, 0.09, 0.22]
+    fractions = [0.07, 0.1, 0.1, 0.2, 0.14, 0.08, 0.1, 0.14]
     column_widths = [int(f * stylesheet.table_width) for f in fractions]
 
     styles = [
