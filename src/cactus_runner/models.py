@@ -5,7 +5,7 @@ from enum import Enum, StrEnum, auto
 from typing import Any
 
 from cactus_test_definitions import CSIPAusVersion
-from cactus_test_definitions.client import Event, TestProcedure
+from cactus_test_definitions.client import Event, TestProcedure, TestProcedureId
 from dataclass_wizard import JSONWizard
 
 
@@ -57,6 +57,12 @@ class ActiveTestProcedure:
     client_sfdi: int  # The SFDI of the client certificate expected for the test (Either aggregator or device client)
     run_id: str | None  # Metadata about what "id" has been assigned to this test (from external) - if any
     pen: int  # Private Enterprise Number (PEN). A value of 0 means no valid PEN avaiable.
+    subscription_domain: str | None = None
+    is_static_url: bool | None = None
+    run_group_id: str | None = None
+    run_group_name: str | None = None
+    user_id: str | None = None
+    user_name: str | None = None
     communications_disabled: bool = False
     finished_zip_data: bytes | None = (
         None  # Finalised ZIP file. If not None - this test is "done" and shouldn't update any events/state
@@ -254,3 +260,45 @@ class RunnerStatus(JSONWizard):
     request_history: list[RequestEntry] = field(default_factory=list)
     timeline: TimelineStatus | None = None  # Streaming timeline data snapshot
     end_device_metadata: EndDeviceMetadata | None = None  # Snapshot of current active end device (if any)
+
+
+@dataclass
+class TestDefinition(JSONWizard):
+    test_procedure_id: TestProcedureId
+    yaml_definition: str
+
+
+@dataclass
+class TestCertificates(JSONWizard):
+    aggregator: str | None
+    device: str | None
+
+
+@dataclass
+class RunGroup(JSONWizard):
+    run_group_id: str
+    name: str
+    csip_aus_version: CSIPAusVersion
+    test_certificates: TestCertificates
+
+
+@dataclass
+class TestConfig(JSONWizard):
+    subscription_domain: str | None
+    is_static_url: bool
+    pen: int = field(default=0)
+
+
+@dataclass
+class TestUser(JSONWizard):
+    user_id: str
+    name: str
+
+
+@dataclass
+class RunRequest(JSONWizard):
+    run_id: str
+    test_definition: TestDefinition
+    run_group: RunGroup
+    test_config: TestConfig
+    test_user: TestUser

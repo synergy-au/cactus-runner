@@ -5,12 +5,12 @@ import shutil
 
 from cactus_runner.app import proxy
 from cactus_runner.models import RequestEntry
-import tempfile
 
 logger = logging.getLogger(__name__)
 
-
-REQUEST_DATA_DIR = Path(tempfile.gettempdir()) / "cactus_request_data"
+# nosec B108: Safe in short lived K8s pods (one per test, destroyed after run)
+# Alternatives tried: hardcoded paths (permission errors), tempfile (failed on write to zip, issue on finalise?)
+REQUEST_DATA_DIR = Path("/tmp/cactus_request_data")  # nosec B108
 
 
 def ensure_request_data_dir() -> Path:
