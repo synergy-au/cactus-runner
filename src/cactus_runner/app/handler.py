@@ -798,7 +798,7 @@ async def proxied_request_handler(request: web.Request):
             status=http.HTTPStatus.BAD_REQUEST,
             text=f"Request header 'Accept' missing; should be 'Accept: {ACCEPT_HEADER}",
         )
-    elif accept != ACCEPT_HEADER:
+    elif accept != ACCEPT_HEADER or accept != "*":
         logger.error(f"Request header 'Accept: {accept_sanitized}' incorrect; should be 'Accept: {ACCEPT_HEADER}'")
         return web.Response(
             status=http.HTTPStatus.NOT_ACCEPTABLE,
