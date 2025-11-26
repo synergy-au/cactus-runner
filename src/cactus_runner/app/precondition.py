@@ -68,17 +68,27 @@ async def register_aggregator(lfdi: str | None, subscription_domain: str | None)
 
 
 async def reset_db() -> None:
-    """Truncates all tables in the 'public' schema and resets sequences for id columns."""
+    """Truncates all tables in the 'public' schema and resets sequences for id columns.
+
+    Also sets dynamic_operating_envelope_id and tariff_generated_rate_id sequences to start
+    from the current epoch time to allow tests to persist a device but receive new DOE's/pricing.
+    """
+
     # Adapted from https://stackoverflow.com/a/63227261
     reset_sql = """
 DO $$ DECLARE
     r RECORD;
+    epoch_time BIGINT;
 BEGIN
+    epoch_time := EXTRACT(EPOCH FROM NOW())::BIGINT;
     FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
         EXECUTE 'TRUNCATE TABLE ' || quote_ident(r.tablename) || ' RESTART IDENTITY CASCADE';
     END LOOP;
+    EXECUTE 'ALTER SEQUENCE dynamic_operating_envelope_dynamic_operating_envelope_id_seq RESTART WITH ' || epoch_time;
+    EXECUTE 'ALTER SEQUENCE tariff_generated_rate_tariff_generated_rate_id_seq RESTART WITH ' || epoch_time;
 END $$;
 """
+
     async with open_connection() as connection:
         async with connection.begin() as txn:
             await connection.execute(text(reset_sql))
