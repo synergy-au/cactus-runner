@@ -1098,39 +1098,19 @@ def match_all_responses(
         return CheckResult(True, f"All DERControl(s) have a Response with a status of {status_str}")
 
 
-async def check_response_contents(resolved_parameters: dict[str, Any], session: AsyncSession) -> CheckResult:
+async def check_response_contents(
+    resolved_parameters: dict[str, Any], session: AsyncSession, active_test_procedure: ActiveTestProcedure
+) -> CheckResult:
     """Implements the response-contents check by inspecting the response table for site controls"""
 
     is_latest: bool = resolved_parameters.get("latest", False)
     is_all: bool = resolved_parameters.get("all", False)
     status_filter: int | None = resolved_parameters.get("status", None)
-    status_filter_string = response_type_to_string(status_filter)
+    status_filter_string: str = response_type_to_string(status_filter)
+    subject_tag: Optional[str] = resolved_parameters.get("subject_tag", None)
 
-    # Latest queries require evaluating ONLY the latest response object
-    if is_latest:
-        latest_response = (
-            await session.execute(
-                (
-                    select(DynamicOperatingEnvelopeResponse)
-                    .order_by(DynamicOperatingEnvelopeResponse.created_time.desc())
-                    .limit(1)
-                )
-            )
-        ).scalar_one_or_none()
-        if latest_response is None:
-            return CheckResult(False, "No responses have been recorded for any DERControls")
-
-        rt_string = response_type_to_string(latest_response.response_type)
-        if status_filter is not None and latest_response.response_type != status_filter:
-            return CheckResult(
-                False,
-                f"Latest response expected a response_type of {status_filter_string} but got {rt_string}",
-            )
-
-        return CheckResult(True, f"Latest DERControl response of type {rt_string} matches check.")
-    elif is_all:
-        # All queries look at every SiteControl and try to match them to a response
-        # if every SiteControl has a matching response - the check will pass
+    # Handle the "all" case separately
+    if is_all:
         controls = (await session.execute(select(DynamicOperatingEnvelope))).scalars().all()
         deleted_controls = (
             (
@@ -1148,21 +1128,55 @@ async def check_response_contents(resolved_parameters: dict[str, Any], session: 
             response_stmt = response_stmt.where(DynamicOperatingEnvelopeResponse.response_type == status_filter)
         responses = (await session.execute(response_stmt)).scalars().all()
         return match_all_responses(status_filter_string, chain(controls, deleted_controls), responses)
-    else:
-        # Otherwise we look for ANY responses that match our request
-        any_query = (
-            select(DynamicOperatingEnvelopeResponse)
-            .order_by(DynamicOperatingEnvelopeResponse.dynamic_operating_envelope_id_snapshot)
-            .limit(1)
-        )
-        if status_filter is not None:
-            any_query = any_query.where(DynamicOperatingEnvelopeResponse.response_type == status_filter)
 
-        matching_response = (await session.execute(any_query)).scalar_one_or_none()
+    # For other cases: Start by building base query
+    query = select(DynamicOperatingEnvelopeResponse)
+
+    # Apply tag filter
+    context_description = ""
+    if subject_tag is not None:
+        control_id = active_test_procedure.resource_annotations.der_control_ids_by_alias.get(subject_tag)
+        if control_id is None:
+            return CheckResult(False, f"No DERControl found with tag: {subject_tag}")
+
+        query = query.where(DynamicOperatingEnvelopeResponse.dynamic_operating_envelope_id_snapshot == control_id)
+        context_description = f" for tag {subject_tag}"
+
+    # Handle the "latest" case - get latest first, then check status
+    if is_latest:
+        query = query.order_by(DynamicOperatingEnvelopeResponse.created_time.desc()).limit(1)
+        matching_response = (await session.execute(query)).scalar_one_or_none()
+
         if matching_response is None:
-            return CheckResult(False, f"No DERControl response of type {status_filter_string} was found.")
+            return CheckResult(False, f"No responses found{context_description}")
 
-        return CheckResult(True, f"At least one DERControl response of type {status_filter_string} was found")
+        # Now check if it matches the status filter (if provided)
+        if status_filter is not None and matching_response.response_type != status_filter:
+            rt_string = response_type_to_string(matching_response.response_type)
+            expected_string = response_type_to_string(status_filter)
+            return CheckResult(
+                False, f"Latest response{context_description} is of type {rt_string}, not {expected_string}"
+            )
+
+        rt_string = response_type_to_string(matching_response.response_type)
+        return CheckResult(True, f"Latest DERControl response{context_description} of type {rt_string} matches check")
+
+    # For non-latest case: Apply status filter before executing
+    if status_filter is not None:
+        query = query.where(DynamicOperatingEnvelopeResponse.response_type == status_filter)
+
+    query = query.limit(1)
+    matching_response = (await session.execute(query)).scalar_one_or_none()
+
+    # Handle no results
+    if matching_response is None:
+        if status_filter is not None:
+            return CheckResult(False, f"No responses of type {status_filter_string} found{context_description}")
+        return CheckResult(False, f"No responses found{context_description}")
+
+    # Build success message
+    rt_string = response_type_to_string(matching_response.response_type)
+    return CheckResult(True, f"At least one DERControl response{context_description} of type {rt_string} was found")
 
 
 async def run_check(check: Check, active_test_procedure: ActiveTestProcedure, session: AsyncSession) -> CheckResult:
@@ -1225,7 +1239,7 @@ async def run_check(check: Check, active_test_procedure: ActiveTestProcedure, se
                 check_result = await check_subscription_contents(resolved_parameters, session)
 
             case "response-contents":
-                check_result = await check_response_contents(resolved_parameters, session)
+                check_result = await check_response_contents(resolved_parameters, session, active_test_procedure)
 
     except Exception as exc:
         logger.error(f"Failed performing check {check}", exc_info=exc)
