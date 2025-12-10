@@ -60,6 +60,7 @@ from cactus_runner.app.check import (
     check_response_contents,
     check_subscription_contents,
     do_check_reading_type_mrids_match_pen,
+    do_check_readings_for_duration,
     do_check_readings_for_types,
     do_check_readings_on_minute_boundary,
     do_check_site_readings_and_params,
@@ -75,7 +76,7 @@ from cactus_runner.app.check import (
     timestamp_on_minute_boundary,
 )
 from cactus_runner.app.envoy_common import ReadingLocation
-from cactus_runner.models import ActiveTestProcedure, Listener
+from cactus_runner.models import ActiveTestProcedure, Listener, ResourceAnnotations
 from cactus_runner.app import evaluator
 
 # This is a list of every check type paired with the handler function. This must be kept in sync with
@@ -2016,8 +2017,10 @@ async def test_do_check_reading_type_mrids_match_pen(
 @mock.patch("cactus_runner.app.check.do_check_readings_for_types")
 @mock.patch("cactus_runner.app.check.do_check_readings_on_minute_boundary")
 @mock.patch("cactus_runner.app.check.do_check_reading_type_mrids_match_pen")
+@mock.patch("cactus_runner.app.check.do_check_readings_for_duration")
 @pytest.mark.anyio
 async def test_do_check_site_readings_and_params(
+    mock_do_check_readings_for_duration: mock.MagicMock,
     mock_do_check_reading_type_mrids_match_pen: mock.MagicMock,
     mock_do_check_readings_on_minute_boundary: mock.MagicMock,
     mock_do_check_readings_for_types: mock.MagicMock,
@@ -2040,6 +2043,7 @@ async def test_do_check_site_readings_and_params(
     mock_do_check_readings_for_types.return_value = expected_result
     mock_do_check_readings_on_minute_boundary.return_value = CheckResult(True, description=None)
     mock_do_check_reading_type_mrids_match_pen.return_value = CheckResult(True, description=None)
+    mock_do_check_readings_for_duration.return_value = CheckResult(True, description=None)
 
     # Act
     result = await do_check_site_readings_and_params(
@@ -2056,6 +2060,7 @@ async def test_do_check_site_readings_and_params(
         mock_do_check_readings_for_types.assert_called_once_with(mock_session, site_reading_types, expected_min_count)
         mock_do_check_readings_on_minute_boundary.assert_called_once_with(mock_session, site_reading_types)
         mock_do_check_reading_type_mrids_match_pen.assert_called_once_with(site_reading_types, pen)
+        mock_do_check_readings_for_duration.assert_called_once_with(mock_session, site_reading_types)
     else:
         assert_check_result(result, False)
         mock_do_check_readings_for_types.assert_not_called()
@@ -2445,7 +2450,7 @@ def test_response_type_to_string_unique_values():
 @pytest.mark.anyio
 async def test_check_response_contents_latest(pg_base_config):
     """check_response_contents should behave correctly when looking ONLY at the latest Response"""
-
+    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_data=None)
     # Fill up the DB with responses
     async with generate_async_session(pg_base_config) as session:
 
@@ -2501,16 +2506,21 @@ async def test_check_response_contents_latest(pg_base_config):
 
     async with generate_async_session(pg_base_config) as session:
         # This will check that there is a latest
-        assert_check_result(await check_response_contents({"latest": True}, session), True)
+        assert_check_result(await check_response_contents({"latest": True}, session, active_test_procedure), True)
 
         # This will check that there is a latest and that the status matches the filter
         assert_check_result(
-            await check_response_contents({"latest": True, "status": ResponseType.EVENT_COMPLETED.value}, session), True
+            await check_response_contents(
+                {"latest": True, "status": ResponseType.EVENT_COMPLETED.value}, session, active_test_procedure
+            ),
+            True,
         )
 
         # This will check that the filter on latest will fail if there is mismatch on the latest record
         assert_check_result(
-            await check_response_contents({"latest": True, "status": ResponseType.EVENT_CANCELLED.value}, session),
+            await check_response_contents(
+                {"latest": True, "status": ResponseType.EVENT_CANCELLED.value}, session, active_test_procedure
+            ),
             False,
         )
 
@@ -2542,7 +2552,7 @@ async def test_check_response_contents_all(
     """check_response_contents should behave correctly when looking at all controls having responses
 
     response_status_values: tuple[control_id, response_status_type]"""
-
+    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_data=None)
     # Fill up the DB with responses
     async with generate_async_session(pg_base_config) as session:
 
@@ -2592,13 +2602,13 @@ async def test_check_response_contents_all(
         params: dict[str, Any] = {"all": True}
         if status is not None:
             params["status"] = status
-        assert_check_result(await check_response_contents(params, session), expected)
+        assert_check_result(await check_response_contents(params, session, active_test_procedure), expected)
 
 
 @pytest.mark.anyio
 async def test_check_response_contents_any(pg_base_config):
     """check_response_contents should behave correctly when looking at ANY of the Responses"""
-
+    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_data=None)
     # Fill up the DB with responses
     async with generate_async_session(pg_base_config) as session:
 
@@ -2653,21 +2663,34 @@ async def test_check_response_contents_any(pg_base_config):
 
     async with generate_async_session(pg_base_config) as session:
         # This will check that there is any response
-        assert_check_result(await check_response_contents({"latest": False}, session), True)
-        assert_check_result(await check_response_contents({}, session), True)
+        assert_check_result(await check_response_contents({"latest": False}, session, active_test_procedure), True)
+        assert_check_result(await check_response_contents({}, session, active_test_procedure), True)
 
         # Checks on existing values
         assert_check_result(
-            await check_response_contents({"status": ResponseType.EVENT_COMPLETED.value}, session), True
+            await check_response_contents(
+                {"status": ResponseType.EVENT_COMPLETED.value}, session, active_test_procedure
+            ),
+            True,
         )
-        assert_check_result(await check_response_contents({"status": ResponseType.EVENT_RECEIVED.value}, session), True)
         assert_check_result(
-            await check_response_contents({"status": ResponseType.EVENT_CANCELLED.value}, session), True
+            await check_response_contents(
+                {"status": ResponseType.EVENT_RECEIVED.value}, session, active_test_procedure
+            ),
+            True,
+        )
+        assert_check_result(
+            await check_response_contents(
+                {"status": ResponseType.EVENT_CANCELLED.value}, session, active_test_procedure
+            ),
+            True,
         )
 
         # This will check that the filter will fail if a matching record cant be found
         assert_check_result(
-            await check_response_contents({"latest": False, "status": ResponseType.CANNOT_BE_DISPLAYED.value}, session),
+            await check_response_contents(
+                {"latest": False, "status": ResponseType.CANNOT_BE_DISPLAYED.value}, session, active_test_procedure
+            ),
             False,
         )
 
@@ -2675,17 +2698,162 @@ async def test_check_response_contents_any(pg_base_config):
 @pytest.mark.anyio
 async def test_check_response_contents_empty(pg_base_config):
     """check_response_contents should behave correctly when the DB is empty of responses"""
-
+    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_data=None)
     async with generate_async_session(pg_base_config) as session:
         # This will check that there is any response
-        assert_check_result(await check_response_contents({"latest": False}, session), False)
-        assert_check_result(await check_response_contents({"latest": True}, session), False)
-        assert_check_result(await check_response_contents({}, session), False)
+        assert_check_result(await check_response_contents({"latest": False}, session, active_test_procedure), False)
+        assert_check_result(await check_response_contents({"latest": True}, session, active_test_procedure), False)
+        assert_check_result(await check_response_contents({}, session, active_test_procedure), False)
         assert_check_result(
-            await check_response_contents({"status": ResponseType.EVENT_COMPLETED.value}, session), False
+            await check_response_contents(
+                {"status": ResponseType.EVENT_COMPLETED.value}, session, active_test_procedure
+            ),
+            False,
         )
         assert_check_result(
-            await check_response_contents({"latest": True, "status": ResponseType.EVENT_COMPLETED.value}, session),
+            await check_response_contents(
+                {"latest": True, "status": ResponseType.EVENT_COMPLETED.value}, session, active_test_procedure
+            ),
+            False,
+        )
+
+
+@pytest.mark.anyio
+async def test_check_response_contents_tag_DERC1(pg_base_config):
+    """check_response_contents should behave correctly when filtering by tag"""
+    active_test_procedure = generate_class_instance(
+        ActiveTestProcedure, resource_annotations=ResourceAnnotations(), step_status={}, finished_zip_data=None
+    )
+
+    # Set up resource annotations with tagged control IDs
+    active_test_procedure.resource_annotations.der_control_ids_by_alias = {"DERC1": 100, "DERC2": 200}
+
+    # Fill up the DB with responses
+    async with generate_async_session(pg_base_config) as session:
+
+        site_control_group = generate_class_instance(SiteControlGroup, seed=101)
+        session.add(site_control_group)
+
+        site1 = generate_class_instance(Site, seed=202, site_id=1, aggregator_id=1)
+        session.add(site1)
+
+        # Create control with ID 100 (tagged as DERC1)
+        der_control_1 = generate_class_instance(
+            DynamicOperatingEnvelope,
+            seed=303,
+            site=site1,
+            site_control_group=site_control_group,
+            calculation_log_id=None,
+            dynamic_operating_envelope_id=100,
+        )
+        session.add(der_control_1)
+
+        # Create control with ID 200 (tagged as DERC2)
+        der_control_2 = generate_class_instance(
+            DynamicOperatingEnvelope,
+            seed=304,
+            site=site1,
+            site_control_group=site_control_group,
+            calculation_log_id=None,
+            dynamic_operating_envelope_id=200,
+        )
+        session.add(der_control_2)
+
+        # Add responses for DERC1 (control_id=100)
+        session.add(
+            generate_class_instance(
+                DynamicOperatingEnvelopeResponse,
+                seed=505,
+                response_type=ResponseType.EVENT_RECEIVED,
+                created_time=datetime(2024, 11, 9, tzinfo=timezone.utc),
+                site=site1,
+                dynamic_operating_envelope_id_snapshot=100,
+            )
+        )
+
+        session.add(
+            generate_class_instance(
+                DynamicOperatingEnvelopeResponse,
+                seed=606,
+                response_type=ResponseType.EVENT_COMPLETED,
+                created_time=datetime(2024, 11, 11, tzinfo=timezone.utc),
+                site=site1,
+                dynamic_operating_envelope_id_snapshot=100,
+            )
+        )
+
+        # Add response for DERC2 (control_id=200)
+        session.add(
+            generate_class_instance(
+                DynamicOperatingEnvelopeResponse,
+                seed=707,
+                response_type=ResponseType.EVENT_CANCELLED,
+                created_time=datetime(2024, 11, 10, tzinfo=timezone.utc),
+                site=site1,
+                dynamic_operating_envelope_id_snapshot=200,
+            )
+        )
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        # Check responses for DERC1 tag can be found
+        assert_check_result(
+            await check_response_contents({"subject_tag": "DERC1"}, session, active_test_procedure), True
+        )
+
+        # Check latest response for DERC1 is EVENT_COMPLETED
+        assert_check_result(
+            await check_response_contents({"subject_tag": "DERC1", "latest": True}, session, active_test_procedure),
+            True,
+        )
+
+        # Check latest response for DERC1 with correct status matches
+        assert_check_result(
+            await check_response_contents(
+                {"subject_tag": "DERC1", "latest": True, "status": ResponseType.EVENT_COMPLETED.value},
+                session,
+                active_test_procedure,
+            ),
+            True,
+        )
+
+        # Check latest response for DERC1 with wrong status fails
+        assert_check_result(
+            await check_response_contents(
+                {"subject_tag": "DERC1", "latest": True, "status": ResponseType.EVENT_CANCELLED.value},
+                session,
+                active_test_procedure,
+            ),
+            False,
+        )
+
+        # Check DERC1 has a response of type EVENT_RECEIVED
+        assert_check_result(
+            await check_response_contents(
+                {"subject_tag": "DERC1", "status": ResponseType.EVENT_RECEIVED.value}, session, active_test_procedure
+            ),
+            True,
+        )
+
+        # Check DERC1 does not have a response of type EVENT_CANCELLED
+        assert_check_result(
+            await check_response_contents(
+                {"subject_tag": "DERC1", "status": ResponseType.EVENT_CANCELLED.value}, session, active_test_procedure
+            ),
+            False,
+        )
+
+        # Check DERC2 has EVENT_CANCELLED (different control)
+        assert_check_result(
+            await check_response_contents(
+                {"subject_tag": "DERC2", "status": ResponseType.EVENT_CANCELLED.value}, session, active_test_procedure
+            ),
+            True,
+        )
+
+        # Check non-existent tag returns failure
+        assert_check_result(
+            await check_response_contents({"subject_tag": "NONEXISTENT"}, session, active_test_procedure),
             False,
         )
 
@@ -3239,3 +3407,57 @@ async def test_check_der_capability_contents_error_messages_meaningful(
         assert (
             re.search(msg_regex, result.description) is not None
         ), f"'{msg_regex}' not found in '{result.description}'"
+
+
+@pytest.mark.parametrize(
+    "srt_ids,expected_result",
+    [
+        ([], True),  # No readings
+        ([1], True),  # All valid
+        ([2], False),  # Has zero
+        ([3], False),  # Not divisible by 60
+        ([4], False),  # Both zero and non-divisible
+        ([1, 1], True),  # Multiple valid SRTs
+        ([1, 2], False),  # One valid, one with zero
+        ([2, 3], False),  # One zero, one non-divisible
+    ],
+)
+@pytest.mark.anyio
+async def test_do_check_readings_for_duration(pg_base_config, srt_ids: list[int], expected_result: bool):
+    """Tests that do_check_readings_for_duration validates time_period_seconds"""
+    async with generate_async_session(pg_base_config) as session:
+        site = generate_class_instance(Site, aggregator_id=1, site_id=1)
+        srt1 = generate_class_instance(SiteReadingType, seed=101, site_reading_type_id=1, aggregator_id=1, site=site)
+        srt2 = generate_class_instance(SiteReadingType, seed=102, site_reading_type_id=2, aggregator_id=1, site=site)
+        srt3 = generate_class_instance(SiteReadingType, seed=103, site_reading_type_id=3, aggregator_id=1, site=site)
+        srt4 = generate_class_instance(SiteReadingType, seed=104, site_reading_type_id=4, aggregator_id=1, site=site)
+
+        session.add_all([site, srt1, srt2, srt3, srt4])
+
+        # SRT1: All valid (60, 120, 300)
+        session.add(generate_class_instance(SiteReading, seed=1001, site_reading_type=srt1, time_period_seconds=60))
+        session.add(generate_class_instance(SiteReading, seed=1002, site_reading_type=srt1, time_period_seconds=120))
+        session.add(generate_class_instance(SiteReading, seed=1003, site_reading_type=srt1, time_period_seconds=300))
+
+        # SRT2: Has zero (60, 0, 120)
+        session.add(generate_class_instance(SiteReading, seed=2001, site_reading_type=srt2, time_period_seconds=60))
+        session.add(generate_class_instance(SiteReading, seed=2002, site_reading_type=srt2, time_period_seconds=0))
+        session.add(generate_class_instance(SiteReading, seed=2003, site_reading_type=srt2, time_period_seconds=120))
+
+        # SRT3: Not divisible by 60 (45, 90)
+        session.add(generate_class_instance(SiteReading, seed=3001, site_reading_type=srt3, time_period_seconds=45))
+        session.add(generate_class_instance(SiteReading, seed=3002, site_reading_type=srt3, time_period_seconds=90))
+
+        # SRT4: Both zero and non-divisible (0, 45)
+        session.add(generate_class_instance(SiteReading, seed=4001, site_reading_type=srt4, time_period_seconds=0))
+        session.add(generate_class_instance(SiteReading, seed=4002, site_reading_type=srt4, time_period_seconds=45))
+
+        await session.commit()
+
+    faked_srts = [
+        generate_class_instance(SiteReadingType, seed=srt_id, site_reading_type_id=srt_id) for srt_id in srt_ids
+    ]
+
+    async with generate_async_session(pg_base_config) as session:
+        result = await do_check_readings_for_duration(session=session, site_reading_types=faked_srts)
+        assert_check_result(result, expected_result)
