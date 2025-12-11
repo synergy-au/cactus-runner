@@ -1,7 +1,7 @@
 <MirrorUsagePoint xmlns="urn:ieee:std:2030.5:ns">
 	<mRID>0600006C</mRID>
 	<description>Max Watts</description>
-	<roleFlags>1234</roleFlags>
+	<roleFlags>03</roleFlags>
 	<serviceCategoryKind>0</serviceCategoryKind>
 	<status>1</status>
 	<deviceLFDI>854d10a201ca99e5e90d3c3e1f9bc1c3bd075f3b</deviceLFDI>
@@ -10,11 +10,12 @@
 		<ReadingType>
 			<accumulationBehaviour>9</accumulationBehaviour>
 			<commodity>1</commodity>
-			<dataQualifier>8</dataQualifier>
+			<dataQualifier>2</dataQualifier>
 			<flowDirection>1</flowDirection>
             <intervalLength>300</intervalLength>
 			<powerOfTenMultiplier>3</powerOfTenMultiplier>
 			<uom>38</uom>
+			<kind>37</kind>
 		</ReadingType>
 	</MirrorMeterReading>
 </MirrorUsagePoint>

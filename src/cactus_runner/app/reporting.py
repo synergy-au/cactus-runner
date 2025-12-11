@@ -1276,7 +1276,7 @@ def format_cell_value(value, is_error: bool) -> str | Paragraph:
     return value
 
 
-def validate_reading_duration(readings_df: pd.DataFrame):
+def validate_reading_duration(readings_df: pd.DataFrame) -> tuple[int, int, list[str]]:
     """
     Validate reading durations and return warning messages.
     Returns tuple: (dropped_count, invalid_duration_count, warning_messages)
@@ -1284,7 +1284,7 @@ def validate_reading_duration(readings_df: pd.DataFrame):
     if readings_df.empty or "time_period_seconds" not in readings_df.columns:
         return 0, 0, []
 
-    warnings = []
+    warnings: list[str] = []
 
     # Count null or zero durations
     durations = readings_df["time_period_seconds"]
@@ -1314,15 +1314,19 @@ def validate_reading_duration(readings_df: pd.DataFrame):
     return dropped_count, invalid_count, warnings
 
 
-def generate_reading_count_table(reading_counts, stylesheet, readings=None):
+def generate_reading_count_table(
+    reading_counts: dict[SiteReadingType, int],
+    stylesheet: StyleSheet,
+    readings: dict[SiteReadingType, pd.DataFrame] | None = None,
+):
     """
     Generate reading count table with validation and error highlighting.
     Errors are displayed as merged rows immediately below the affected data row.
     """
-    elements = []
+    elements: list[Flowable] = []
     error_cells = set()
     row_errors = {}
-    table_data = []
+    table_data: list[list] = []
     table_row_idx = 1  # start after header
 
     # Build table data and validation results
@@ -1349,9 +1353,7 @@ def generate_reading_count_table(reading_counts, stylesheet, readings=None):
 
         # Validate duration if readings DataFrame is available
         if readings and reading_type in readings:
-            dropped_count, invalid_count, duration_warnings = validate_reading_duration(
-                readings[reading_type], reading_type.site_reading_type_id
-            )
+            dropped_count, invalid_count, duration_warnings = validate_reading_duration(readings[reading_type])
 
             if duration_warnings:
                 current_row_errors.extend(duration_warnings)
@@ -1375,7 +1377,7 @@ def generate_reading_count_table(reading_counts, stylesheet, readings=None):
     fractions = [0.07, 0.1, 0.1, 0.2, 0.14, 0.08, 0.1, 0.14]
     column_widths = [int(f * stylesheet.table_width) for f in fractions]
 
-    styles = [
+    styles: list[tuple] = [
         ("BACKGROUND", (0, 1), (-1, -1), colors.white),
         ("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.Color(0.85, 0.85, 0.85)),
     ]
