@@ -158,7 +158,7 @@ def test_get_zip_contents_with_errors(mocker):
         return ""
 
     assert isinstance(zip_contents, bytes)
-    zipped_errors = zip.read(get_filename(prefix="generation-errors", filenames=filenames)).decode()
+    zipped_errors = zip.read(get_filename(prefix=finalize.GENERATION_ERRORS_FILE_NAME, filenames=filenames)).decode()
     assert errors[0] in zipped_errors
     assert errors[1] in zipped_errors
     assert len(errors) == 2, "This shouldn't have been mutated"
