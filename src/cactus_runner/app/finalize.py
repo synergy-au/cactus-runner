@@ -34,6 +34,8 @@ from cactus_runner.app.requests_archive import copy_request_response_files_to_ar
 from cactus_runner.app.status import get_active_runner_status
 from cactus_runner.models import RunnerState
 
+GENERATION_ERRORS_FILE_NAME = "generation-errors.txt"
+
 logger = logging.getLogger(__name__)
 
 
@@ -131,7 +133,7 @@ def get_zip_contents(
 
         # If we have some errors in generating PDF/other outputs - log them in the zip
         if writeable_errors:
-            file_path = archive_dir / "generation-errors.txt"
+            file_path = archive_dir / GENERATION_ERRORS_FILE_NAME
             with open(file_path, "w") as f:
                 f.write("\n".join(writeable_errors))
 
