@@ -38,7 +38,7 @@ from cactus_runner.app.envoy_admin_client import (
     EnvoyAdminClient,
     EnvoyAdminClientAuthParams,
 )
-from cactus_runner.app.env import ACCEPT_HEADER
+from cactus_runner.app.env import MEDIA_TYPE_HEADER
 from cactus_runner.app.main import create_app
 from cactus_runner.app.requests_archive import REQUEST_DATA_DIR
 from tests.adapter import HttpxClientSessionAdapter
@@ -169,7 +169,7 @@ async def cactus_runner_client(
     with environment_snapshot():
         with mock.patch("cactus_runner.app.main.generate_admin_client") as mock_generate_admin_client:
             mock_generate_admin_client.return_value = envoy_admin_client
-            async with await aiohttp_client(create_app(), headers={"Accept": ACCEPT_HEADER}) as app:
+            async with await aiohttp_client(create_app(), headers={"Accept": MEDIA_TYPE_HEADER}) as app:
                 yield app
 
 

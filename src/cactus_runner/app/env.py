@@ -28,5 +28,5 @@ DEV_SKIP_AUTHORIZATION_CHECK = os.getenv("DEV_SKIP_AUTHORIZATION_CHECK", "false"
 # Request header to perform certificate verifications against
 CERT_HEADER = os.getenv("CERT_HEADER", "ssl-client-cert")
 
-# Storage extension accept header, supplying a string "*" will allow all headers
-ACCEPT_HEADER = os.getenv("ACCEPT_HEADER", "application/sep+xml;csipaus=1.3-beta_storage")
+# Storage extension media type header, values only allowed when an `accept` or `content-type` header is provided.
+MEDIA_TYPE_HEADER = os.getenv("MEDIA_TYPE_HEADER", "application/sep+xml;csipaus=1.3-beta_storage")

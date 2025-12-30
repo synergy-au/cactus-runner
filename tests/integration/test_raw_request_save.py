@@ -8,6 +8,7 @@ from cactus_test_definitions.client import TestProcedureId
 from fastapi.testclient import TestClient
 
 from cactus_runner.client import RunnerClient
+from cactus_runner.app import env
 from tests.integration.certificate1 import TEST_CERTIFICATE_PEM
 from tests.integration.test_all_01 import URI_ENCODED_CERT, assert_success_response
 
@@ -34,7 +35,7 @@ async def test_request_data_retrieval_endpoints(
 
     # Post Mirror Usage Point and readings
     xml_data_dir = Path(__file__).parent.parent / "data" / "xml"
-    xml_headers = {**headers, "Content-Type": "application/sep+xml"}
+    xml_headers = {**headers, "Content-Type": env.MEDIA_TYPE_HEADER}
 
     result = await cactus_runner_client.post(
         "/mup", data=(xml_data_dir / "mup.xml").read_text().strip(), headers=xml_headers

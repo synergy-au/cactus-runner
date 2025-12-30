@@ -2,6 +2,7 @@ import http
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from itertools import groupby
 from typing import cast
 
 from aiohttp import ContentTypeError, web
@@ -26,7 +27,7 @@ from cactus_runner.app.env import (
     DEV_SKIP_AUTHORIZATION_CHECK,
     MOUNT_POINT,
     SERVER_URL,
-    ACCEPT_HEADER,
+    MEDIA_TYPE_HEADER,
 )
 from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
 from cactus_runner.app.health import is_admin_api_healthy, is_db_healthy
@@ -524,6 +525,61 @@ async def list_request_ids_handler(request: web.Request) -> web.Response:
     return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=request_list.to_json())
 
 
+async def media_headers_check(request: web.Request) -> list[tuple[http.HTTPStatus, str]]:
+    """Performs media type checks.
+
+    Currently this is only implemented for the storage extension v1.3-beta/storage
+    If an accept header is missing on get requests, an error is generated
+    If a content-type is missing on put or post requests, an error is generated
+    If a header value is provided on any requests for either content-type and accept that doesn't match
+    that supported by the server, an error is generated regardless if it is used in the context of the
+    request method.
+
+    Args:
+        request: request to be proxied through to the utility server.
+
+    Returns:
+        list of tuples with expected return status and explanation for response body
+    """
+    # Fail the request if the incorrect media type headers supplied
+    headers = request.headers.copy()
+    accept = headers.get("accept")
+    accept_sanitized = accept.replace("\r", "").replace("\n", "") if accept else accept
+    content_type = headers.get("content-type")
+    content_type_sanitized = content_type.replace("\r", "").replace("\n", "") if content_type else content_type
+
+    # Collect erroring outcomes
+    results = []
+
+    if not accept and request.method in ["GET"]:
+        msg = f"Request header 'Accept' missing; should be 'Accept: {MEDIA_TYPE_HEADER}"
+        logger.error(msg)
+        results.append((http.HTTPStatus.BAD_REQUEST, msg))
+    if accept and accept != MEDIA_TYPE_HEADER:
+        msg = f"Request header 'Accept: {accept_sanitized}' incorrect; should be 'Accept: {MEDIA_TYPE_HEADER}'"
+        logger.error(msg)
+        results.append((http.HTTPStatus.NOT_ACCEPTABLE, msg))
+    if not content_type and request.method in ["POST", "PUT"]:
+        msg = f"Request header 'Content-Type' missing; should be 'Content-Type: {MEDIA_TYPE_HEADER}"
+        logger.error(msg)
+        results.append((http.HTTPStatus.BAD_REQUEST, msg))
+    if content_type and content_type != MEDIA_TYPE_HEADER:
+        # Even if Content-Type didn't need to be provided and was then it should match the required media type
+        msg = (
+            f"Request header 'Content-Type: {content_type_sanitized}' incorrect; "
+            f"should be 'Content-Type: {MEDIA_TYPE_HEADER}'"
+        )
+        logger.error(msg)
+        results.append((http.HTTPStatus.UNSUPPORTED_MEDIA_TYPE, msg))
+
+    # Collate results by joining messages per response code
+    results.sort(key=lambda x: x[0])
+    grouped = groupby(results, key=lambda x: x[0])
+    collated = [(k, "\n".join([v[1] for v in group])) for (k, group) in grouped]
+
+    return collated
+
+
 async def proxied_request_handler(request: web.Request) -> web.Response:
     """Handler for requests that should be forwarded to the utility server.
 
@@ -577,22 +633,11 @@ async def proxied_request_handler(request: web.Request) -> web.Response:
             status=http.HTTPStatus.FORBIDDEN, text="Forwarded certificate does not match for registered aggregator"
         )
 
-    # Fail the request if the incorrect accept header supplied
-    headers = request.headers.copy()
-    accept = headers.get("accept")
-    accept_sanitized = accept.replace("\r", "").replace("\n", "") if accept else accept
-    if not accept:
-        logger.error(f"Request header 'Accept' missing; should be 'Accept: {ACCEPT_HEADER}")
-        return web.Response(
-            status=http.HTTPStatus.BAD_REQUEST,
-            text=f"Request header 'Accept' missing; should be 'Accept: {ACCEPT_HEADER}",
-        )
-    elif accept != ACCEPT_HEADER and ACCEPT_HEADER != "*":
-        logger.error(f"Request header 'Accept: {accept_sanitized}' incorrect; should be 'Accept: {ACCEPT_HEADER}'")
-        return web.Response(
-            status=http.HTTPStatus.NOT_ACCEPTABLE,
-            text=f"Request header 'Accept: {accept_sanitized}' incorrect; should be 'Accept: {ACCEPT_HEADER}'",
-        )
+    # Fail the request if the incorret media type headers are supplied
+    if header_problems := await media_headers_check(request):
+        # Send the lowest order response header
+        res_status, res_msg = header_problems[0]
+        return web.Response(status=res_status, text=res_msg)
 
     # Update last client interaction
     runner_state.client_interactions.append(
