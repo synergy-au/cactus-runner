@@ -499,7 +499,7 @@ async def test_proxied_request_handler_before_request_trigger(pg_base_config, mo
     request.path = "/dcap"
     request.path_qs = "/dcap"
     request.method = "GET"
-    request.headers = {"accept": env.ACCEPT_HEADER}
+    request.headers = {"accept": env.MEDIA_TYPE_HEADER}
     request.app[APPKEY_RUNNER_STATE].request_history = []
     mock_active_test_procedure = generate_class_instance(
         ActiveTestProcedure,
@@ -589,7 +589,7 @@ async def test_proxied_request_handler_after_request_trigger(pg_base_config, moc
     request.path = "/dcap"
     request.path_qs = "/dcap"
     request.method = "GET"
-    request.headers = {"accept": env.ACCEPT_HEADER}
+    request.headers = {"accept": env.MEDIA_TYPE_HEADER}
     request.app[APPKEY_RUNNER_STATE].request_history = []
     mock_active_test_procedure = generate_class_instance(
         ActiveTestProcedure,
@@ -708,14 +708,13 @@ async def test_proxied_request_handler_logs_error_with_finished_test(mocker):
 
 
 @pytest.mark.parametrize(
-    "accept_header", ["application/sep+xml", "application/json", "application/xml", "application/csipaus.org", None]
+    "accept_header", ["application/sep+xml", "application/json", "application/xml", "application/csipaus.org"]
 )
 @pytest.mark.asyncio
-async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str | None) -> None:
+async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str) -> None:
     """Test to ensure 406 returned on bad or missing header"""
     request = MagicMock()
-    if accept_header is not None or accept_header == env.ACCEPT_HEADER:
-        request.headers = {"accept": accept_header}
+    request.headers = {"accept": accept_header, "content-type": env.MEDIA_TYPE_HEADER}
     request.app[APPKEY_RUNNER_STATE].active_test_procedure = generate_class_instance(
         ActiveTestProcedure,
         communications_disabled=False,
@@ -727,3 +726,187 @@ async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str |
 
     mock_logger_warning.assert_called_once()
     assert response.status == http.HTTPStatus.NOT_ACCEPTABLE
+
+
+@pytest.mark.parametrize(
+    "accept_header,ct_header,req_method,expected",
+    [
+        (
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            http.HTTPMethod.GET,
+            [],
+        ),
+        (
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            "",
+            http.HTTPMethod.GET,
+            [],
+        ),
+        (
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            http.HTTPMethod.PUT,
+            [],
+        ),
+        (
+            None,
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            http.HTTPMethod.PUT,
+            [],
+        ),
+        (
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            http.HTTPMethod.POST,
+            [],
+        ),
+        (
+            None,
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            http.HTTPMethod.POST,
+            [],
+        ),
+        (
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            http.HTTPMethod.DELETE,
+            [],
+        ),
+        (
+            "",
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            http.HTTPMethod.DELETE,
+            [],
+        ),
+        (
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            None,
+            http.HTTPMethod.DELETE,
+            [],
+        ),
+        (
+            "",
+            None,
+            http.HTTPMethod.DELETE,
+            [],
+        ),
+        # Even if there is no body for the request, reject it
+        (
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            "application/sep+xml",
+            http.HTTPMethod.GET,
+            [
+                (
+                    http.HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                    (
+                        f"Request header 'Content-Type: application/sep+xml' incorrect; "
+                        f"should be 'Content-Type: {env.MEDIA_TYPE_HEADER}'"
+                    ),
+                )
+            ],
+        ),
+        # Even if there is no body for the request, reject it, bad content-type
+        (
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            "application/sep+xml",
+            http.HTTPMethod.DELETE,
+            [
+                (
+                    http.HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                    (
+                        f"Request header 'Content-Type: application/sep+xml' incorrect; "
+                        f"should be 'Content-Type: {env.MEDIA_TYPE_HEADER}'"
+                    ),
+                )
+            ],
+        ),
+        # Bad Accept
+        (
+            "application/sep+xml",
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            http.HTTPMethod.GET,
+            [
+                (
+                    http.HTTPStatus.NOT_ACCEPTABLE,
+                    (
+                        f"Request header 'Accept: application/sep+xml' incorrect; "
+                        f"should be 'Accept: {env.MEDIA_TYPE_HEADER}'"
+                    ),
+                )
+            ],
+        ),
+        # Missing Accept
+        (
+            "",
+            "",
+            http.HTTPMethod.GET,
+            [
+                (
+                    http.HTTPStatus.BAD_REQUEST,
+                    f"Request header 'Accept' missing; should be 'Accept: {env.MEDIA_TYPE_HEADER}",
+                )
+            ],
+        ),
+        # Missing content-type
+        (
+            "",
+            "",
+            http.HTTPMethod.POST,
+            [
+                (
+                    http.HTTPStatus.BAD_REQUEST,
+                    f"Request header 'Content-Type' missing; should be 'Content-Type: {env.MEDIA_TYPE_HEADER}",
+                )
+            ],
+        ),
+        # Missing content-type
+        (
+            "",
+            "",
+            http.HTTPMethod.PUT,
+            [
+                (
+                    http.HTTPStatus.BAD_REQUEST,
+                    f"Request header 'Content-Type' missing; should be 'Content-Type: {env.MEDIA_TYPE_HEADER}",
+                )
+            ],
+        ),
+        # Two bad headers
+        (
+            "application/sep+xml",
+            "application/sep+xml",
+            http.HTTPMethod.DELETE,
+            [
+                (
+                    http.HTTPStatus.NOT_ACCEPTABLE,
+                    (
+                        f"Request header 'Accept: application/sep+xml' incorrect; "
+                        f"should be 'Accept: {env.MEDIA_TYPE_HEADER}'"
+                    ),
+                ),
+                (
+                    http.HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                    (
+                        f"Request header 'Content-Type: application/sep+xml' incorrect; "
+                        f"should be 'Content-Type: {env.MEDIA_TYPE_HEADER}'"
+                    ),
+                ),
+            ],
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_media_headers_check(
+    accept_header: str | None,
+    ct_header: str | None,
+    req_method: http.HTTPMethod,
+    expected: list[tuple[http.HTTPStatus, str]],
+) -> None:
+    """Ensure the combinations of headers and methods provided to the media_header_check perform appropriately"""
+    request = MagicMock()
+    request.headers = {"accept": accept_header, "content-type": ct_header}
+    request.method = req_method
+
+    actual = await handler.media_headers_check(request)
+    assert actual == expected

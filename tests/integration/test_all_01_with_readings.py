@@ -14,6 +14,7 @@ from pytest_aiohttp.plugin import TestClient
 from sqlalchemy import func, select
 
 from cactus_runner.client import RunnerClient
+from cactus_runner.app import env
 from tests.integration.certificate1 import TEST_CERTIFICATE_PEM
 from tests.integration.test_all_01 import assert_success_response
 
@@ -67,13 +68,13 @@ async def test_all_01_with_readings(
     # Register the device (required for aggregator certificate)
     if certificate_type == "aggregator_certificate":
         result = await cactus_runner_client.post(
-            "/edev", data=edev_xml, headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": "application/sep+xml"}
+            "/edev", data=edev_xml, headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.MEDIA_TYPE_HEADER}
         )
         await assert_success_response(result)
 
     # Post Mirror Usage Point
     result = await cactus_runner_client.post(
-        "/mup", data=mup_xml, headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": "application/sep+xml"}
+        "/mup", data=mup_xml, headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.MEDIA_TYPE_HEADER}
     )
     location = result.headers.get("Location")
     mup_id = location.split("/")[-1]
@@ -83,7 +84,7 @@ async def test_all_01_with_readings(
     result: ClientResponse = await cactus_runner_client.post(
         f"/mup/{mup_id}",
         data=mmr_xml,
-        headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": "application/sep+xml"},
+        headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.MEDIA_TYPE_HEADER},
     )
     await assert_success_response(result)
 
