@@ -63,6 +63,7 @@ test = [
   "pytest-mock",
   "pytest-postgresql",
   "pytest-aiohttp",
+  "pytest-xdist",
   "assertical>=0.3.0", # Has support for py310+ typing optionals
   "freezegun",
   "pytest-env",

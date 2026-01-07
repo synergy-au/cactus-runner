@@ -73,6 +73,17 @@ async def resolve_named_variable_der_setting_max_var(session: AsyncSession) -> f
     return float(set_max_var)
 
 
+async def resolve_named_variable_der_setting_max_var_neg(session: AsyncSession) -> float:
+    site_der_setting = await _select_single_site_der_setting(session, "setMaxVarNeg")
+    set_max_var_neg = common.pow10_to_decimal_value(
+        site_der_setting.max_var_neg_value, site_der_setting.max_var_neg_multiplier
+    )
+    if set_max_var_neg is None:
+        raise errors.UnresolvableVariableError("Unable to extract setMaxVar from DERSetting")
+
+    return float(set_max_var_neg)
+
+
 async def resolve_named_variable_der_setting_max_charge_rate_w(session: AsyncSession) -> float:
     site_der_setting = await _select_single_site_der_setting(session, "setMaxChargeRateW")
     set_max_charge_rate_w = common.pow10_to_decimal_value(
@@ -132,6 +143,17 @@ async def resolve_named_variable_der_rating_max_var(session: AsyncSession) -> fl
         raise errors.UnresolvableVariableError("Unable to extract rtgMaxVar from DERCapability")
 
     return float(rtg_max_var)
+
+
+async def resolve_named_variable_der_rating_max_var_neg(session: AsyncSession) -> float:
+    site_der_rating = await _select_single_site_der_rating(session, "rtgMaxVarNeg")
+    rtg_max_var_neg = common.pow10_to_decimal_value(
+        site_der_rating.max_var_neg_value, site_der_rating.max_var_neg_multiplier
+    )
+    if rtg_max_var_neg is None:
+        raise errors.UnresolvableVariableError("Unable to extract rtgMaxVarNeg from DERCapability")
+
+    return float(rtg_max_var_neg)
 
 
 async def resolve_named_variable_der_rating_max_charge_rate_w(session: AsyncSession) -> float:
