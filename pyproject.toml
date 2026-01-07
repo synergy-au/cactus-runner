@@ -45,7 +45,7 @@ dependencies = [
 Homepage = "https://github.com/bsgip/cactus-runner"
 Documentation = "https://github.com/bsgip/cactus-runner/blob/main/README.md"
 Repository = "https://github.com/bsgip/cactus-runner.git"
-Issues = "https://github.com/bsgip/cactus-runner/issue"
+Issues = "https://github.com/bsgip/cactus-runner/issues"
 Changelog = "https://github.com/bsgip/cactus-runner/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
