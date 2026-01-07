@@ -456,6 +456,7 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
     der_bool_param_scenario("site_der_setting", SiteDERSetting, param, param_value, db_prop, db_prop_value, expected)
     for param, db_prop in [
         ("doeModesEnabled", "doe_modes_enabled"),
+        ("vppModesEnabled", "vpp_modes_enabled"),
         ("setMaxVA", "max_va_value"),
         ("setMaxVar", "max_var_value"),
         ("setMaxVarNeg", "max_var_neg_value"),
@@ -885,6 +886,7 @@ DERRATING_BOOL_PARAM_SCENARIOS = [
     der_bool_param_scenario("site_der_rating", SiteDERRating, param, param_value, db_prop, db_prop_value, expected)
     for param, db_prop in [
         ("doeModesSupported", "doe_modes_supported"),
+        ("vppModesSupported", "vpp_modes_supported"),
         ("rtgMaxVA", "max_va_value"),
         ("rtgMaxVar", "max_var_value"),
         ("rtgMaxVarNeg", "max_var_neg_value"),
