@@ -351,14 +351,3 @@ def save_playlist_zip(zip_contents: bytes, test_name: str, index: int) -> Path:
 
     logger.info(f"Saved playlist ZIP to {file_path}")
     return file_path
-
-
-def clear_playlist_zip_dir() -> None:
-    """Remove all playlist ZIP files. Called at start of new playlist."""
-    try:
-        if PLAYLIST_ZIP_DIR.exists():
-            shutil.rmtree(PLAYLIST_ZIP_DIR)
-        PLAYLIST_ZIP_DIR.mkdir(parents=True, exist_ok=True)
-        logger.info("Cleared playlist ZIP directory")
-    except Exception as exc:
-        logger.error("Failed to clear playlist ZIP directory", exc_info=exc)

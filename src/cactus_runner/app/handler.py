@@ -392,7 +392,6 @@ async def initialise_handler(request: web.Request) -> web.Response:  # noqa: C90
     if len(run_requests) > 1:
         request.app[APPKEY_RUNNER_STATE].playlist = run_requests[1:]
         request.app[APPKEY_RUNNER_STATE].playlist_index = 0
-        finalize.clear_playlist_zip_dir()
         logger.info(f"Playlist initialized with {len(run_requests) - 1} additional test procedure(s)")
     else:
         request.app[APPKEY_RUNNER_STATE].playlist = None
@@ -515,7 +514,6 @@ async def finalize_handler(request: web.Request) -> web.Response:
         playlist = runner_state.playlist
         if playlist is not None:
             # Save the ZIP to filesystem for this playlist item
-            # playlist_index tracks current position: 0 for first test, then incremented when advancing
             current_index = runner_state.playlist_index
             finalize.save_playlist_zip(zip_contents, finalized_test_procedure_name, current_index)
 

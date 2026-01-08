@@ -149,7 +149,6 @@ async def test_initialise_handler_playlist(mocker):
     mocker.patch("cactus_runner.app.handler.precondition.reset_db")
     mocker.patch("cactus_runner.app.handler.precondition.register_aggregator", return_value=1)
     mocker.patch("cactus_runner.app.handler.attempt_apply_actions")
-    mocker.patch("cactus_runner.app.handler.finalize.clear_playlist_zip_dir")
     start_result = MagicMock()
     start_result.success = True
     mocker.patch("cactus_runner.app.handler.attempt_start_for_state", return_value=start_result)

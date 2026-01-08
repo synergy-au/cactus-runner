@@ -18,7 +18,7 @@ URI_ENCODED_CERT = quote(TEST_CERTIFICATE_PEM.decode())
 
 
 async def initialise_playlist(session: ClientSession, run_requests: list[RunRequest]):
-    """Initialize a playlist of tests (sends list of RunRequests)."""
+    """Initialise a playlist of tests (sends list of RunRequests)."""
     # Serialize as a JSON array
     json_data = "[" + ",".join(rr.to_json() for rr in run_requests) + "]"
     async with session.post(url=uri.Initialise, data=json_data) as response:
