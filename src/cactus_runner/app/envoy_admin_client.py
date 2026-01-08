@@ -207,3 +207,13 @@ class EnvoyAdminClient:
             resp.raise_for_status()
             json = await resp.json()
             return SiteControlGroupDefaultResponse(**json)
+
+    async def delete_all_site_control_groups(self) -> HTTPStatus:
+        """Deletes all site control groups with proper notifications.
+
+        This archives DOEs/controls and sends notifications to subscribed clients.
+        Used for partial database reset between playlist tests.
+        """
+        resp = await self._session.delete(SiteControlGroupListUri)
+        resp.raise_for_status()
+        return HTTPStatus(resp.status)
