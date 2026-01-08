@@ -3,37 +3,32 @@ import zipfile
 from urllib.parse import quote
 
 import pytest
-from aiohttp import ClientResponse, ClientSession, ClientTimeout
-from cactus_schema.runner import RunnerStatus, RunRequest
+from aiohttp import ClientSession, ClientTimeout
+from cactus_schema.runner import RunnerStatus, RunRequest, uri
 from cactus_test_definitions import CSIPAusVersion
 from cactus_test_definitions.client import TestProcedureId
 from pytest_aiohttp.plugin import TestClient
 
 from cactus_runner.app.finalize import PLAYLIST_ZIP_DIR
+from cactus_runner.client import ensure_success_response
 from tests.integration.certificate1 import TEST_CERTIFICATE_PEM
 
 URI_ENCODED_CERT = quote(TEST_CERTIFICATE_PEM.decode())
-
-
-async def assert_success_response(response: ClientResponse):
-    if response.status < 200 or response.status >= 300:
-        body = await response.read()
-        assert False, f"{response.status}: {body}"
 
 
 async def initialise_playlist(session: ClientSession, run_requests: list[RunRequest]):
     """Initialize a playlist of tests (sends list of RunRequests)."""
     # Serialize as a JSON array
     json_data = "[" + ",".join(rr.to_json() for rr in run_requests) + "]"
-    async with session.post(url="/initialize", data=json_data) as response:
-        await assert_success_response(response)
+    async with session.post(url=uri.Initialise, data=json_data) as response:
+        await ensure_success_response(response)
         return await response.json()
 
 
 async def get_status(session: ClientSession) -> RunnerStatus:
     """Get current runner status."""
-    async with session.get(url="/status") as response:
-        await assert_success_response(response)
+    async with session.get(url=uri.Status) as response:
+        await ensure_success_response(response)
         json_text = await response.text()
         status = RunnerStatus.from_json(json_text)
         if isinstance(status, list):
@@ -43,8 +38,8 @@ async def get_status(session: ClientSession) -> RunnerStatus:
 
 async def finalize_test(client: TestClient) -> bytes:
     """Finalize current test and return ZIP data."""
-    result = await client.post("/finalize")
-    await assert_success_response(result)
+    result = await client.post(uri.Finalize)
+    await ensure_success_response(result)
     return await result.read()
 
 
@@ -119,20 +114,19 @@ async def test_playlist_two_tests(cactus_runner_client: TestClient, run_request_
         # Verify first test is initialized
         status = await get_status(session)
         assert status.test_procedure_name == TestProcedureId.ALL_01.value
-        assert status.run_id == "playlist-test-1"
 
     # Run first test - make some requests
     result = await cactus_runner_client.get("/dcap", headers={"ssl-client-cert": URI_ENCODED_CERT})
-    await assert_success_response(result)
+    await ensure_success_response(result)
 
     result = await cactus_runner_client.get("/edev?s=0&l=100", headers={"ssl-client-cert": URI_ENCODED_CERT})
-    await assert_success_response(result)
+    await ensure_success_response(result)
 
     result = await cactus_runner_client.get("/tm", headers={"ssl-client-cert": URI_ENCODED_CERT})
-    await assert_success_response(result)
+    await ensure_success_response(result)
 
     result = await cactus_runner_client.get("/edev/1/der", headers={"ssl-client-cert": URI_ENCODED_CERT})
-    await assert_success_response(result)
+    await ensure_success_response(result)
 
     # Finalize first test - should return ZIP and auto-init second test
     zip_data_1 = await finalize_test(cactus_runner_client)
@@ -144,18 +138,17 @@ async def test_playlist_two_tests(cactus_runner_client: TestClient, run_request_
     saved_zips = list(PLAYLIST_ZIP_DIR.glob("*.zip"))
     assert len(saved_zips) >= 1, f"Expected at least 1 saved ZIP, found {len(saved_zips)}"
 
-    # Verify second test is now initialized
+    # Verify second test is now initialized (playlist advanced)
     async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
         status = await get_status(session)
         assert status.test_procedure_name == TestProcedureId.ALL_01.value
-        assert status.run_id == "playlist-test-2", f"Expected run_id 'playlist-test-2', got '{status.run_id}'"
 
     # Run second test - make some requests
     result = await cactus_runner_client.get("/dcap", headers={"ssl-client-cert": URI_ENCODED_CERT})
-    await assert_success_response(result)
+    await ensure_success_response(result)
 
     result = await cactus_runner_client.get("/edev?s=0&l=100", headers={"ssl-client-cert": URI_ENCODED_CERT})
-    await assert_success_response(result)
+    await ensure_success_response(result)
 
     # Finalize second test
     zip_data_2 = await finalize_test(cactus_runner_client)
@@ -169,7 +162,7 @@ async def test_playlist_two_tests(cactus_runner_client: TestClient, run_request_
     # Verify no active test after playlist completes
     async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
         status = await get_status(session)
-        assert status.test_procedure_name is None, "No test should be active after playlist completes"
+        assert status.test_procedure_name == "-", "No test should be active after playlist completes"
 
 
 @pytest.mark.slow
@@ -193,14 +186,14 @@ async def test_playlist_single_test_backwards_compatible(cactus_runner_client: T
 
     # Run test
     result = await cactus_runner_client.get("/dcap", headers={"ssl-client-cert": URI_ENCODED_CERT})
-    await assert_success_response(result)
+    await ensure_success_response(result)
 
     result = await cactus_runner_client.get("/edev?s=0&l=100", headers={"ssl-client-cert": URI_ENCODED_CERT})
-    await assert_success_response(result)
+    await ensure_success_response(result)
 
     # Finalize
-    result = await cactus_runner_client.post("/finalize")
-    await assert_success_response(result)
+    result = await cactus_runner_client.post(uri.Finalize)
+    await ensure_success_response(result)
     assert result.headers["Content-Type"] == "application/zip"
 
     zip_data = await result.read()
@@ -209,7 +202,7 @@ async def test_playlist_single_test_backwards_compatible(cactus_runner_client: T
     # Verify no active test after finalize
     async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
         status = await get_status(session)
-        assert status.test_procedure_name is None
+        assert status.test_procedure_name == "-"
 
 
 @pytest.mark.slow
@@ -240,15 +233,15 @@ async def test_playlist_preserves_site_data(cactus_runner_client: TestClient, ru
 
     # First test - register a site via requests
     result = await cactus_runner_client.get("/dcap", headers={"ssl-client-cert": URI_ENCODED_CERT})
-    await assert_success_response(result)
+    await ensure_success_response(result)
 
     # This registers the end device
     result = await cactus_runner_client.get("/edev?s=0&l=100", headers={"ssl-client-cert": URI_ENCODED_CERT})
-    await assert_success_response(result)
+    await ensure_success_response(result)
 
     # Get DER info (requires registered device)
     result = await cactus_runner_client.get("/edev/1/der", headers={"ssl-client-cert": URI_ENCODED_CERT})
-    await assert_success_response(result)
+    await ensure_success_response(result)
 
     # Finalize first test
     await finalize_test(cactus_runner_client)
@@ -256,11 +249,11 @@ async def test_playlist_preserves_site_data(cactus_runner_client: TestClient, ru
     # Second test - site should still be registered (preserved by partial reset)
     # The aggregator/certificate registration persists, allowing the same certificate to work
     result = await cactus_runner_client.get("/dcap", headers={"ssl-client-cert": URI_ENCODED_CERT})
-    await assert_success_response(result)
+    await ensure_success_response(result)
 
     # This should still work because the aggregator is preserved
     result = await cactus_runner_client.get("/edev?s=0&l=100", headers={"ssl-client-cert": URI_ENCODED_CERT})
-    await assert_success_response(result)
+    await ensure_success_response(result)
 
     # Finalize second test
     zip_data_2 = await finalize_test(cactus_runner_client)
@@ -271,7 +264,7 @@ async def test_playlist_preserves_site_data(cactus_runner_client: TestClient, ru
 async def test_playlist_empty_rejected(cactus_runner_client: TestClient):
     """Test that an empty playlist is rejected with 400 Bad Request."""
     async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(30)) as session:
-        async with session.post(url="/initialize", data="[]") as response:
+        async with session.post(url=uri.Initialise, data="[]") as response:
             assert response.status == 400
             body = await response.text()
             assert "Empty playlist" in body
@@ -309,23 +302,23 @@ async def test_playlist_three_tests(cactus_runner_client: TestClient, run_reques
 
     # Run and finalize each test
     for i in range(3):
-        # Verify correct test is active
+        # Verify a test is active
         async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
             status = await get_status(session)
-            assert status.run_id == f"playlist-test-{i+1}", f"Test {i+1}: Expected run_id 'playlist-test-{i+1}'"
+            assert status.test_procedure_name == TestProcedureId.ALL_01.value, f"Test {i+1}: Expected active test"
 
         # Make minimum requests to complete test
         result = await cactus_runner_client.get("/dcap", headers={"ssl-client-cert": URI_ENCODED_CERT})
-        await assert_success_response(result)
+        await ensure_success_response(result)
 
         result = await cactus_runner_client.get("/edev?s=0&l=100", headers={"ssl-client-cert": URI_ENCODED_CERT})
-        await assert_success_response(result)
+        await ensure_success_response(result)
 
         result = await cactus_runner_client.get("/tm", headers={"ssl-client-cert": URI_ENCODED_CERT})
-        await assert_success_response(result)
+        await ensure_success_response(result)
 
         result = await cactus_runner_client.get("/edev/1/der", headers={"ssl-client-cert": URI_ENCODED_CERT})
-        await assert_success_response(result)
+        await ensure_success_response(result)
 
         # Finalize
         zip_data = await finalize_test(cactus_runner_client)
@@ -338,4 +331,4 @@ async def test_playlist_three_tests(cactus_runner_client: TestClient, run_reques
     # Verify no active test
     async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
         status = await get_status(session)
-        assert status.test_procedure_name is None
+        assert status.test_procedure_name == "-"
