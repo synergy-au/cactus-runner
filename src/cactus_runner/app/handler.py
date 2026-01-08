@@ -27,6 +27,8 @@ from cactus_runner.app.env import (
     MOUNT_POINT,
     SERVER_URL,
 )
+import traceback
+
 from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
 from cactus_runner.app.health import is_admin_api_healthy, is_db_healthy
 from cactus_runner.app.requests_archive import (
@@ -559,8 +561,6 @@ async def finalize_handler(request: web.Request) -> web.Response:
                     )
                 except Exception as exc:
                     print(f"DEBUG: Exception during playlist advance: {type(exc).__name__}: {exc}")
-                    import traceback
-
                     traceback.print_exc()
                     logger.error(f"Failed to initialize next playlist test: {exc}", exc_info=exc)
                     # Clear playlist on error to prevent further issues

@@ -8,6 +8,7 @@ from cactus_schema.runner import RunnerStatus, RunRequest, uri
 from cactus_test_definitions import CSIPAusVersion
 from cactus_test_definitions.client import TestProcedureId
 from pytest_aiohttp.plugin import TestClient
+import shutil
 
 from cactus_runner.app.finalize import PLAYLIST_ZIP_DIR
 from cactus_runner.client import ensure_success_response
@@ -78,8 +79,6 @@ async def test_playlist_two_tests(cactus_runner_client: TestClient, run_request_
     """
     # Clear any existing playlist ZIPs
     if PLAYLIST_ZIP_DIR.exists():
-        import shutil
-
         shutil.rmtree(PLAYLIST_ZIP_DIR)
 
     # Create two test requests - using ALL-01 (immediate start) for simplicity
