@@ -27,7 +27,6 @@ from cactus_runner.app.env import (
     MOUNT_POINT,
     SERVER_URL,
 )
-import traceback
 
 from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
 from cactus_runner.app.health import is_admin_api_healthy, is_db_healthy
@@ -514,7 +513,6 @@ async def finalize_handler(request: web.Request) -> web.Response:
 
         # If we are in a playlist, handle playlist advancement
         playlist = runner_state.playlist
-        print(f"DEBUG FINALIZE: playlist={playlist is not None}, playlist_index={runner_state.playlist_index}")
         if playlist is not None:
             # Save the ZIP to filesystem for this playlist item
             # playlist_index tracks current position: 0 for first test, then incremented when advancing
@@ -560,8 +558,6 @@ async def finalize_handler(request: web.Request) -> web.Response:
                         f"Initialized next playlist test: {next_run_request.test_definition.test_procedure_id.value}"
                     )
                 except Exception as exc:
-                    print(f"DEBUG: Exception during playlist advance: {type(exc).__name__}: {exc}")
-                    traceback.print_exc()
                     logger.error(f"Failed to initialize next playlist test: {exc}", exc_info=exc)
                     # Clear playlist on error to prevent further issues
                     runner_state.playlist = None

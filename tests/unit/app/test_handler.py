@@ -347,6 +347,7 @@ async def test_finalize_handler(mocker):
     """
 
     request = MagicMock()
+    request.app[APPKEY_RUNNER_STATE].playlist = None  # No playlist for this test
     zip_data = bytes([99, 55])
     mock_finish_active_test = mocker.patch("cactus_runner.app.handler.finalize.finish_active_test")
     mock_finish_active_test.return_value = zip_data
@@ -370,6 +371,7 @@ async def test_finalize_handler_finish_error(mocker):
     """
 
     request = MagicMock()
+    request.app[APPKEY_RUNNER_STATE].playlist = None  # No playlist for this test
     safe_error_data = bytes([0, 4, 1, 1])
     mock_finish_active_test = mocker.patch("cactus_runner.app.handler.finalize.finish_active_test")
     mock_finish_active_test.side_effect = Exception("mock exception")
@@ -391,6 +393,7 @@ async def test_finalize_handler_finish_error(mocker):
 async def test_finalize_handler_resets_runner_state(mocker):
     request = MagicMock()
     request.app[APPKEY_RUNNER_STATE].request_history = [None]  # a non-empty list stand-in
+    request.app[APPKEY_RUNNER_STATE].playlist = None  # No playlist for this test
     mocker.patch("cactus_runner.app.handler.begin_session")
     mocker.patch("cactus_runner.app.handler.status.get_active_runner_status").return_value = generate_class_instance(
         RunnerStatus, step_status={}
