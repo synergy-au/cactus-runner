@@ -322,10 +322,10 @@ async def action_register_end_device(
         and aggregator_lfdi is not None
         and aggregator_sfdi is not None
     ):
-        lfdi = aggregator_lfdi[0:32] + f"{active_test_procedure.pen:08}"
+        lfdi = (aggregator_lfdi[0:32] + f"{active_test_procedure.pen:08}").upper()
         sfdi = aggregator_sfdi
     else:
-        lfdi = active_test_procedure.client_lfdi
+        lfdi = active_test_procedure.client_lfdi.upper()
         sfdi = active_test_procedure.client_sfdi
 
     # Check if site already exists
