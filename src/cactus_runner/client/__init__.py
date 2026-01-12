@@ -1,3 +1,4 @@
+from dataclasses import asdict
 import logging
 
 from aiohttp import ClientResponse, ClientSession, ClientTimeout, ConnectionTimeoutError
@@ -54,11 +55,8 @@ class RunnerClient:
     @staticmethod
     async def initialise(session: ClientSession, run_request: RunRequest | list[RunRequest]) -> InitResponseBody:
         try:
-            if isinstance(run_request, list):
-                json_data = "[" + ",".join(rr.to_json() for rr in run_request) + "]"
-            else:
-                json_data = run_request.to_json()
-            async with session.post(url=uri.Initialise, data=json_data) as response:
+            json_data = [asdict(rr) for rr in run_request] if isinstance(run_request, list) else asdict(run_request)
+            async with session.post(url=uri.Initialise, json=json_data) as response:
                 await ensure_success_response(response)
                 response_json = await response.text()
                 init_response_body = InitResponseBody.from_json(response_json)
