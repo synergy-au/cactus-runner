@@ -52,9 +52,13 @@ async def ensure_success_response(response: ClientResponse) -> None:
 
 class RunnerClient:
     @staticmethod
-    async def initialise(session: ClientSession, run_request: RunRequest) -> InitResponseBody:
+    async def initialise(session: ClientSession, run_request: RunRequest | list[RunRequest]) -> InitResponseBody:
         try:
-            async with session.post(url=uri.Initialise, data=run_request.to_json()) as response:
+            if isinstance(run_request, list):
+                json_data = "[" + ",".join(rr.to_json() for rr in run_request) + "]"
+            else:
+                json_data = run_request.to_json()
+            async with session.post(url=uri.Initialise, data=json_data) as response:
                 await ensure_success_response(response)
                 response_json = await response.text()
                 init_response_body = InitResponseBody.from_json(response_json)

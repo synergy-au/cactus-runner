@@ -906,8 +906,7 @@ async def test_action_register_aggregator_end_device_agg_cert(
 
 @pytest.mark.asyncio
 async def test_action_reregister_existing_device(pg_base_config):
-    """
-    Test that re-registering an existing end-device doesn't raise an error and should not create a duplicate site."""
+    """Test that re-registering an existing end-device doesn't raise an error or create a duplicate site."""
     # Arrange
     active_test_procedure = generate_class_instance(
         ActiveTestProcedure,

@@ -1,4 +1,5 @@
 import io
+import shutil
 import zipfile
 from urllib.parse import quote
 
@@ -8,40 +9,12 @@ from cactus_schema.runner import RunnerStatus, RunRequest, uri
 from cactus_test_definitions import CSIPAusVersion
 from cactus_test_definitions.client import TestProcedureId
 from pytest_aiohttp.plugin import TestClient
-import shutil
 
 from cactus_runner.app.finalize import PLAYLIST_ZIP_DIR
-from cactus_runner.client import ensure_success_response
+from cactus_runner.client import RunnerClient, ensure_success_response
 from tests.integration.certificate1 import TEST_CERTIFICATE_PEM
 
 URI_ENCODED_CERT = quote(TEST_CERTIFICATE_PEM.decode())
-
-
-async def initialise_playlist(session: ClientSession, run_requests: list[RunRequest]):
-    """Initialise a playlist of tests (sends list of RunRequests)."""
-    # Serialize as a JSON array
-    json_data = "[" + ",".join(rr.to_json() for rr in run_requests) + "]"
-    async with session.post(url=uri.Initialise, data=json_data) as response:
-        await ensure_success_response(response)
-        return await response.json()
-
-
-async def get_status(session: ClientSession) -> RunnerStatus:
-    """Get current runner status."""
-    async with session.get(url=uri.Status) as response:
-        await ensure_success_response(response)
-        json_text = await response.text()
-        status = RunnerStatus.from_json(json_text)
-        if isinstance(status, list):
-            raise ValueError("Expected single status object")
-        return status
-
-
-async def finalize_test(client: TestClient) -> bytes:
-    """Finalize current test and return ZIP data."""
-    result = await client.post(uri.Finalize)
-    await ensure_success_response(result)
-    return await result.read()
 
 
 def verify_zip_contents(zip_data: bytes, expected_test_name: str) -> None:
@@ -108,10 +81,10 @@ async def test_playlist_two_tests(cactus_runner_client: TestClient, run_request_
 
     # Initialize playlist
     async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
-        await initialise_playlist(session, playlist)
+        await RunnerClient.initialise(session, playlist)
 
         # Verify first test is initialized
-        status = await get_status(session)
+        status = await RunnerClient.status(session)
         assert status.test_procedure_name == TestProcedureId.ALL_01.value
 
     # Run first test - make some requests
@@ -128,18 +101,18 @@ async def test_playlist_two_tests(cactus_runner_client: TestClient, run_request_
     await ensure_success_response(result)
 
     # Finalize first test - should return ZIP and auto-init second test
-    zip_data_1 = await finalize_test(cactus_runner_client)
-    assert len(zip_data_1) > 0
-    verify_zip_contents(zip_data_1, TestProcedureId.ALL_01.value)
-
-    # Verify ZIP was saved to filesystem
-    assert PLAYLIST_ZIP_DIR.exists(), "Playlist ZIP directory should exist"
-    saved_zips = list(PLAYLIST_ZIP_DIR.glob("*.zip"))
-    assert len(saved_zips) >= 1, f"Expected at least 1 saved ZIP, found {len(saved_zips)}"
-
-    # Verify second test is now initialized (playlist advanced)
     async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
-        status = await get_status(session)
+        zip_data_1 = await RunnerClient.finalize(session)
+        assert len(zip_data_1) > 0
+        verify_zip_contents(zip_data_1, TestProcedureId.ALL_01.value)
+
+        # Verify ZIP was saved to filesystem
+        assert PLAYLIST_ZIP_DIR.exists(), "Playlist ZIP directory should exist"
+        saved_zips = list(PLAYLIST_ZIP_DIR.glob("*.zip"))
+        assert len(saved_zips) >= 1, f"Expected at least 1 saved ZIP, found {len(saved_zips)}"
+
+        # Verify second test is now initialized (playlist advanced)
+        status = await RunnerClient.status(session)
         assert status.test_procedure_name == TestProcedureId.ALL_01.value
 
     # Run second test - make some requests
@@ -150,17 +123,17 @@ async def test_playlist_two_tests(cactus_runner_client: TestClient, run_request_
     await ensure_success_response(result)
 
     # Finalize second test
-    zip_data_2 = await finalize_test(cactus_runner_client)
-    assert len(zip_data_2) > 0
-    verify_zip_contents(zip_data_2, TestProcedureId.ALL_01.value)
-
-    # Verify both ZIPs are saved (first one + second one saved on finalize)
-    saved_zips = list(PLAYLIST_ZIP_DIR.glob("*.zip"))
-    assert len(saved_zips) >= 2, f"Expected at least 2 saved ZIPs, found {len(saved_zips)}"
-
-    # Verify no active test after playlist completes
     async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
-        status = await get_status(session)
+        zip_data_2 = await RunnerClient.finalize(session)
+        assert len(zip_data_2) > 0
+        verify_zip_contents(zip_data_2, TestProcedureId.ALL_01.value)
+
+        # Verify both ZIPs are saved (first one + second one saved on finalize)
+        saved_zips = list(PLAYLIST_ZIP_DIR.glob("*.zip"))
+        assert len(saved_zips) >= 2, f"Expected at least 2 saved ZIPs, found {len(saved_zips)}"
+
+        # Verify no active test after playlist completes
+        status = await RunnerClient.status(session)
         assert status.test_procedure_name == "-", "No test should be active after playlist completes"
 
 
@@ -171,8 +144,6 @@ async def test_playlist_single_test_backwards_compatible(cactus_runner_client: T
 
     This ensures backwards compatibility - existing single-test workflows are unaffected.
     """
-    from cactus_runner.client import RunnerClient
-
     agg_cert = TEST_CERTIFICATE_PEM.decode()
     csip_version = CSIPAusVersion.RELEASE_1_2
 
@@ -191,16 +162,12 @@ async def test_playlist_single_test_backwards_compatible(cactus_runner_client: T
     await ensure_success_response(result)
 
     # Finalize
-    result = await cactus_runner_client.post(uri.Finalize)
-    await ensure_success_response(result)
-    assert result.headers["Content-Type"] == "application/zip"
-
-    zip_data = await result.read()
-    verify_zip_contents(zip_data, TestProcedureId.ALL_01.value)
-
-    # Verify no active test after finalize
     async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
-        status = await get_status(session)
+        zip_data = await RunnerClient.finalize(session)
+        verify_zip_contents(zip_data, TestProcedureId.ALL_01.value)
+
+        # Verify no active test after finalize
+        status = await RunnerClient.status(session)
         assert status.test_procedure_name == "-"
 
 
@@ -214,8 +181,6 @@ async def test_playlist_preserves_site_data(cactus_runner_client: TestClient, ru
     """
     # Clear any existing playlist ZIPs
     if PLAYLIST_ZIP_DIR.exists():
-        import shutil
-
         shutil.rmtree(PLAYLIST_ZIP_DIR)
 
     agg_cert = TEST_CERTIFICATE_PEM.decode()
@@ -228,7 +193,7 @@ async def test_playlist_preserves_site_data(cactus_runner_client: TestClient, ru
 
     # Initialize playlist
     async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
-        await initialise_playlist(session, playlist)
+        await RunnerClient.initialise(session, playlist)
 
     # First test - register a site via requests
     result = await cactus_runner_client.get("/dcap", headers={"ssl-client-cert": URI_ENCODED_CERT})
@@ -243,7 +208,8 @@ async def test_playlist_preserves_site_data(cactus_runner_client: TestClient, ru
     await ensure_success_response(result)
 
     # Finalize first test
-    await finalize_test(cactus_runner_client)
+    async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
+        await RunnerClient.finalize(session)
 
     # Second test - site should still be registered (preserved by partial reset)
     # The aggregator/certificate registration persists, allowing the same certificate to work
@@ -255,8 +221,9 @@ async def test_playlist_preserves_site_data(cactus_runner_client: TestClient, ru
     await ensure_success_response(result)
 
     # Finalize second test
-    zip_data_2 = await finalize_test(cactus_runner_client)
-    assert len(zip_data_2) > 0
+    async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
+        zip_data_2 = await RunnerClient.finalize(session)
+        assert len(zip_data_2) > 0
 
 
 @pytest.mark.anyio
@@ -275,8 +242,6 @@ async def test_playlist_three_tests(cactus_runner_client: TestClient, run_reques
     """Test running a playlist of three tests to verify the loop works correctly."""
     # Clear any existing playlist ZIPs
     if PLAYLIST_ZIP_DIR.exists():
-        import shutil
-
         shutil.rmtree(PLAYLIST_ZIP_DIR)
 
     agg_cert = TEST_CERTIFICATE_PEM.decode()
@@ -297,13 +262,13 @@ async def test_playlist_three_tests(cactus_runner_client: TestClient, run_reques
 
     # Initialize playlist
     async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
-        await initialise_playlist(session, run_requests)
+        await RunnerClient.initialise(session, run_requests)
 
     # Run and finalize each test
     for i in range(3):
         # Verify a test is active
         async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
-            status = await get_status(session)
+            status = await RunnerClient.status(session)
             assert status.test_procedure_name == TestProcedureId.ALL_01.value, f"Test {i+1}: Expected active test"
 
         # Make minimum requests to complete test
@@ -320,8 +285,9 @@ async def test_playlist_three_tests(cactus_runner_client: TestClient, run_reques
         await ensure_success_response(result)
 
         # Finalize
-        zip_data = await finalize_test(cactus_runner_client)
-        assert len(zip_data) > 0
+        async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
+            zip_data = await RunnerClient.finalize(session)
+            assert len(zip_data) > 0
 
     # Verify all ZIPs saved
     saved_zips = list(PLAYLIST_ZIP_DIR.glob("*.zip"))
@@ -329,5 +295,5 @@ async def test_playlist_three_tests(cactus_runner_client: TestClient, run_reques
 
     # Verify no active test
     async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
-        status = await get_status(session)
+        status = await RunnerClient.status(session)
         assert status.test_procedure_name == "-"
