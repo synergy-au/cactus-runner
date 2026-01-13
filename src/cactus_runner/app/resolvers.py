@@ -106,6 +106,28 @@ async def resolve_named_variable_der_setting_max_discharge_rate_w(session: Async
     return float(set_max_discharge_rate_w)
 
 
+async def resolve_named_variable_der_setting_min_pf_over_excited(session: AsyncSession) -> float:
+    site_der_setting = await _select_single_site_der_setting(session, "setMinPFOverExcited")
+    set_min_pf_over_excited = common.pow10_to_decimal_value(
+        site_der_setting.min_pf_over_excited_displacement, site_der_setting.min_pf_over_excited_multiplier
+    )
+    if set_min_pf_over_excited is None:
+        raise errors.UnresolvableVariableError("Unable to extract setMinPFOverExcited from DERSetting")
+
+    return float(set_min_pf_over_excited)
+
+
+async def resolve_named_variable_der_setting_min_pf_under_excited(session: AsyncSession) -> float:
+    site_der_setting = await _select_single_site_der_setting(session, "setMinPFUnderExcited")
+    set_min_pf_under_excited = common.pow10_to_decimal_value(
+        site_der_setting.min_pf_under_excited_displacement, site_der_setting.min_pf_under_excited_multiplier
+    )
+    if set_min_pf_under_excited is None:
+        raise errors.UnresolvableVariableError("Unable to extract setMinPFUnderExcited from DERSetting")
+
+    return float(set_min_pf_under_excited)
+
+
 async def resolve_named_variable_der_setting_max_wh(session: AsyncSession) -> float:
     site_der_setting = await _select_single_site_der_setting(session, "setMaxWh")
     set_max_wh = common.pow10_to_decimal_value(site_der_setting.max_wh_value, site_der_setting.max_wh_multiplier)
@@ -176,6 +198,28 @@ async def resolve_named_variable_der_rating_max_discharge_rate_w(session: AsyncS
         raise errors.UnresolvableVariableError("Unable to extract rtgMaxDischargeRateW from DERCapability")
 
     return float(rtg_max_discharge_rate_w)
+
+
+async def resolve_named_variable_der_rating_min_pf_over_excited(session: AsyncSession) -> float:
+    site_der_rating = await _select_single_site_der_rating(session, "rtgMinPFOverExcited")
+    rtg_min_pf_over_excited = common.pow10_to_decimal_value(
+        site_der_rating.min_pf_over_excited_displacement, site_der_rating.min_pf_over_excited_multiplier
+    )
+    if rtg_min_pf_over_excited is None:
+        raise errors.UnresolvableVariableError("Unable to extract rtgMinPFOverExcited from DERCapability")
+
+    return float(rtg_min_pf_over_excited)
+
+
+async def resolve_named_variable_der_rating_min_pf_under_excited(session: AsyncSession) -> float:
+    site_der_rating = await _select_single_site_der_rating(session, "rtgMinPFUnderExcited")
+    rtg_min_pf_under_excited = common.pow10_to_decimal_value(
+        site_der_rating.min_pf_under_excited_displacement, site_der_rating.min_pf_under_excited_multiplier
+    )
+    if rtg_min_pf_under_excited is None:
+        raise errors.UnresolvableVariableError("Unable to extract rtgMinPFUnderExcited from DERCapability")
+
+    return float(rtg_min_pf_under_excited)
 
 
 async def resolve_named_variable_der_rating_max_wh(session: AsyncSession) -> float:
