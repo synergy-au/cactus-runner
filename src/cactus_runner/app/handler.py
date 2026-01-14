@@ -417,9 +417,7 @@ async def initialise_handler(request: web.Request) -> web.Response:  # noqa: C90
         request.app[APPKEY_RUNNER_STATE].playlist = run_requests
         request.app[APPKEY_RUNNER_STATE].playlist_index = start_index
         remaining_count = len(run_requests) - start_index - 1
-        logger.info(
-            f"Playlist initialized at index {start_index} with {remaining_count} remaining test procedure(s)"
-        )
+        logger.info(f"Playlist initialized at index {start_index} with {remaining_count} remaining test procedure(s)")
     else:
         request.app[APPKEY_RUNNER_STATE].playlist = None
         request.app[APPKEY_RUNNER_STATE].playlist_index = start_index
