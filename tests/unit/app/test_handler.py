@@ -83,6 +83,7 @@ async def test_initialise_handler(
         return_value=run_request(test_procedure_id=test_procedure_id, use_device_cert=use_device_cert).to_json()
     )
     mock_request.raise_for_status = MagicMock()
+    mock_request.query.get = MagicMock(return_value=None)  # No start_index
     mock_request.app[APPKEY_RUNNER_STATE].active_test_procedure = None
     mock_request.app[APPKEY_RUNNER_STATE].client_interactions = []
 
@@ -141,6 +142,7 @@ async def test_initialise_handler_playlist(mocker):
     mock_request = MagicMock()
     mock_request.text = AsyncMock(return_value=playlist_json)
     mock_request.raise_for_status = MagicMock()
+    mock_request.query.get = MagicMock(return_value=None)  # No start_index
     mock_request.app[APPKEY_RUNNER_STATE].active_test_procedure = None
     mock_request.app[APPKEY_RUNNER_STATE].client_interactions = []
     mock_request.app[APPKEY_RUNNER_STATE].playlist = None
@@ -160,16 +162,110 @@ async def test_initialise_handler_playlist(mocker):
     assert isinstance(raw_response, Response)
     assert raw_response.status == http.HTTPStatus.CREATED
 
-    # Assert - playlist is set up with remaining tests (2 and 3)
+    # Assert - playlist is set up with all tests
     playlist = mock_request.app[APPKEY_RUNNER_STATE].playlist
     assert playlist is not None
-    assert len(playlist) == 2  # run_request_2 and run_request_3
+    assert len(playlist) == 3  # All 3 tests in the full array
 
-    # Assert - playlist_index starts at 0
+    # Assert - playlist_index starts at 0 (first test is active)
     assert mock_request.app[APPKEY_RUNNER_STATE].playlist_index == 0
 
     # Assert - first test is set as active
     assert mock_request.app[APPKEY_RUNNER_STATE].active_test_procedure is not None
+
+
+@pytest.mark.asyncio
+async def test_initialise_handler_playlist_with_start_index(mocker):
+    """Test that initializing with start_index skips to the correct test."""
+    # Arrange - create a playlist with 4 tests
+    run_request_0 = run_request(test_procedure_id=TestProcedureId.ALL_01, use_device_cert=False)
+    run_request_1 = run_request(test_procedure_id=TestProcedureId.ALL_01, use_device_cert=False)
+    run_request_2 = run_request(test_procedure_id=TestProcedureId.ALL_01, use_device_cert=False)
+    run_request_3 = run_request(test_procedure_id=TestProcedureId.ALL_01, use_device_cert=False)
+
+    # Assign unique run_ids to distinguish tests
+    run_request_0.run_id = "test-0"
+    run_request_1.run_id = "test-1"
+    run_request_2.run_id = "test-2"
+    run_request_3.run_id = "test-3"
+
+    playlist_json = (
+        "[" + ",".join(rr.to_json() for rr in [run_request_0, run_request_1, run_request_2, run_request_3]) + "]"
+    )
+
+    mock_request = MagicMock()
+    mock_request.text = AsyncMock(return_value=playlist_json)
+    mock_request.raise_for_status = MagicMock()
+    mock_request.query.get = MagicMock(return_value="2")  # Start at index 2
+    mock_request.app[APPKEY_RUNNER_STATE].active_test_procedure = None
+    mock_request.app[APPKEY_RUNNER_STATE].client_interactions = []
+    mock_request.app[APPKEY_RUNNER_STATE].playlist = None
+    mock_request.app[APPKEY_RUNNER_STATE].playlist_index = 0
+
+    mocker.patch("cactus_runner.app.handler.precondition.reset_db")
+    mocker.patch("cactus_runner.app.handler.precondition.register_aggregator", return_value=1)
+    mocker.patch("cactus_runner.app.handler.attempt_apply_actions")
+    start_result = MagicMock()
+    start_result.success = True
+    mocker.patch("cactus_runner.app.handler.attempt_start_for_state", return_value=start_result)
+
+    # Act
+    raw_response = await handler.initialise_handler(request=mock_request)
+
+    # Assert - response is successful
+    assert isinstance(raw_response, Response)
+    assert raw_response.status == http.HTTPStatus.CREATED
+
+    # Assert - playlist contains all 4 tests (full array)
+    playlist = mock_request.app[APPKEY_RUNNER_STATE].playlist
+    assert playlist is not None
+    assert len(playlist) == 4
+    assert playlist[0].run_id == "test-0"
+    assert playlist[2].run_id == "test-2"
+    assert playlist[3].run_id == "test-3"
+
+    # Assert - playlist_index is set to start_index (2)
+    assert mock_request.app[APPKEY_RUNNER_STATE].playlist_index == 2
+
+    # Assert - test at index 2 is set as active
+    assert mock_request.app[APPKEY_RUNNER_STATE].active_test_procedure is not None
+    assert mock_request.app[APPKEY_RUNNER_STATE].active_test_procedure.run_id == "test-2"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "start_index_value",
+    [
+        "3",  # Equal to playlist length (out of bounds)
+        "10",  # Greater than playlist length
+        "-1",  # Negative
+        "abc",  # Non-integer
+        "1.5",  # Float string
+    ],
+)
+async def test_initialise_handler_playlist_with_invalid_start_index(start_index_value: str, mocker):
+    """Test that invalid start_index values return 400 Bad Request."""
+    # Arrange - create a playlist with 3 tests
+    run_request_0 = run_request(test_procedure_id=TestProcedureId.ALL_01, use_device_cert=False)
+    run_request_1 = run_request(test_procedure_id=TestProcedureId.ALL_01, use_device_cert=False)
+    run_request_2 = run_request(test_procedure_id=TestProcedureId.ALL_01, use_device_cert=False)
+
+    playlist_json = "[" + ",".join(rr.to_json() for rr in [run_request_0, run_request_1, run_request_2]) + "]"
+
+    mock_request = MagicMock()
+    mock_request.text = AsyncMock(return_value=playlist_json)
+    mock_request.raise_for_status = MagicMock()
+    mock_request.query.get = MagicMock(return_value=start_index_value)
+    mock_request.app[APPKEY_RUNNER_STATE].active_test_procedure = None
+    mock_request.app[APPKEY_RUNNER_STATE].client_interactions = []
+
+    # Act
+    raw_response = await handler.initialise_handler(request=mock_request)
+
+    # Assert - 400 Bad Request
+    assert isinstance(raw_response, Response)
+    assert raw_response.status == http.HTTPStatus.BAD_REQUEST
+    assert "start_index" in raw_response.text
 
 
 @pytest.mark.asyncio
@@ -204,6 +300,7 @@ async def test_new_init_handler_conflict_response_if_existing_active_test_proced
     mock_request = MagicMock()
     mock_request.text = AsyncMock(return_value=run_request(test_procedure_id=TestProcedureId.ALL_01).to_json())
     mock_request.raise_for_status = MagicMock()
+    mock_request.query.get = MagicMock(return_value=None)
 
     currently_running_test = "GEN-01"
     mock_request.app[APPKEY_RUNNER_STATE].active_test_procedure.name = currently_running_test
@@ -233,6 +330,7 @@ async def test_new_init_handler_conflict_response_if_certificate_clash(mocker):
     mock_request = MagicMock()
     mock_request.text = AsyncMock(return_value=run_request_both_certs.to_json())
     mock_request.raise_for_status = MagicMock()
+    mock_request.query.get = MagicMock(return_value=None)
     mock_request.app[APPKEY_RUNNER_STATE].active_test_procedure = None
     mock_request.app[APPKEY_RUNNER_STATE].client_interactions = []
 
@@ -255,6 +353,7 @@ async def test_new_init_handler_conflict_response_if_certificate_clash(mocker):
     mock_request = MagicMock()
     mock_request.text = AsyncMock(return_value=run_request_neither_cert.to_json())
     mock_request.raise_for_status = MagicMock()
+    mock_request.query.get = MagicMock(return_value=None)
     mock_request.app[APPKEY_RUNNER_STATE].active_test_procedure = None
     mock_request.app[APPKEY_RUNNER_STATE].client_interactions = []
 
@@ -277,6 +376,7 @@ async def test_new_init_handler_bad_request_invalid_test_procedure(mocker):
     mock_request = MagicMock()
     mock_request.text = AsyncMock(return_value=request.to_json())
     mock_request.raise_for_status = MagicMock()
+    mock_request.query.get = MagicMock(return_value=None)
     mock_request.app[APPKEY_RUNNER_STATE].active_test_procedure = None
     mock_request.app[APPKEY_RUNNER_STATE].client_interactions = []
 
@@ -301,6 +401,7 @@ async def test_new_init_handler_precondition_failed_response_if_preconditions_fa
     mock_request = MagicMock()
     mock_request.text = AsyncMock(return_value=run_request(test_procedure_id=test_procedure_id).to_json())
     mock_request.raise_for_status = MagicMock()
+    mock_request.query.get = MagicMock(return_value=None)
     mock_request.app[APPKEY_RUNNER_STATE].active_test_procedure = None
     mock_request.app[APPKEY_RUNNER_STATE].client_interactions = []
 
@@ -356,6 +457,7 @@ async def test_new_init_handler_immediate_start_failure(start_result: handler.St
     mock_request = MagicMock()
     mock_request.text = AsyncMock(return_value=run_request(test_procedure_id=test_procedure_id).to_json())
     mock_request.raise_for_status = MagicMock()
+    mock_request.query.get = MagicMock(return_value=None)
     mock_request.app[APPKEY_RUNNER_STATE].active_test_procedure = None
     mock_request.app[APPKEY_RUNNER_STATE].client_interactions = []
 
