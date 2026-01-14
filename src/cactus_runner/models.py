@@ -146,8 +146,8 @@ class RunnerState:
     )
 
     # Playlist support
-    playlist: list[RunRequest] | None = None  # Remaining tests to run (not including current)
-    playlist_index: int = 0  # Current position (0-based index into original playlist)
+    playlist: list[RunRequest] | None = None  # All tests in the playlist (full array)
+    playlist_index: int = 0  # Current position (0-based index into playlist)
     completed_playlist_items: list[PlaylistItem] = field(default_factory=list)  # Completed tests with ZIP paths
 
     @property

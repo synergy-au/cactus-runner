@@ -254,14 +254,23 @@ async def initialise_handler(request: web.Request) -> web.Response:  # noqa: C90
     If multiple run requests are provided, the first is set as active and the rest
     are added to the playlist queue for sequential execution.
 
+    Supports an optional `start_index` query parameter to skip to a specific test in the playlist.
+    Tests before start_index are not executed but the playlist_index reflects the position in the original playlist for
+    tracking purposes.
+
     Args:
         request: An aiohttp.web.Request instance, the body of the request should be a json encoded instance
         of 'RunRequest' or a list of 'RunRequest'.
+
+        Query parameters:
+        - start_index (optional): 0-based index to start execution from. Defaults to 0.
+          If start_index > 0, tests before that index are skipped.
 
     Returns:
         aiohttp.web.Response:
         201 (Created) The body contains a simple json message (status msg, test name and timestamp, is_started) or
         400 (Bad Request) if a RunRequest instance can't be instantiated from the json request body or
+        400 (Bad Request) if start_index is invalid (negative or >= playlist length) or
         409 (Conflict) if there is already a test procedure initialised or
         400 (Bad Request) if both aggregator and device certificates supplied for neither supplied or
         400 (Bad Request) if invalid test procedure definition supplied or
@@ -287,8 +296,23 @@ async def initialise_handler(request: web.Request) -> web.Response:  # noqa: C90
             status=http.HTTPStatus.BAD_REQUEST, text=f"Unable to parse JSON body to RunRequest instance {e}"
         )
 
-    # Process the first run request to set as active
-    run_request = run_requests[0]
+    # Parse optional start_index query parameter
+    start_index_str = request.query.get("start_index")
+    if start_index_str is not None:
+        try:
+            start_index = int(start_index_str)
+            if not (0 <= start_index < len(run_requests)):
+                raise ValueError()
+        except ValueError:
+            return web.Response(
+                status=http.HTTPStatus.BAD_REQUEST,
+                text=f"start_index must be a non-negative integer less than playlist length ({len(run_requests)})",
+            )
+    else:
+        start_index = 0
+
+    # Process the run request at start_index to set as active (skipping earlier tests)
+    run_request = run_requests[start_index]
 
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
     # We cannot initialise another test procedure if one is already active
@@ -388,14 +412,15 @@ async def initialise_handler(request: web.Request) -> web.Response:  # noqa: C90
 
     request.app[APPKEY_RUNNER_STATE].active_test_procedure = active_test_procedure
 
-    # Initialize the playlist with remaining run requests (if playlist)
+    # Initialize the playlist (keep full array for consistent indexing)
     if len(run_requests) > 1:
-        request.app[APPKEY_RUNNER_STATE].playlist = run_requests[1:]
-        request.app[APPKEY_RUNNER_STATE].playlist_index = 0
-        logger.info(f"Playlist initialized with {len(run_requests) - 1} additional test procedure(s)")
+        request.app[APPKEY_RUNNER_STATE].playlist = run_requests
+        request.app[APPKEY_RUNNER_STATE].playlist_index = start_index
+        remaining_count = len(run_requests) - start_index - 1
+        logger.info(f"Playlist initialized at index {start_index} with {remaining_count} remaining test procedure(s)")
     else:
         request.app[APPKEY_RUNNER_STATE].playlist = None
-        request.app[APPKEY_RUNNER_STATE].playlist_index = 0
+        request.app[APPKEY_RUNNER_STATE].playlist_index = start_index
 
     # if this test has "init_actions" - now is the time to fire them
     if active_test_procedure.definition.preconditions:
@@ -518,9 +543,10 @@ async def finalize_handler(request: web.Request) -> web.Response:
             finalize.save_playlist_zip(zip_contents, finalized_test_procedure_name, current_index)
 
             # Check if there are more tests in the playlist
-            if current_index < len(playlist):
-                next_run_request = playlist[current_index]
-                runner_state.playlist_index += 1
+            next_index = current_index + 1
+            if next_index < len(playlist):
+                next_run_request = playlist[next_index]
+                runner_state.playlist_index = next_index
 
                 try:
                     # Do a partial clear of the DB for the next test (preserves aggregator/certs)
