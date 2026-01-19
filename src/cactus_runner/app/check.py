@@ -67,9 +67,6 @@ class ParamsDERSettingsContents(pydantic.BaseModel):
     doe_modes_enabled: Annotated[
         bool | None, pydantic.Field(alias="doeModesEnabled"), SiteReadingTypeProperty("doe_modes_enabled")
     ] = None
-    vpp_modes_enabled: Annotated[
-        bool | None, pydantic.Field(alias="vppModesEnabled"), SiteReadingTypeProperty("vpp_modes_enabled")
-    ] = None
     doe_modes_enabled_set: Annotated[str | None, pydantic.Field(alias="doeModesEnabled_set")] = None
     doe_modes_enabled_unset: Annotated[str | None, pydantic.Field(alias="doeModesEnabled_unset")] = None
     modes_enabled_set: Annotated[str | None, pydantic.Field(alias="modesEnabled_set")] = None
@@ -90,7 +87,6 @@ class ParamsDERSettingsContents(pydantic.BaseModel):
         bool | None, pydantic.Field(alias="setMaxDischargeRateW"), SiteReadingTypeProperty("max_discharge_rate_w_value")
     ] = None
     set_max_wh: Annotated[bool | None, pydantic.Field(alias="setMaxWh"), SiteReadingTypeProperty("max_wh_value")] = None
-    set_min_wh: Annotated[bool | None, pydantic.Field(alias="setMinWh"), SiteReadingTypeProperty("min_wh_value")] = None
     set_min_pf_over_excited: Annotated[
         bool | None,
         pydantic.Field(alias="setMinPFOverExcited"),
@@ -101,8 +97,14 @@ class ParamsDERSettingsContents(pydantic.BaseModel):
         pydantic.Field(alias="setMinPFUnderExcited"),
         SiteReadingTypeProperty("min_pf_under_excited_displacement"),
     ] = None
+
+    # Placeholders for the storage extension
+    set_min_wh: Annotated[bool | None, pydantic.Field(alias="setMinWh"), SiteReadingTypeProperty("min_wh_value")] = None
     vpp_modes_enabled_set: Annotated[str | None, pydantic.Field(alias="vppModesEnabled_set")] = None
     vpp_modes_enabled_unset: Annotated[str | None, pydantic.Field(alias="vppModesEnabled_unset")] = None
+    vpp_modes_enabled: Annotated[
+        bool | None, pydantic.Field(alias="vppModesEnabled"), SiteReadingTypeProperty("vpp_modes_enabled")
+    ] = None
 
 
 class ParamsDERCapabilityContents(pydantic.BaseModel):
@@ -111,9 +113,6 @@ class ParamsDERCapabilityContents(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(alias_generator=pydantic.alias_generators.to_camel)
     doe_modes_supported: Annotated[
         bool | None, pydantic.Field(alias="doeModesSupported"), SiteReadingTypeProperty("doe_modes_supported")
-    ] = None
-    vpp_modes_supported: Annotated[
-        bool | None, pydantic.Field(alias="vppModesSupported"), SiteReadingTypeProperty("vpp_modes_supported")
     ] = None
     doe_modes_supported_set: Annotated[str | None, pydantic.Field(alias="doeModesSupported_set")] = None
     doe_modes_supported_unset: Annotated[str | None, pydantic.Field(alias="doeModesSupported_unset")] = None
@@ -144,8 +143,13 @@ class ParamsDERCapabilityContents(pydantic.BaseModel):
         pydantic.Field(alias="rtgMinPFUnderExcited"),
         SiteReadingTypeProperty("min_pf_under_excited_displacement"),
     ] = None
+
+    # Placeholders for the storage extension
     vpp_modes_supported_set: Annotated[str | None, pydantic.Field(alias="vppModesSupported_set")] = None
     vpp_modes_supported_unset: Annotated[str | None, pydantic.Field(alias="vppModesSupported_unset")] = None
+    vpp_modes_supported: Annotated[
+        bool | None, pydantic.Field(alias="vppModesSupported"), SiteReadingTypeProperty("vpp_modes_supported")
+    ] = None
 
 
 @dataclass
