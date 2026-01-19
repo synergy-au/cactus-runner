@@ -67,9 +67,6 @@ class ParamsDERSettingsContents(pydantic.BaseModel):
     doe_modes_enabled: Annotated[
         bool | None, pydantic.Field(alias="doeModesEnabled"), SiteReadingTypeProperty("doe_modes_enabled")
     ] = None
-    vpp_modes_enabled: Annotated[
-        bool | None, pydantic.Field(alias="vppModesEnabled"), SiteReadingTypeProperty("vpp_modes_enabled")
-    ] = None
     doe_modes_enabled_set: Annotated[str | None, pydantic.Field(alias="doeModesEnabled_set")] = None
     doe_modes_enabled_unset: Annotated[str | None, pydantic.Field(alias="doeModesEnabled_unset")] = None
     modes_enabled_set: Annotated[str | None, pydantic.Field(alias="modesEnabled_set")] = None
@@ -116,9 +113,6 @@ class ParamsDERCapabilityContents(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(alias_generator=pydantic.alias_generators.to_camel)
     doe_modes_supported: Annotated[
         bool | None, pydantic.Field(alias="doeModesSupported"), SiteReadingTypeProperty("doe_modes_supported")
-    ] = None
-    vpp_modes_supported: Annotated[
-        bool | None, pydantic.Field(alias="vppModesSupported"), SiteReadingTypeProperty("vpp_modes_supported")
     ] = None
     doe_modes_supported_set: Annotated[str | None, pydantic.Field(alias="doeModesSupported_set")] = None
     doe_modes_supported_unset: Annotated[str | None, pydantic.Field(alias="doeModesSupported_unset")] = None
