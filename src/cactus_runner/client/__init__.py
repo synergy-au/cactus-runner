@@ -1,3 +1,4 @@
+from dataclasses import asdict
 import logging
 
 from aiohttp import ClientResponse, ClientSession, ClientTimeout, ConnectionTimeoutError
@@ -52,9 +53,24 @@ async def ensure_success_response(response: ClientResponse) -> None:
 
 class RunnerClient:
     @staticmethod
-    async def initialise(session: ClientSession, run_request: RunRequest) -> InitResponseBody:
+    async def initialise(
+        session: ClientSession,
+        run_request: RunRequest | list[RunRequest],
+        start_index: int | None = None,
+    ) -> InitResponseBody:
+        """Initialize a test procedure or playlist.
+
+        Args:
+            session: The aiohttp client session
+            run_request: A single RunRequest or list of RunRequests (playlist)
+            start_index: Optional 0-based index to start execution. If provided, tests before this index are skipped.
+        """
         try:
-            async with session.post(url=uri.Initialise, data=run_request.to_json()) as response:
+            json_data = [asdict(rr) for rr in run_request] if isinstance(run_request, list) else asdict(run_request)
+            url = uri.Initialise
+            if start_index is not None:
+                url = f"{uri.Initialise}?start_index={start_index}"
+            async with session.post(url=url, json=json_data) as response:
                 await ensure_success_response(response)
                 response_json = await response.text()
                 init_response_body = InitResponseBody.from_json(response_json)
