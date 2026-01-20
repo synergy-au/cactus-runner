@@ -649,7 +649,7 @@ async def test_proxied_request_handler_before_request_trigger(pg_base_config, mo
     request.path = "/dcap"
     request.path_qs = "/dcap"
     request.method = "GET"
-    request.headers = {"accept": env.MEDIA_TYPE_HEADER}
+    request.headers = {"accept": env.HEADER_MEDIA_ALL}
     request.app[APPKEY_RUNNER_STATE].request_history = []
     mock_active_test_procedure = generate_class_instance(
         ActiveTestProcedure,
@@ -739,7 +739,7 @@ async def test_proxied_request_handler_after_request_trigger(pg_base_config, moc
     request.path = "/dcap"
     request.path_qs = "/dcap"
     request.method = "GET"
-    request.headers = {"accept": env.MEDIA_TYPE_HEADER}
+    request.headers = {"accept": env.HEADER_MEDIA_ALL}
     request.app[APPKEY_RUNNER_STATE].request_history = []
     mock_active_test_procedure = generate_class_instance(
         ActiveTestProcedure,
@@ -858,13 +858,20 @@ async def test_proxied_request_handler_logs_error_with_finished_test(mocker):
 
 
 @pytest.mark.parametrize(
-    "accept_header", ["application/sep+xml", "application/json", "application/xml", "application/csipaus.org"]
+    "accept_header",
+    [
+        "application/sep+xml",
+        "application/sep+xml;csipaus=bad",
+        "application/json",
+        "application/xml",
+        "application/csipaus.org",
+    ],
 )
 @pytest.mark.asyncio
 async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str) -> None:
-    """Test to ensure 406 returned on bad or missing header"""
+    """Test to ensure 406 returned on bad header"""
     request = MagicMock()
-    request.headers = {"accept": accept_header, "content-type": env.MEDIA_TYPE_HEADER}
+    request.headers = {"accept": accept_header, "content-type": env.HEADER_MEDIA_ALL}
     request.app[APPKEY_RUNNER_STATE].active_test_procedure = generate_class_instance(
         ActiveTestProcedure,
         communications_disabled=False,
@@ -882,20 +889,20 @@ async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str) 
     "accept_header,ct_header,req_method,expected",
     [
         (
-            "application/sep+xml;csipaus=1.3-beta_storage",
+            'application/sep+xml; CSIPAUS="1.3-beta_storage"',
             "application/sep+xml;csipaus=1.3-beta_storage",
             http.HTTPMethod.GET,
             [],
         ),
         (
-            "application/sep+xml;csipaus=1.3-beta_storage",
+            "application/sep+xml; csipaus=1.3-beta_storage",
             "",
             http.HTTPMethod.GET,
             [],
         ),
         (
-            "application/sep+xml;csipaus=1.3-beta_storage",
-            "application/sep+xml;csipaus=1.3-beta_storage",
+            'application/sep+xml;csipaus="1.3-beta_storage"',
+            "application/sep+xml; Csipaus=1.3-beta_storage",
             http.HTTPMethod.PUT,
             [],
         ),
@@ -906,26 +913,26 @@ async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str) 
             [],
         ),
         (
-            "application/sep+xml;csipaus=1.3-beta_storage",
-            "application/sep+xml;csipaus=1.3-beta_storage",
+            "application/sep+xml; csipaus=1.3-beta_storage",
+            'application/sep+xml;csipaus="1.3-beta_storage"',
             http.HTTPMethod.POST,
             [],
         ),
         (
             None,
-            "application/sep+xml;csipaus=1.3-beta_storage",
+            "application/sep+xml; csipaus=1.3-beta_storage",
             http.HTTPMethod.POST,
             [],
         ),
         (
             "application/sep+xml;csipaus=1.3-beta_storage",
-            "application/sep+xml;csipaus=1.3-beta_storage",
+            "application/sep+xml; csipaus=1.3-beta_storage",
             http.HTTPMethod.DELETE,
             [],
         ),
         (
             "",
-            "application/sep+xml;csipaus=1.3-beta_storage",
+            "application/sep+xml; csipaus=1.3-beta_storage",
             http.HTTPMethod.DELETE,
             [],
         ),
@@ -943,7 +950,7 @@ async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str) 
         ),
         # Even if there is no body for the request, reject it
         (
-            "application/sep+xml;csipaus=1.3-beta_storage",
+            "application/sep+xml; csipaus=1.3-beta_storage",
             "application/sep+xml",
             http.HTTPMethod.GET,
             [
@@ -951,7 +958,7 @@ async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str) 
                     http.HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                     (
                         f"Request header 'Content-Type: application/sep+xml' incorrect; "
-                        f"should be 'Content-Type: {env.MEDIA_TYPE_HEADER}'"
+                        f"should be 'Content-Type: {env.HEADER_MEDIA_ALL}'"
                     ),
                 )
             ],
@@ -966,7 +973,7 @@ async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str) 
                     http.HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                     (
                         f"Request header 'Content-Type: application/sep+xml' incorrect; "
-                        f"should be 'Content-Type: {env.MEDIA_TYPE_HEADER}'"
+                        f"should be 'Content-Type: {env.HEADER_MEDIA_ALL}'"
                     ),
                 )
             ],
@@ -974,14 +981,14 @@ async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str) 
         # Bad Accept
         (
             "application/sep+xml",
-            "application/sep+xml;csipaus=1.3-beta_storage",
+            "application/sep+xml; csipaus=1.3-beta_storage",
             http.HTTPMethod.GET,
             [
                 (
                     http.HTTPStatus.NOT_ACCEPTABLE,
                     (
                         f"Request header 'Accept: application/sep+xml' incorrect; "
-                        f"should be 'Accept: {env.MEDIA_TYPE_HEADER}'"
+                        f"should be 'Accept: {env.HEADER_MEDIA_ALL}'"
                     ),
                 )
             ],
@@ -994,7 +1001,7 @@ async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str) 
             [
                 (
                     http.HTTPStatus.BAD_REQUEST,
-                    f"Request header 'Accept' missing; should be 'Accept: {env.MEDIA_TYPE_HEADER}",
+                    f"Request header 'Accept' missing; should be 'Accept: {env.HEADER_MEDIA_ALL}",
                 )
             ],
         ),
@@ -1006,7 +1013,7 @@ async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str) 
             [
                 (
                     http.HTTPStatus.BAD_REQUEST,
-                    f"Request header 'Content-Type' missing; should be 'Content-Type: {env.MEDIA_TYPE_HEADER}",
+                    f"Request header 'Content-Type' missing; should be 'Content-Type: {env.HEADER_MEDIA_ALL}",
                 )
             ],
         ),
@@ -1018,7 +1025,7 @@ async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str) 
             [
                 (
                     http.HTTPStatus.BAD_REQUEST,
-                    f"Request header 'Content-Type' missing; should be 'Content-Type: {env.MEDIA_TYPE_HEADER}",
+                    f"Request header 'Content-Type' missing; should be 'Content-Type: {env.HEADER_MEDIA_ALL}",
                 )
             ],
         ),
@@ -1032,14 +1039,14 @@ async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str) 
                     http.HTTPStatus.NOT_ACCEPTABLE,
                     (
                         f"Request header 'Accept: application/sep+xml' incorrect; "
-                        f"should be 'Accept: {env.MEDIA_TYPE_HEADER}'"
+                        f"should be 'Accept: {env.HEADER_MEDIA_ALL}'"
                     ),
                 ),
                 (
                     http.HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                     (
                         f"Request header 'Content-Type: application/sep+xml' incorrect; "
-                        f"should be 'Content-Type: {env.MEDIA_TYPE_HEADER}'"
+                        f"should be 'Content-Type: {env.HEADER_MEDIA_ALL}'"
                     ),
                 ),
             ],

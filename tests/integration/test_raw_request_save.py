@@ -35,7 +35,7 @@ async def test_request_data_retrieval_endpoints(
 
     # Post Mirror Usage Point and readings
     xml_data_dir = Path(__file__).parent.parent / "data" / "xml"
-    xml_headers = {**headers, "Content-Type": env.MEDIA_TYPE_HEADER}
+    xml_headers = {**headers, "Content-Type": env.HEADER_MEDIA_ALL}
 
     result = await cactus_runner_client.post(
         "/mup", data=(xml_data_dir / "mup.xml").read_text().strip(), headers=xml_headers
