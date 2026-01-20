@@ -68,13 +68,13 @@ async def test_all_01_with_readings(
     # Register the device (required for aggregator certificate)
     if certificate_type == "aggregator_certificate":
         result = await cactus_runner_client.post(
-            "/edev", data=edev_xml, headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.MEDIA_TYPE_HEADER}
+            "/edev", data=edev_xml, headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.HEADER_MEDIA_ALL}
         )
         await assert_success_response(result)
 
     # Post Mirror Usage Point
     result = await cactus_runner_client.post(
-        "/mup", data=mup_xml, headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.MEDIA_TYPE_HEADER}
+        "/mup", data=mup_xml, headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.HEADER_MEDIA_ALL}
     )
     location = result.headers.get("Location")
     mup_id = location.split("/")[-1]
@@ -84,7 +84,7 @@ async def test_all_01_with_readings(
     result: ClientResponse = await cactus_runner_client.post(
         f"/mup/{mup_id}",
         data=mmr_xml,
-        headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.MEDIA_TYPE_HEADER},
+        headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.HEADER_MEDIA_ALL},
     )
     await assert_success_response(result)
 

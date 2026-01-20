@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from itertools import groupby
 from typing import cast
+from email import message
+from email import policy
 
 from aiohttp import ContentTypeError, web
 from cactus_schema.runner import (
@@ -27,7 +29,10 @@ from cactus_runner.app.env import (
     DEV_SKIP_AUTHORIZATION_CHECK,
     MOUNT_POINT,
     SERVER_URL,
-    MEDIA_TYPE_HEADER,
+    HEADER_MEDIA_TYPE,
+    HEADER_MEDIA_PARAM_NAME,
+    HEADER_MEDIA_PARAM_VALUE,
+    HEADER_MEDIA_ALL,
 )
 
 from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
@@ -694,6 +699,43 @@ async def list_request_ids_handler(request: web.Request) -> web.Response:
     return web.Response(status=http.HTTPStatus.OK, content_type="application/json", text=request_list.to_json())
 
 
+def parse_media_type_header(raw_value: str) -> tuple[str, dict]:
+    """Parse a Content-Type-like field value into a normalized (type/subtype, params) pair.
+
+    Args:
+        raw_value: raw Content-Type header
+
+    Returns:
+        (type/subtype, params) where
+        - type/subtype -> lowercased
+        - parameter names -> lowercased
+        - parameter values -> unquoted if quoted
+    """
+    msg = message.Message(policy=policy.default)
+    # Reassign arg to Content-Type field
+    msg["Content-Type"] = raw_value or ""
+
+    # Message api normalizes the media type to lowercase
+    ctype = msg.get_content_type()
+
+    # Returning the param pairs from the supplied
+    params = dict()
+    for k, v in (msg.get_params() or [])[1:]:
+        params[(k or "").lower()] = v
+
+    return ctype.lower(), params
+
+
+def media_type_header_check(raw_value: str) -> bool:
+    """Performs checking on an individually supplied media type header e.g. content-type or accept."""
+    ctype, params = parse_media_type_header(raw_value)
+    if ctype != HEADER_MEDIA_TYPE:
+        return False
+
+    # Here the parameter value is case sensitive.
+    return params.get(HEADER_MEDIA_PARAM_NAME.lower()) == HEADER_MEDIA_PARAM_VALUE
+
+
 async def media_headers_check(request: web.Request) -> list[tuple[http.HTTPStatus, str]]:
     """Performs media type checks.
 
@@ -721,22 +763,25 @@ async def media_headers_check(request: web.Request) -> list[tuple[http.HTTPStatu
     results = []
 
     if not accept and request.method in ["GET"]:
-        msg = f"Request header 'Accept' missing; should be 'Accept: {MEDIA_TYPE_HEADER}"
+        msg = f"Request header 'Accept' missing; should be 'Accept: {HEADER_MEDIA_ALL}"
         logger.error(msg)
         results.append((http.HTTPStatus.BAD_REQUEST, msg))
-    if accept and accept != MEDIA_TYPE_HEADER:
-        msg = f"Request header 'Accept: {accept_sanitized}' incorrect; should be 'Accept: {MEDIA_TYPE_HEADER}'"
+
+    if not content_type and request.method in ["POST", "PUT"]:
+        msg = f"Request header 'Content-Type' missing; should be 'Content-Type: {HEADER_MEDIA_ALL}"
+        logger.error(msg)
+        results.append((http.HTTPStatus.BAD_REQUEST, msg))
+
+    if accept and not media_type_header_check(accept):
+        msg = f"Request header 'Accept: {accept_sanitized}' incorrect; should be 'Accept: {HEADER_MEDIA_ALL}'"
         logger.error(msg)
         results.append((http.HTTPStatus.NOT_ACCEPTABLE, msg))
-    if not content_type and request.method in ["POST", "PUT"]:
-        msg = f"Request header 'Content-Type' missing; should be 'Content-Type: {MEDIA_TYPE_HEADER}"
-        logger.error(msg)
-        results.append((http.HTTPStatus.BAD_REQUEST, msg))
-    if content_type and content_type != MEDIA_TYPE_HEADER:
+
+    if content_type and not media_type_header_check(content_type):
         # Even if Content-Type didn't need to be provided and was then it should match the required media type
         msg = (
             f"Request header 'Content-Type: {content_type_sanitized}' incorrect; "
-            f"should be 'Content-Type: {MEDIA_TYPE_HEADER}'"
+            f"should be 'Content-Type: {HEADER_MEDIA_ALL}'"
         )
         logger.error(msg)
         results.append((http.HTTPStatus.UNSUPPORTED_MEDIA_TYPE, msg))

@@ -29,4 +29,8 @@ DEV_SKIP_AUTHORIZATION_CHECK = os.getenv("DEV_SKIP_AUTHORIZATION_CHECK", "false"
 CERT_HEADER = os.getenv("CERT_HEADER", "ssl-client-cert")
 
 # Storage extension media type header, values only allowed when an `accept` or `content-type` header is provided.
-MEDIA_TYPE_HEADER = os.getenv("MEDIA_TYPE_HEADER", "application/sep+xml;csipaus=1.3-beta_storage")
+HEADER_MEDIA_TYPE = os.getenv("HEADER_MEDIA_TYPE", "application/sep+xml")
+HEADER_MEDIA_PARAM_NAME = os.getenv("HEADER_MEDIA_PARAM_NAME", "csipaus")
+HEADER_MEDIA_PARAM_VALUE = os.getenv("HEADER_MEDIA_PARAM_VALUE", "1.3-beta_storage")
+
+HEADER_MEDIA_ALL = f"{HEADER_MEDIA_TYPE}; {HEADER_MEDIA_PARAM_NAME}={HEADER_MEDIA_PARAM_VALUE}"

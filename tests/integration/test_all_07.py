@@ -48,7 +48,7 @@ async def test_all_07_full(cactus_runner_client: TestClient, run_request_generat
     now = int(datetime.now().timestamp())
     result = await cactus_runner_client.post(
         "/edev",
-        headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.MEDIA_TYPE_HEADER},
+        headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.HEADER_MEDIA_ALL},
         data=EndDeviceRequest(
             lFDI="854d10a201ca99e5e90d3c3e1f9bc1c3bd075f3b", sFDI=357827241281, changedTime=1766110684
         ).to_xml(skip_empty=True, exclude_none=True),
@@ -57,7 +57,7 @@ async def test_all_07_full(cactus_runner_client: TestClient, run_request_generat
 
     result = await cactus_runner_client.post(
         "/edev/1/der/1/ders",
-        headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.MEDIA_TYPE_HEADER},
+        headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.HEADER_MEDIA_ALL},
         data=DERStatus(
             genConnectStatus=ConnectStatusTypeValue(dateTime=now, value="01"),
             readingTime=now,
@@ -76,7 +76,7 @@ async def test_all_07_full(cactus_runner_client: TestClient, run_request_generat
     now = int(datetime.now().timestamp())
     result = await cactus_runner_client.put(
         "/edev/1/der/1/ders",
-        headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.MEDIA_TYPE_HEADER},
+        headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.HEADER_MEDIA_ALL},
         data=DERStatus(
             genConnectStatus=ConnectStatusTypeValue(dateTime=now, value="00"),
             readingTime=now,
@@ -87,7 +87,7 @@ async def test_all_07_full(cactus_runner_client: TestClient, run_request_generat
     now = int(datetime.now().timestamp())
     result = await cactus_runner_client.put(
         "/edev/1/der/1/ders",
-        headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.MEDIA_TYPE_HEADER},
+        headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.HEADER_MEDIA_ALL},
         data=DERStatus(
             genConnectStatus=ConnectStatusTypeValue(dateTime=now, value="01"),
             readingTime=now,
