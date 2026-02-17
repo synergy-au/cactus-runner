@@ -165,7 +165,7 @@ def test_validate_proxy_request_schema_empty_body():
 def test_validate_proxy_request_schema_encoding(encoding: str, xml_declaration: str | None, should_pass: bool):
     """Tests that various encodings are handled correctly by lxml's encoding detection"""
 
-    valid_cp_xml = """<ConnectionPoint xmlns="https://csipaus.org/ns">
+    valid_cp_xml = """<ConnectionPoint xmlns="https://csipaus.org/ns/v1.3-beta/storage">
         <connectionPointId>1234567890</connectionPointId>
     </ConnectionPoint>"""
 
