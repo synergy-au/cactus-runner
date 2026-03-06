@@ -9,6 +9,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
+import pandas as pd
+from envoy.server.model.archive.site import ArchiveSiteDERSetting
+from envoy.server.model.site import SiteDERSetting
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cactus_runner.app import check, reporting, timeline
@@ -32,9 +36,21 @@ from cactus_runner.app.readings import (
 )
 from cactus_runner.app.requests_archive import copy_request_response_files_to_archive
 from cactus_runner.app.status import get_active_runner_status
-from cactus_runner.models import RunnerState
+from cactus_runner.models import (
+    CheckResult,
+    PackedReadings,
+    ReadingType,
+    ReportingData,
+    RunnerState,
+    Site,
+)
+
+# Cactus runner supports returning different versions of the reporting data
+# Define the currently preferred reporting data version
+CURRENT_REPORTING_DATA_VERSION: int = 1
 
 GENERATION_ERRORS_FILE_NAME = "generation-errors.txt"
+
 
 logger = logging.getLogger(__name__)
 
@@ -63,10 +79,12 @@ def get_file_name_no_extension(file_path: str) -> str:
 
 def get_zip_contents(
     json_status_summary: str | None,
+    json_reporting_data: str | None,
     log_file_paths: list[str],
     pdf_data: bytes | None,
     errors: list[str],
     filename_infix: str = "",
+    reporting_data_filename_prefix: str | None = "ReportingData",
 ) -> bytes:
     """Returns the contents of the zipped test procedures artifacts in bytes."""
 
@@ -85,6 +103,12 @@ def get_zip_contents(
             file_path = archive_dir / f"CactusTestProcedureSummary{filename_infix}.json"
             with open(file_path, "w") as f:
                 f.write(json_status_summary)
+
+        # Create reporting data json file
+        if json_reporting_data is not None and reporting_data_filename_prefix is not None:
+            file_path = archive_dir / f"{reporting_data_filename_prefix}{filename_infix}.json"
+            with open(file_path, "w") as f:
+                f.write(json_reporting_data)
 
         # Copy all log files into the archive - preserving the names
         for log_file_path in log_file_paths:
@@ -177,6 +201,7 @@ async def generate_pdf(
     sites,
     timeline,
     errors,
+    set_max_w_varied: bool = False,
 ) -> bytes | None:
     try:
         # Generate the pdf (as bytes)
@@ -187,6 +212,7 @@ async def generate_pdf(
             reading_counts=reading_counts,
             sites=sites,
             timeline=timeline,
+            set_max_w_varied=set_max_w_varied,
         )
     except Exception as exc:
         logger.error("Error generating PDF report.", exc_info=exc)
@@ -206,6 +232,7 @@ async def generate_pdf(
                 sites=sites,
                 timeline=timeline,
                 no_spacers=True,
+                set_max_w_varied=set_max_w_varied,
             )
         except Exception as exc:
             logger.error("Error generating PDF report without Spacers. Omitting report from final zip.", exc_info=exc)
@@ -213,6 +240,44 @@ async def generate_pdf(
             pdf_data = None
 
     return pdf_data
+
+
+async def generate_json_reporting_data(
+    runner_state: RunnerState,
+    check_results: dict[str, CheckResult],
+    readings: dict[ReadingType, pd.DataFrame],
+    reading_counts: dict[ReadingType, int],
+    sites: list[Site],
+    timeline: timeline.Timeline | None,
+    errors,
+    version: int = 1,
+    set_max_w_varied: bool = False,
+) -> str | None:
+    created_at = datetime.now(timezone.utc)
+
+    try:
+        # Repack readings into something serializable
+        packed_readings = [
+            PackedReadings(reading_type=k, readings_as_json=readings[k].to_json(), reading_counts=v)
+            for k, v in reading_counts.items()
+        ]
+
+        reporting_data = ReportingData.v(version)(
+            created_at=created_at,
+            runner_state=runner_state,
+            check_results=check_results,
+            readings=packed_readings,
+            sites=sites,
+            timeline=timeline,
+            set_max_w_varied=set_max_w_varied,
+        )
+        json_reporting_data = reporting_data.to_json()
+    except Exception as exc:
+        logger.error("Error generating reporting data. Omitting reporting data from final zip.", exc_info=exc)
+        errors.append(f"Error generating reporting data: {exc}")
+        json_reporting_data = None
+
+    return json_reporting_data
 
 
 async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -> bytes:
@@ -271,11 +336,11 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
     # Add a "virtual" check covering XSD errors in incoming requests
     xsd_error_counts = [len(rh.body_xml_errors) for rh in runner_state.request_history if rh.body_xml_errors]
     if xsd_error_counts:
-        xsd_check = check.CheckResult(
+        xsd_check = CheckResult(
             False, f"Detected {sum(xsd_error_counts)} xsd errors over {len(xsd_error_counts)} request(s)."
         )
     else:
-        xsd_check = check.CheckResult(True, "No XSD errors detected in any requests.")
+        xsd_check = CheckResult(True, "No XSD errors detected in any requests.")
     check_results["all-requests-xsd-valid"] = xsd_check
 
     # Figure out the testing timeline
@@ -293,11 +358,25 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
             errors.append(f"Failed to generate test timeline: {exc}")
             test_timeline = None
 
-    # Fetch raw DB data and create PDF
+        # Fetch raw DB data and create PDF
     try:
         sites = await get_sites(session)
         readings = await get_readings(session, reading_specifiers=MANDATORY_READING_SPECIFIERS)
         reading_counts = await get_reading_counts_grouped_by_reading_type(session)
+
+        # Check if setMaxW was varied during the test - any archive entry with a different max_w_value
+        # than the current SiteDERSetting for the same site_der_id means it changed
+        set_max_w_varied = (
+            await session.execute(
+                select(ArchiveSiteDERSetting.site_der_id)
+                .join(
+                    SiteDERSetting,
+                    (SiteDERSetting.site_der_id == ArchiveSiteDERSetting.site_der_id)  # Same DER
+                    & (SiteDERSetting.max_w_value != ArchiveSiteDERSetting.max_w_value),  # Same setmaxw
+                )
+                .limit(1)
+            )
+        ).scalar() is not None
 
         pdf_data = await generate_pdf(
             runner_state=runner_state,
@@ -307,16 +386,40 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
             sites=sites,
             timeline=test_timeline,
             errors=errors,
+            set_max_w_varied=set_max_w_varied,
         )
+
+        # Convert to serialisable types
+        serializable_readings = {ReadingType.from_site_reading_type(k): v for k, v in readings.items()}
+        serializable_reading_counts = {ReadingType.from_site_reading_type(k): v for k, v in reading_counts.items()}
+        serializable_sites = [Site.from_site(s) for s in sites]
+
+        # Collect reporting state into json object
+        reporting_data_version = CURRENT_REPORTING_DATA_VERSION
+        json_reporting_data = await generate_json_reporting_data(
+            runner_state=runner_state,
+            check_results=check_results,
+            readings=serializable_readings,
+            reading_counts=serializable_reading_counts,
+            sites=serializable_sites,
+            timeline=test_timeline,
+            errors=errors,
+            version=reporting_data_version,
+            set_max_w_varied=set_max_w_varied,
+        )
+        reporting_data_filename_prefix = f"ReportingData_v{reporting_data_version}"
     except Exception as exc:
         logger.error("Failed to generate PDF report", exc_info=exc)
         errors.append(f"Failed to generate PDF report: {exc}")
         pdf_data = None
+        json_reporting_data = None
+        reporting_data_filename_prefix = None
 
     generation_timestamp = now.replace(microsecond=0)
 
     active_test_procedure.finished_zip_data = get_zip_contents(
         json_status_summary=json_status_summary,
+        json_reporting_data=json_reporting_data,
         log_file_paths=[
             LOG_FILE_ENVOY_SERVER,
             LOG_FILE_ENVOY_ADMIN,
@@ -325,6 +428,7 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
         ],
         pdf_data=pdf_data,
         filename_infix=f"_{int(generation_timestamp.timestamp())}_{active_test_procedure.name}",
+        reporting_data_filename_prefix=reporting_data_filename_prefix,
         errors=errors,
     )
     return active_test_procedure.finished_zip_data

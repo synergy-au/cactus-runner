@@ -48,7 +48,6 @@ from sqlalchemy import select
 
 from cactus_runner.app import evaluator
 from cactus_runner.app.check import (
-    CheckResult,
     FailedCheckError,
     ParamsDERCapabilityContents,
     ParamsDERSettingsContents,
@@ -81,7 +80,12 @@ from cactus_runner.app.check import (
     timestamp_on_minute_boundary,
 )
 from cactus_runner.app.envoy_common import ReadingLocation
-from cactus_runner.models import ActiveTestProcedure, Listener, ResourceAnnotations
+from cactus_runner.models import (
+    ActiveTestProcedure,
+    CheckResult,
+    Listener,
+    ResourceAnnotations,
+)
 
 # This is a list of every check type paired with the handler function. This must be kept in sync with
 # the checks defined in cactus test definitions (via CHECK_PARAMETER_SCHEMA). This sync will be enforced
@@ -100,6 +104,7 @@ CHECK_TYPE_TO_HANDLER: dict[str, str] = {
     "subscription-contents": "check_subscription_contents",
     "response-contents": "check_response_contents",
     "readings-der-stored-energy": "check_readings_der_stored_energy",
+    "all-polls-at-correct-time": "check_all_polls_at_correct_time",
 }
 
 
