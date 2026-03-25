@@ -1,4 +1,4 @@
-import io
+import dataclasses
 import logging
 import os
 import shutil
@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import cast
 
 import pandas as pd
+from cactus_schema.runner.schema import RequestEntry
 from envoy.server.model.archive.site import ArchiveSiteDERSetting
 from envoy.server.model.site import SiteDERSetting
 from sqlalchemy import select
@@ -20,6 +21,7 @@ from cactus_runner.app.database import (
     DatabaseNotInitialisedError,
     get_postgres_dsn,
 )
+from cactus_runner.app.env import MAX_LOG_FILE_BYTES, MAX_REQUEST_PAIRS
 from cactus_runner.app.envoy_common import (
     get_reading_counts_grouped_by_reading_type,
     get_sites,
@@ -63,6 +65,18 @@ class NoActiveTestProcedure(Exception):
     pass
 
 
+def _cap_request_history(request_history: list[RequestEntry]) -> list[RequestEntry]:
+    """Keeps the last MAX_REQUEST_PAIRS entries so the JSON stays consistent with what
+    is retained on disk.
+    """
+    if len(request_history) <= MAX_REQUEST_PAIRS:
+        return request_history
+    logger.warning(
+        f"request_history has {len(request_history)} entries; keeping last {MAX_REQUEST_PAIRS} for serialization."
+    )
+    return request_history[-MAX_REQUEST_PAIRS:]
+
+
 def get_file_name_no_extension(file_path: str) -> str:
     """Simple utility for parsing a file path, extracting the file name and removing the last extension (if any).
 
@@ -77,7 +91,8 @@ def get_file_name_no_extension(file_path: str) -> str:
         return ".".join(dot_parts[:-1])
 
 
-def get_zip_contents(
+def write_zip_to_file(
+    output_path: Path,
     json_status_summary: str | None,
     json_reporting_data: str | None,
     log_file_paths: list[str],
@@ -85,18 +100,13 @@ def get_zip_contents(
     errors: list[str],
     filename_infix: str = "",
     reporting_data_filename_prefix: str | None = "ReportingData",
-) -> bytes:
-    """Returns the contents of the zipped test procedures artifacts in bytes."""
+) -> None:
+    """Writes the zipped test procedure artifacts to output_path."""
 
     writeable_errors = errors.copy()
 
-    # Work in a temporary directory
     with tempfile.TemporaryDirectory() as tempdirname:
-        base_path = Path(tempdirname)
-
-        # All the test procedure artifacts should be placed in `archive_dir` to be archived
-        archive_dir = base_path / "archive"
-        os.mkdir(archive_dir)
+        archive_dir = Path(tempdirname)
 
         # Create test summary json file
         if json_status_summary is not None:
@@ -110,12 +120,22 @@ def get_zip_contents(
             with open(file_path, "w") as f:
                 f.write(json_reporting_data)
 
-        # Copy all log files into the archive - preserving the names
+        # Copy log files into the archive (use tail if larger than MAX_LOG_FILE_BYTES)
         for log_file_path in log_file_paths:
             log_file_name = get_file_name_no_extension(log_file_path)
             destination = archive_dir / f"{log_file_name}{filename_infix}.log"  # We are assuming .jsonl
             try:
-                shutil.copyfile(log_file_path, destination)
+                file_size = os.path.getsize(log_file_path)
+                if file_size <= MAX_LOG_FILE_BYTES:
+                    shutil.copyfile(log_file_path, destination)
+                else:
+                    logger.warning(
+                        f"Log file {log_file_path} is {file_size} bytes; "
+                        f"truncating to last {MAX_LOG_FILE_BYTES} bytes in archive."
+                    )
+                    with open(log_file_path, "rb") as src, open(destination, "wb") as dst:
+                        src.seek(file_size - MAX_LOG_FILE_BYTES)
+                        shutil.copyfileobj(src, dst)
             except Exception as exc:
                 logger.error(f"Unable to copy {log_file_path} to {destination}", exc_info=exc)
                 writeable_errors.append(f"Error fetching cactus logs for {log_file_path}: {exc}")
@@ -144,6 +164,7 @@ def get_zip_contents(
             dump_file,
             "--data-only",
             "--inserts",
+            "--column-inserts",
             "--no-password",
         ]
         try:
@@ -161,36 +182,26 @@ def get_zip_contents(
             with open(file_path, "w") as f:
                 f.write("\n".join(writeable_errors))
 
-        # Create the temporary zip file
-        ARCHIVE_BASEFILENAME = "finalize"
-        ARCHIVE_KIND = "zip"
-        shutil.make_archive(str(base_path / ARCHIVE_BASEFILENAME), ARCHIVE_KIND, archive_dir)
-
-        # Read the zip file contents as binary
-        archive_path = base_path / f"{ARCHIVE_BASEFILENAME}.{ARCHIVE_KIND}"
-        with open(archive_path, mode="rb") as f:
-            zip_contents = f.read()
-    return zip_contents
+        shutil.make_archive(str(output_path.with_suffix("")), "zip", archive_dir)
 
 
-def safely_get_error_zip(errors: list[str]) -> bytes:
-    """Generates a ZIP file containing a single text file with the specified errors being encoded. Use this as a
-    last result failover if unable to generate the output data.
+def safely_write_error_zip(errors: list[str]) -> Path:
+    """Writes a ZIP file containing a single text file with the specified errors to a temporary path and returns it.
+    Use this as a last result failover if unable to generate the output data.
 
-    In the event that this fails - no exception will be raised - instead a plaintext error message will encode"""
+    In the event that this fails - no exception will be raised - instead a plaintext error message will be written"""
+    fd, path_str = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    dest_path = Path(path_str)
     try:
-        zip_buffer = io.BytesIO()
-
-        # Create a new zip file in write mode
-        with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+        with zipfile.ZipFile(dest_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zip_file:
             zip_file.writestr("errors.txt", "\n".join(errors))
-
-        return zip_buffer.getvalue()
     except Exception as exc:
-        # What else can we do here? It'd still be good to have a "corrupt" ZIP file that can be passed back to us
-        # for analysis
         logger.error("Failure to safely generate an error zip.", exc_info=exc)
-        return f"Complete failure to generate output zip with data {errors}\nException to follow\n{exc}".encode()
+        dest_path.write_bytes(
+            f"Complete failure to generate output zip with data {errors}\nException to follow\n{exc}".encode()
+        )
+    return dest_path
 
 
 async def generate_pdf(
@@ -258,7 +269,9 @@ async def generate_json_reporting_data(
     try:
         # Repack readings into something serializable
         packed_readings = [
-            PackedReadings(reading_type=k, readings_as_json=readings[k].to_json(), reading_counts=v)
+            PackedReadings(
+                reading_type=k, readings_as_json=readings[k].to_json() if k in readings else None, reading_counts=v
+            )
             for k, v in reading_counts.items()
         ]
 
@@ -280,13 +293,14 @@ async def generate_json_reporting_data(
     return json_reporting_data
 
 
-async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -> bytes:
-    """For the specified RunnerState - move the active test into a "Finished" state by calculating the final ZIP
-    contents. Raises NoActiveTestProcedure if there isn't an active test procedure for the specified RunnerState
+async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -> Path:
+    """For the specified RunnerState - move the active test into a "Finished" state by writing the final ZIP
+    to a temporary file. Raises NoActiveTestProcedure if there isn't an active test procedure for the specified
+    RunnerState
 
-    If the active test is already finished - this will have no effect and will return the cached finished_zip_data
+    If the active test is already finished - this will have no effect and will return the cached finished_zip_path
 
-    Populates and then returns the finished_zip_data for the active test procedure"""
+    Populates and then returns the finished_zip_path for the active test procedure"""
 
     now = datetime.now(timezone.utc)
     errors: list[str] = []  # For capturing basic error information to encode in the zip to alert about missing content
@@ -299,9 +313,11 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
         logger.info(
             f"finish_active_test_procedure: active test procedure {active_test_procedure.name} is already finished"
         )
-        return cast(bytes, active_test_procedure.finished_zip_data)  # The is_finished() check guarantees it's not None
+        return cast(Path, active_test_procedure.finished_zip_path)  # The is_finished() check guarantees it's not None
 
     logger.info(f"finish_active_test_procedure: '{active_test_procedure.name}' will be finished")
+
+    capped_request_history = _cap_request_history(runner_state.request_history)
 
     # Collect status summary
     try:
@@ -309,7 +325,7 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
             await get_active_runner_status(
                 session=session,
                 active_test_procedure=active_test_procedure,
-                request_history=runner_state.request_history,
+                request_history=capped_request_history,
                 last_client_interaction=runner_state.last_client_interaction,
             )
         ).to_json()
@@ -378,8 +394,10 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
             )
         ).scalar() is not None
 
+        capped_runner_state = dataclasses.replace(runner_state, request_history=capped_request_history)
+
         pdf_data = await generate_pdf(
-            runner_state=runner_state,
+            runner_state=capped_runner_state,
             check_results=check_results,
             readings=readings,
             reading_counts=reading_counts,
@@ -397,7 +415,7 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
         # Collect reporting state into json object
         reporting_data_version = CURRENT_REPORTING_DATA_VERSION
         json_reporting_data = await generate_json_reporting_data(
-            runner_state=runner_state,
+            runner_state=capped_runner_state,
             check_results=check_results,
             readings=serializable_readings,
             reading_counts=serializable_reading_counts,
@@ -417,7 +435,12 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
 
     generation_timestamp = now.replace(microsecond=0)
 
-    active_test_procedure.finished_zip_data = get_zip_contents(
+    fd, zip_path_str = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    zip_path = Path(zip_path_str)
+
+    write_zip_to_file(
+        output_path=zip_path,
         json_status_summary=json_status_summary,
         json_reporting_data=json_reporting_data,
         log_file_paths=[
@@ -431,4 +454,5 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
         reporting_data_filename_prefix=reporting_data_filename_prefix,
         errors=errors,
     )
-    return active_test_procedure.finished_zip_data
+    active_test_procedure.finished_zip_path = zip_path
+    return zip_path

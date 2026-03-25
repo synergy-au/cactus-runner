@@ -28,6 +28,13 @@ DEV_SKIP_AUTHORIZATION_CHECK = os.getenv("DEV_SKIP_AUTHORIZATION_CHECK", "false"
 # Request header to perform certificate verifications against
 CERT_HEADER = os.getenv("CERT_HEADER", "ssl-client-cert")
 
+# Maximum number of request/response pairs kept on disk at any one time (rolling window)
+MAX_REQUEST_PAIRS = int(os.getenv("MAX_REQUEST_PAIRS", "5000"))
+
+# Maximum bytes copied from each log file into the ZIP archive (tail of file).
+# Default 32 MB. Prevents huge log files from bloating the archive on long tests.
+MAX_LOG_FILE_BYTES = int(os.getenv("MAX_LOG_FILE_BYTES", str(32 * 1024 * 1024)))
+
 # Storage extension media type header, values only allowed when an `accept` or `content-type` header is provided.
 HEADER_MEDIA_TYPE = os.getenv("HEADER_MEDIA_TYPE", "application/sep+xml")
 HEADER_MEDIA_PARAM_NAME = os.getenv("HEADER_MEDIA_PARAM_NAME", "csipaus")

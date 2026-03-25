@@ -137,7 +137,7 @@ def generate_active_test_procedure_steps(active_steps: list[str], all_steps: lis
     test_procedure = generate_class_instance(TestProcedure, steps=steps)
 
     return generate_class_instance(
-        ActiveTestProcedure, step_status={}, definition=test_procedure, listeners=listeners, finished_zip_data=None
+        ActiveTestProcedure, step_status={}, definition=test_procedure, listeners=listeners, finished_zip_path=None
     )
 
 
@@ -220,7 +220,7 @@ async def test_check_end_device_contents_connection_point(
         client_certificate_type="Device",
         client_lfdi="",
         step_status={},
-        finished_zip_data=None,
+        finished_zip_path=None,
     )
     mock_get_active_site.return_value = active_site
     mock_session = create_mock_session()
@@ -262,7 +262,7 @@ async def test_check_end_device_contents_device_category(
         client_certificate_type="Device",
         client_lfdi="",
         step_status={},
-        finished_zip_data=None,
+        finished_zip_path=None,
     )
 
     mock_get_active_site.return_value = active_site
@@ -286,7 +286,7 @@ async def test_check_end_device_contents_device_category(
                 pen=0,
                 client_certificate_type="Device",
                 step_status={},
-                finished_zip_data=None,
+                finished_zip_path=None,
             ),
             "abc123",
             123456,
@@ -301,7 +301,7 @@ async def test_check_end_device_contents_device_category(
                 client_lfdi="3e4f45ab31edfe5b67e343e5e4562e31984e23e5",
                 client_sfdi=167261211391,
                 step_status={},
-                finished_zip_data=None,
+                finished_zip_path=None,
             ),
             "3E4F45AB31EDFE5B67E343E5E4562E31984E23E5",
             167261211391,
@@ -314,7 +314,7 @@ async def test_check_end_device_contents_device_category(
                 pen=98492395,
                 client_certificate_type="Aggregator",
                 step_status={},
-                finished_zip_data=None,
+                finished_zip_path=None,
             ),
             "3E4F45AB31EDFE5B67E343E5E4562E3198492395",
             167261211391,
@@ -327,7 +327,7 @@ async def test_check_end_device_contents_device_category(
                 pen=int("984e23e5", 16),
                 client_certificate_type="Aggregator",
                 step_status={},
-                finished_zip_data=None,
+                finished_zip_path=None,
             ),
             "3E4F45AB31EDFE5B67e343E5E4562E31984E23E5",  # single lowercase e in the middle
             167261211391,
@@ -340,7 +340,7 @@ async def test_check_end_device_contents_device_category(
                 pen=int("984e23e5", 16),
                 client_certificate_type="Aggregator",
                 step_status={},
-                finished_zip_data=None,
+                finished_zip_path=None,
             ),
             "3E4F45AB31EDFE5B6XE343E5E4562E31984E23E5",
             167261211391,
@@ -353,7 +353,7 @@ async def test_check_end_device_contents_device_category(
                 pen=int("984e23e5", 16),
                 client_certificate_type="Aggregator",
                 step_status={},
-                finished_zip_data=None,
+                finished_zip_path=None,
             ),
             "3E4F45AB31EDFE5B67FE343E5E4562E31984E23E5",
             167261211391,
@@ -366,7 +366,7 @@ async def test_check_end_device_contents_device_category(
                 pen=123,
                 client_certificate_type="Aggregator",
                 step_status={},
-                finished_zip_data=None,
+                finished_zip_path=None,
             ),
             "3E4F45AB31EDFE5B67E343E5E4562E31984E23E5",
             167261211391,
@@ -379,7 +379,7 @@ async def test_check_end_device_contents_device_category(
                 pen=int("984e23e5", 16),
                 client_certificate_type="Aggregator",
                 step_status={},
-                finished_zip_data=None,
+                finished_zip_path=None,
             ),
             "3E4F45AB31EDFE5B67E343E5E4562E31984E23E5",
             1234,
@@ -2114,7 +2114,7 @@ async def test_do_check_reading_type_mrids_match_pen(
         ),
     ],
 )
-@mock.patch("cactus_runner.app.check.get_csip_aus_site_reading_types")
+@mock.patch("cactus_runner.app.check.get_csip_aus_site_reading_types_partitioned")
 @mock.patch("cactus_runner.app.check.do_check_readings_for_types")
 @mock.patch("cactus_runner.app.check.do_check_readings_on_minute_boundary")
 @mock.patch("cactus_runner.app.check.do_check_reading_type_mrids_match_pen")
@@ -2125,7 +2125,7 @@ async def test_do_check_site_readings_and_params(
     mock_do_check_reading_type_mrids_match_pen: mock.MagicMock,
     mock_do_check_readings_on_minute_boundary: mock.MagicMock,
     mock_do_check_readings_for_types: mock.MagicMock,
-    mock_get_csip_aus_site_reading_types: mock.MagicMock,
+    mock_get_csip_aus_site_reading_types_partitioned: mock.MagicMock,
     resolved_parameters: dict[str, Any],
     uom: UomType,
     reading_location: ReadingLocation,
@@ -2140,7 +2140,7 @@ async def test_do_check_site_readings_and_params(
     # Arrange
     mock_session = create_mock_session()
     expected_result = generate_class_instance(CheckResult)
-    mock_get_csip_aus_site_reading_types.return_value = site_reading_types
+    mock_get_csip_aus_site_reading_types_partitioned.return_value = (site_reading_types, [])
     mock_do_check_readings_for_types.return_value = expected_result
     mock_do_check_readings_on_minute_boundary.return_value = CheckResult(True, description=None)
     mock_do_check_reading_type_mrids_match_pen.return_value = CheckResult(True, description=None)
@@ -2153,7 +2153,9 @@ async def test_do_check_site_readings_and_params(
 
     # Assert
     assert_mock_session(mock_session)
-    mock_get_csip_aus_site_reading_types.assert_called_once_with(mock_session, uom, reading_location, kind, qualifier)
+    mock_get_csip_aus_site_reading_types_partitioned.assert_called_once_with(
+        mock_session, uom, reading_location, kind, qualifier
+    )
 
     # If we have 0 SiteReadingTypes - instant failure, no need to run the reading checks
     if len(site_reading_types) != 0:
@@ -2165,6 +2167,79 @@ async def test_do_check_site_readings_and_params(
     else:
         assert_check_result(result, False)
         mock_do_check_readings_for_types.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "incorrect_roleflags, site_reading_types, expected_passed",
+    [
+        # only incorrect roleflags, no correct readings: fail
+        (
+            [generate_class_instance(SiteReadingType, seed=1, site_reading_type_id=1, role_flags=0x01)],
+            [],
+            False,
+        ),
+        # multiple incorrect roleflags, no correct readings: fail
+        (
+            [
+                generate_class_instance(SiteReadingType, seed=1, site_reading_type_id=1, role_flags=0x01),
+                generate_class_instance(SiteReadingType, seed=2, site_reading_type_id=2, role_flags=0x02),
+            ],
+            [],
+            False,
+        ),
+        # incorrect roleflags alongside correct readings: roleflag check skipped, passes
+        (
+            [generate_class_instance(SiteReadingType, seed=1, site_reading_type_id=1, role_flags=0x01)],
+            [generate_class_instance(SiteReadingType, seed=2, site_reading_type_id=2)],
+            True,
+        ),
+    ],
+)
+@mock.patch("cactus_runner.app.check.get_csip_aus_site_reading_types_partitioned")
+@mock.patch("cactus_runner.app.check.do_check_readings_for_types")
+@mock.patch("cactus_runner.app.check.do_check_readings_on_minute_boundary")
+@mock.patch("cactus_runner.app.check.do_check_reading_type_mrids_match_pen")
+@mock.patch("cactus_runner.app.check.do_check_readings_for_duration")
+@pytest.mark.anyio
+async def test_do_check_site_readings_and_params_roleflags(
+    mock_do_check_readings_for_duration: mock.MagicMock,
+    mock_do_check_reading_type_mrids_match_pen: mock.MagicMock,
+    mock_do_check_readings_on_minute_boundary: mock.MagicMock,
+    mock_do_check_readings_for_types: mock.MagicMock,
+    mock_get_csip_aus_site_reading_types_partitioned: mock.MagicMock,
+    incorrect_roleflags: list[SiteReadingType],
+    site_reading_types: list[SiteReadingType],
+    expected_passed: bool,
+):
+    """Tests roleflag handling: fails when only incorrect roleflags are returned, passes when correct
+    site_reading_types are also present."""
+    # Arrange
+    mock_session = create_mock_session()
+    mock_get_csip_aus_site_reading_types_partitioned.return_value = (site_reading_types, incorrect_roleflags)
+    mock_do_check_readings_for_types.return_value = CheckResult(True, description=None)
+    mock_do_check_readings_on_minute_boundary.return_value = CheckResult(True, description=None)
+    mock_do_check_reading_type_mrids_match_pen.return_value = CheckResult(True, description=None)
+    mock_do_check_readings_for_duration.return_value = CheckResult(True, description=None)
+
+    # Act
+    result = await do_check_site_readings_and_params(
+        mock_session,
+        {},
+        pen=12345,
+        uom=UomType.REAL_POWER_WATT,
+        reading_location=ReadingLocation.SITE_READING,
+        data_qualifier=DataQualifierType.AVERAGE,
+    )
+
+    # Assert
+    assert_check_result(result, expected_passed)
+    if site_reading_types:
+        mock_do_check_readings_for_types.assert_called_once()
+    else:
+        mock_do_check_readings_for_types.assert_not_called()
+        assert result.description is not None
+        if incorrect_roleflags:
+            assert "roleFlags" in result.description
 
 
 @pytest.mark.parametrize(
@@ -2305,7 +2380,7 @@ async def test_check_subscription_contents_no_site_edev_list(pg_base_config):
     agg_id = 1
     resolved_params = {"subscribed_resource": "/edev"}
     active_test_procedure = generate_class_instance(
-        ActiveTestProcedure, step_status={}, finished_zip_data=None, client_aggregator_id=agg_id
+        ActiveTestProcedure, step_status={}, finished_zip_path=None, client_aggregator_id=agg_id
     )
 
     async with generate_async_session(pg_base_config) as session:
@@ -2333,7 +2408,7 @@ async def test_check_subscription_contents_no_matches(pg_base_config):
     agg_id = 1
     resolved_params = {"subscribed_resource": "/edev/1/derp/2/derc"}
     active_test_procedure = generate_class_instance(
-        ActiveTestProcedure, step_status={}, finished_zip_data=None, client_aggregator_id=agg_id
+        ActiveTestProcedure, step_status={}, finished_zip_path=None, client_aggregator_id=agg_id
     )
 
     # Fill up the DB with subscriptions
@@ -2410,7 +2485,7 @@ async def test_check_subscription_contents_success(pg_base_config):
     agg_id = 1
     resolved_params = {"subscribed_resource": "/edev/1/derp/2/derc"}
     active_test_procedure = generate_class_instance(
-        ActiveTestProcedure, step_status={}, finished_zip_data=None, client_aggregator_id=agg_id
+        ActiveTestProcedure, step_status={}, finished_zip_path=None, client_aggregator_id=agg_id
     )
 
     # Fill up the DB with subscriptions
@@ -2499,7 +2574,7 @@ async def test_check_subscription_contents_success_unscoped(pg_base_config):
     agg_id = 1
     resolved_params = {"subscribed_resource": "/edev"}
     active_test_procedure = generate_class_instance(
-        ActiveTestProcedure, step_status={}, finished_zip_data=None, client_aggregator_id=agg_id
+        ActiveTestProcedure, step_status={}, finished_zip_path=None, client_aggregator_id=agg_id
     )
 
     # Fill up the DB with subscriptions
@@ -2580,7 +2655,7 @@ def test_response_type_to_string_unique_values():
 @pytest.mark.anyio
 async def test_check_response_contents_latest(pg_base_config):
     """check_response_contents should behave correctly when looking ONLY at the latest Response"""
-    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_data=None)
+    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
     # Fill up the DB with responses
     async with generate_async_session(pg_base_config) as session:
 
@@ -2682,7 +2757,7 @@ async def test_check_response_contents_all(
     """check_response_contents should behave correctly when looking at all controls having responses
 
     response_status_values: tuple[control_id, response_status_type]"""
-    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_data=None)
+    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
     # Fill up the DB with responses
     async with generate_async_session(pg_base_config) as session:
 
@@ -2738,7 +2813,7 @@ async def test_check_response_contents_all(
 @pytest.mark.anyio
 async def test_check_response_contents_any(pg_base_config):
     """check_response_contents should behave correctly when looking at ANY of the Responses"""
-    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_data=None)
+    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
     # Fill up the DB with responses
     async with generate_async_session(pg_base_config) as session:
 
@@ -2828,7 +2903,7 @@ async def test_check_response_contents_any(pg_base_config):
 @pytest.mark.anyio
 async def test_check_response_contents_empty(pg_base_config):
     """check_response_contents should behave correctly when the DB is empty of responses"""
-    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_data=None)
+    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
     async with generate_async_session(pg_base_config) as session:
         # This will check that there is any response
         assert_check_result(await check_response_contents({"latest": False}, session, active_test_procedure), False)
@@ -2852,7 +2927,7 @@ async def test_check_response_contents_empty(pg_base_config):
 async def test_check_response_contents_tag_DERC1(pg_base_config):
     """check_response_contents should behave correctly when filtering by tag"""
     active_test_procedure = generate_class_instance(
-        ActiveTestProcedure, resource_annotations=ResourceAnnotations(), step_status={}, finished_zip_data=None
+        ActiveTestProcedure, resource_annotations=ResourceAnnotations(), step_status={}, finished_zip_path=None
     )
 
     # Set up resource annotations with tagged control IDs
@@ -3605,7 +3680,7 @@ def test_check_all_polls_at_correct_time_path_matching(request_path: str, expect
     poll_interval = 60
 
     active_test_procedure = generate_class_instance(
-        ActiveTestProcedure, started_at=base_time, step_status={}, finished_zip_data=None
+        ActiveTestProcedure, started_at=base_time, step_status={}, finished_zip_path=None
     )
 
     request_history = [
@@ -3640,7 +3715,7 @@ def test_check_all_polls_at_correct_time_poll_count(offsets_seconds: list[int], 
     poll_interval = 60
 
     active_test_procedure = generate_class_instance(
-        ActiveTestProcedure, started_at=base_time, step_status={}, finished_zip_data=None
+        ActiveTestProcedure, started_at=base_time, step_status={}, finished_zip_path=None
     )
 
     request_history = [
@@ -3670,7 +3745,7 @@ def test_check_all_polls_at_correct_time_filters_by_request_type():
     poll_interval = 60
 
     active_test_procedure = generate_class_instance(
-        ActiveTestProcedure, started_at=base_time, step_status={}, finished_zip_data=None
+        ActiveTestProcedure, started_at=base_time, step_status={}, finished_zip_path=None
     )
 
     # Mix of GET and POST requests - only POSTs should count
@@ -3708,7 +3783,7 @@ def test_check_all_polls_at_correct_time_request_type_variants(request_type: str
     poll_interval = 60
 
     active_test_procedure = generate_class_instance(
-        ActiveTestProcedure, started_at=base_time, step_status={}, finished_zip_data=None
+        ActiveTestProcedure, started_at=base_time, step_status={}, finished_zip_path=None
     )
 
     request_history = [
@@ -3744,7 +3819,7 @@ def test_check_all_polls_at_correct_time_missing_params(params: dict, descriptio
         ActiveTestProcedure,
         started_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
         step_status={},
-        finished_zip_data=None,
+        finished_zip_path=None,
     )
 
     result = check_all_polls_at_correct_time(active_test_procedure, [], params)
@@ -3755,7 +3830,7 @@ def test_check_all_polls_at_correct_time_missing_params(params: dict, descriptio
 
 def test_check_all_polls_at_correct_time_test_not_started_fails():
     active_test_procedure = generate_class_instance(
-        ActiveTestProcedure, started_at=None, step_status={}, finished_zip_data=None
+        ActiveTestProcedure, started_at=None, step_status={}, finished_zip_path=None
     )
 
     result = check_all_polls_at_correct_time(

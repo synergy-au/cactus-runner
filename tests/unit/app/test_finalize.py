@@ -21,6 +21,7 @@ from cactus_runner.models import (
     RunnerState,
     Site,
 )
+from cactus_schema.runner.schema import RequestEntry
 
 DT_NOW = datetime.now(timezone.utc)
 
@@ -43,7 +44,7 @@ def test_get_file_name_no_extension(input, expected):
     assert actual == expected
 
 
-def test_get_zip_contents(mocker):
+def test_write_zip_to_file(mocker, tmp_path):
     """
     NOTE: This test uses a mock to disable the database dump and so doesn't
         verify the 'envoy_db.dump' is written into the zip archive.
@@ -63,6 +64,7 @@ def test_get_zip_contents(mocker):
     contents_of_logfile2 = bytes(random_string(length=100), encoding="utf-8")
     pdf_data = bytes(random_string(length=100), encoding="utf-8")  # not legimate pdf data
     errors = []
+    output_path = tmp_path / "output.zip"
 
     with (
         tempfile.NamedTemporaryFile(delete_on_close=False) as logfile1,
@@ -76,7 +78,8 @@ def test_get_zip_contents(mocker):
         logfile2.write(contents_of_logfile2)
         logfile2.close()
 
-        zip_contents = finalize.get_zip_contents(
+        finalize.write_zip_to_file(
+            output_path=output_path,
             json_status_summary=json_status_summary,
             json_reporting_data=json_reporting_data,
             log_file_paths=[logfile1_name, logfile2_name],
@@ -84,6 +87,7 @@ def test_get_zip_contents(mocker):
             errors=errors,
         )
 
+    zip_contents = output_path.read_bytes()
     zip = zipfile.ZipFile(io.BytesIO(zip_contents))
     filenames = zip.namelist()
 
@@ -111,16 +115,49 @@ def test_get_zip_contents(mocker):
     assert len(errors) == 0, "This shouldn't have been mutated"
 
 
-def test_safely_get_error_zip():
-    errors = ["my first error", "my second error"]
+def test_write_zip_to_file_truncates_large_log(mocker, tmp_path):
+    # Arrange
+    mocker.patch("cactus_runner.app.finalize.get_postgres_dsn").return_value = "fake:dsn//value"
+    mocker.patch.object(finalize.subprocess, "run")
+
+    limit = 50
+    mocker.patch("cactus_runner.app.finalize.MAX_LOG_FILE_BYTES", limit)
+
+    prefix_bytes = b"A" * 100  # older content that should be dropped
+    tail_bytes = b"B" * limit  # recent content that should be kept
+    log_content = prefix_bytes + tail_bytes
+
+    logfile = tmp_path / "envoy.server.log"
+    logfile.write_bytes(log_content)
+    output_path = tmp_path / "output.zip"
 
     # Act
-    zip_contents = finalize.safely_get_error_zip(errors)
+    finalize.write_zip_to_file(
+        output_path=output_path,
+        json_status_summary=None,
+        json_reporting_data=None,
+        log_file_paths=[str(logfile)],
+        pdf_data=None,
+        errors=[],
+    )
 
-    # Assert
-    assert isinstance(zip_contents, bytes)
-    assert len(zip_contents) > 0
+    zip_contents = output_path.read_bytes()
     zip = zipfile.ZipFile(io.BytesIO(zip_contents))
+    filenames = zip.namelist()
+    log_entry = next(f for f in filenames if "envoy.server" in f)
+    archived = zip.read(log_entry)
+
+    assert archived == tail_bytes
+    assert b"A" not in archived
+
+
+def test_safely_write_error_zip():
+    errors = ["my first error", "my second error"]
+
+    dest = finalize.safely_write_error_zip(errors)
+
+    assert dest.exists()
+    zip = zipfile.ZipFile(dest)
     filenames = zip.namelist()
     assert len(filenames) == 1, "There should only be a single filename"
 
@@ -129,24 +166,21 @@ def test_safely_get_error_zip():
         assert e in unzipped_errors
 
 
-def test_safely_get_error_with_error(mocker):
-    """If we hit an error generating the zip file - return a plaintext stream of bytes as a failover"""
+def test_safely_write_error_zip_with_error(mocker):
+    """If we hit an error generating the zip file - write plaintext bytes to dest_path as a failover"""
     errors = ["my first error", "my second error"]
 
     zipfile_mock = mocker.patch("cactus_runner.app.finalize.zipfile.ZipFile")
     exception_msg = "mock exception 123 abc"
     zipfile_mock.side_effect = Exception(exception_msg)
 
-    # Act
-    zip_contents = finalize.safely_get_error_zip(errors)
+    dest = finalize.safely_write_error_zip(errors)
 
-    # Assert
-    assert isinstance(zip_contents, bytes)
-    assert len(zip_contents) > 0
-    assert exception_msg in zip_contents.decode(), "Its ugly - but what else can we do?"
+    assert dest.exists()
+    assert exception_msg in dest.read_bytes().decode(), "Its ugly - but what else can we do?"
 
 
-def test_get_zip_contents_with_errors(mocker):
+def test_write_zip_to_file_with_errors(mocker, tmp_path):
     """
     NOTE: This test uses a mock to disable the database dump and so doesn't
         verify the 'envoy_db.dump' is written into the zip archive.
@@ -157,8 +191,10 @@ def test_get_zip_contents_with_errors(mocker):
     get_postgres_dsn_mock.return_value = expected_postgres_dsn
 
     errors = ["my long error string", "my other error"]
+    output_path = tmp_path / "output.zip"
 
-    zip_contents = finalize.get_zip_contents(
+    finalize.write_zip_to_file(
+        output_path=output_path,
         json_status_summary=None,
         json_reporting_data=None,
         log_file_paths=["file-that-dne.txt", "file-that-dne-2.txt"],
@@ -166,6 +202,7 @@ def test_get_zip_contents_with_errors(mocker):
         errors=errors,
     )
 
+    zip_contents = output_path.read_bytes()
     zip = zipfile.ZipFile(io.BytesIO(zip_contents))
     filenames = zip.namelist()
 
@@ -238,3 +275,18 @@ async def test_generate_json_reporting_data(version):
     assert len(readings) == len(reporting_data.readings)
     assert_class_instance_equality(list[Site], sites, reporting_data.sites)
     assert_class_instance_equality(Timeline, timeline, reporting_data.timeline)
+
+
+def test_cap_request_history_within_limit(mocker):
+    mocker.patch("cactus_runner.app.finalize.MAX_REQUEST_PAIRS", 5)
+    history = [generate_class_instance(RequestEntry, seed=i, request_id=i) for i in range(5)]
+    result = finalize._cap_request_history(history)
+    assert result is history  # unchanged
+
+
+def test_cap_request_history_truncates_to_last_n(mocker):
+    mocker.patch("cactus_runner.app.finalize.MAX_REQUEST_PAIRS", 3)
+    history = [generate_class_instance(RequestEntry, seed=i, request_id=i) for i in range(10)]
+    result = finalize._cap_request_history(history)
+    assert len(result) == 3
+    assert [e.request_id for e in result] == [7, 8, 9]
