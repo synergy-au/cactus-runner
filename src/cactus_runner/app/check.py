@@ -33,7 +33,7 @@ from sqlalchemy.orm import aliased
 from cactus_runner.app.envoy_common import (
     ReadingLocation,
     get_active_site,
-    get_csip_aus_site_reading_types,
+    get_csip_aus_site_reading_types_partitioned,
     get_site_readings,
 )
 from cactus_runner.app.evaluator import (
@@ -907,11 +907,30 @@ async def do_check_site_readings_and_params(
     check_duration: bool = True,
 ) -> CheckResult:
 
-    site_reading_types = await get_csip_aus_site_reading_types(session, uom, reading_location, kind, data_qualifier)
-    if not site_reading_types:
-        return CheckResult(False, f"No site level {data_qualifier}/{uom} MirrorUsagePoint for the active EndDevice.")
+    site_reading_types, incorrect_roleflags = await get_csip_aus_site_reading_types_partitioned(
+        session, uom, reading_location, kind, data_qualifier
+    )
 
     check_results: list[CheckResult] = []
+    if incorrect_roleflags and not site_reading_types:
+        actual_flags = ", ".join(f"0x{srt.role_flags:02X}" for srt in incorrect_roleflags)
+        check_results.append(
+            CheckResult(
+                False,
+                f"Found MUP(s) with unexpected roleFlags={actual_flags} "
+                f"(expected 0x{reading_location:02X}) for {data_qualifier.name}/{uom.name} readings.",
+            )
+        )
+
+    if not site_reading_types:
+        check_results.append(
+            CheckResult(
+                False,
+                f"No site level {data_qualifier.name}/{uom.name} MirrorUsagePoint for the active EndDevice.",
+            )
+        )
+        return merge_checks(check_results)
+
     if check_duration:
         check_results.append(await do_check_readings_for_duration(session, site_reading_types))
 
@@ -1403,7 +1422,11 @@ async def run_check(
     if check_result is None:
         raise UnknownCheckError(f"Unrecognised check '{check.type}'. This is a problem with the test definition")
 
-    logger.info(f"run_check: {check.type} {resolved_parameters} returned {check_result}")
+    if check.type != "all-steps-complete":
+        if check_result.passed is False or check_result.description is not None:
+            logger.info(f"run_check: {check.type} {resolved_parameters} returned {check_result}")
+        else:
+            logger.debug(f"run_check: {check.type} {resolved_parameters} returned {check_result}")
     return check_result
 
 

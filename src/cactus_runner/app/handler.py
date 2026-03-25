@@ -3,6 +3,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from itertools import groupby
+from pathlib import Path
 from typing import cast
 from email import message
 from email import policy
@@ -28,6 +29,7 @@ from cactus_runner.app.check import first_failing_check
 from cactus_runner.app.database import begin_session
 from cactus_runner.app.env import (
     DEV_SKIP_AUTHORIZATION_CHECK,
+    MAX_REQUEST_PAIRS,
     MOUNT_POINT,
     SERVER_URL,
     HEADER_MEDIA_TYPE,
@@ -39,6 +41,7 @@ from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
 from cactus_runner.app.health import is_admin_api_healthy, is_db_healthy
 from cactus_runner.app.requests_archive import (
     get_all_request_ids,
+    prune_old_request_response_pairs,
     read_request_response_files,
     write_request_response_files,
 )
@@ -46,6 +49,7 @@ from cactus_runner.app.schema_validator import validate_proxy_request_schema
 from cactus_runner.app.shared import (
     APPKEY_ENVOY_ADMIN_CLIENT,
     APPKEY_INITIALISED_CERTS,
+    APPKEY_PROXY_LOCK,
     APPKEY_RUNNER_STATE,
 )
 from cactus_runner.models import (
@@ -108,9 +112,8 @@ async def attempt_start_for_state(runner_state: RunnerState, envoy_client: Envoy
                 )
 
     # We cannot start another test procedure if one is already running.
-    # If there are active listeners then the test procedure must have already been started.
-    listener_state = [listener.enabled_time for listener in active_test_procedure.listeners]
-    if any(listener_state):
+    # Check started_at since all listeners may have been removed after test completion
+    if active_test_procedure.started_at is not None:
         return StartResult(
             False,
             http.HTTPStatus.CONFLICT,
@@ -489,7 +492,7 @@ async def start_handler(request: web.Request) -> web.Response:
     return web.Response(status=result.status, text=result.content, content_type=result.content_type)
 
 
-async def finalize_handler(request: web.Request) -> web.Response:
+async def finalize_handler(request: web.Request) -> web.FileResponse | web.Response:
     """Handler for finalize requests.
 
     Finalises the test procedure and returns test artifacts in response as a zipped archive.
@@ -512,14 +515,15 @@ async def finalize_handler(request: web.Request) -> web.Response:
 
     if runner_state.active_test_procedure is not None:
         finalized_test_procedure_name = runner_state.active_test_procedure.name
+        zip_path: Path | None = None
         async with begin_session() as session:
             # This will either force the active test procedure to finish
             # (or it will return the results of an earlier finish)
             try:
-                zip_contents = await finalize.finish_active_test(runner_state, session)
+                zip_path = await finalize.finish_active_test(runner_state, session)
             except Exception as exc:
                 logger.error("Exception trying to finish_active_test. Will yield error zip", exc_info=exc)
-                zip_contents = finalize.safely_get_error_zip([f"Exception generating zip: {exc}"])
+                zip_path = finalize.safely_write_error_zip([f"Exception generating zip: {exc}"])
 
         # Save certificate info before clearing active test (needed for playlist advancement)
         finished_test = runner_state.active_test_procedure
@@ -590,8 +594,8 @@ async def finalize_handler(request: web.Request) -> web.Response:
                     # Clear playlist on error to prevent further issues
                     runner_state.playlist = None
 
-        return web.Response(
-            body=zip_contents,
+        return web.FileResponse(
+            zip_path,
             headers={
                 "Content-Type": "application/zip",
                 "Content-Disposition": f'attachment; filename="{zip_filename}"',
@@ -628,8 +632,6 @@ async def status_handler(request: web.Request) -> web.Response:
     """
     active_test_procedure = request.app[APPKEY_RUNNER_STATE].active_test_procedure
 
-    logger.info("Test procedure status requested.")
-
     if active_test_procedure is not None:
         async with begin_session() as session:
             runner_status = await status.get_active_runner_status(
@@ -639,10 +641,6 @@ async def status_handler(request: web.Request) -> web.Response:
                 last_client_interaction=request.app[APPKEY_RUNNER_STATE].last_client_interaction,
                 crop_minutes=15,
             )
-        logger.info(
-            f"Status of test procedure '{runner_status.test_procedure_name}': {runner_status.step_status}",
-            extra={"test_procedure": runner_status.test_procedure_name},
-        )
 
     else:
         runner_status = status.get_runner_status(
@@ -838,22 +836,29 @@ async def proxied_request_handler(request: web.Request) -> web.Response:
     # Store timestamp of when the request was received
     request_timestamp = datetime.now(timezone.utc)
 
-    # Only proceed if authorized
-    if not (DEV_SKIP_AUTHORIZATION_CHECK or auth.request_is_authorized(request=request)):
-        return web.Response(
-            status=http.HTTPStatus.FORBIDDEN, text="Forwarded certificate does not match for registered aggregator"
-        )
-
     # Fail the request if the incorret media type headers are supplied
     if header_problems := await media_headers_check(request):
         # Send the lowest order response header
         res_status, res_msg = header_problems[0]
         return web.Response(status=res_status, text=res_msg)
 
-    # Update last client interaction
-    runner_state.client_interactions.append(
-        ClientInteraction(interaction_type=ClientInteractionType.PROXIED_REQUEST, timestamp=request_timestamp)
+    # Only proceed if authorized
+    if not (DEV_SKIP_AUTHORIZATION_CHECK or auth.request_is_authorized(request=request)):
+        return web.Response(
+            status=http.HTTPStatus.FORBIDDEN, text="Forwarded certificate does not match for registered aggregator"
+        )
+
+    # Update last client interaction - replace rather than append to avoid unbounded list growth
+    new_interaction = ClientInteraction(
+        interaction_type=ClientInteractionType.PROXIED_REQUEST, timestamp=request_timestamp
     )
+    if (
+        runner_state.client_interactions
+        and runner_state.client_interactions[-1].interaction_type == ClientInteractionType.PROXIED_REQUEST
+    ):
+        runner_state.client_interactions[-1] = new_interaction
+    else:
+        runner_state.client_interactions.append(new_interaction)
 
     # Determine paths, url and HTTP method
     relative_url = request.path
@@ -861,32 +866,36 @@ async def proxied_request_handler(request: web.Request) -> web.Response:
     method = request.method
     logger.debug(f"{relative_url=} {remote_url=} {method=}")
 
-    # Fire "before request" event trigger
+    # Fire "before request" event trigger, proxy, then fire "after request" event trigger.
+    # The lock serialises this entire block so concurrent device requests cannot interleave.
     envoy_client: EnvoyAdminClient = request.app[APPKEY_ENVOY_ADMIN_CLIENT]
-    async with begin_session() as session:
-        trigger_handled = await event.handle_event_trigger(
-            trigger=event.generate_client_request_trigger(request, mount_point=MOUNT_POINT, before_serving=True),
-            runner_state=runner_state,
-            session=session,
-            envoy_client=envoy_client,
-        )
-        await session.commit()
-
-    # Proxy the request to the utility server
-    proxy_result = await proxy.proxy_request(
-        request=request, remote_url=remote_url, active_test_procedure=active_test_procedure
-    )
-
-    # Fire "after request" event trigger (only if an event didn't handle the before event)
-    if not trigger_handled:
+    async with request.app[APPKEY_PROXY_LOCK]:
         async with begin_session() as session:
             trigger_handled = await event.handle_event_trigger(
-                trigger=event.generate_client_request_trigger(request, mount_point=MOUNT_POINT, before_serving=False),
+                trigger=event.generate_client_request_trigger(request, mount_point=MOUNT_POINT, before_serving=True),
                 runner_state=runner_state,
                 session=session,
                 envoy_client=envoy_client,
             )
             await session.commit()
+
+        # Proxy the request to the utility server
+        proxy_result = await proxy.proxy_request(
+            request=request, remote_url=remote_url, active_test_procedure=active_test_procedure
+        )
+
+        # Fire "after request" event trigger (only if an event didn't handle the before event)
+        if not trigger_handled:
+            async with begin_session() as session:
+                trigger_handled = await event.handle_event_trigger(
+                    trigger=event.generate_client_request_trigger(
+                        request, mount_point=MOUNT_POINT, before_serving=False
+                    ),
+                    runner_state=runner_state,
+                    session=session,
+                    envoy_client=envoy_client,
+                )
+                await session.commit()
 
     # There will only ever be a maximum of 1 entry in this list
     # The request events will only trigger a max of one listener
@@ -916,8 +925,9 @@ async def proxied_request_handler(request: web.Request) -> web.Response:
     )
     runner_state.request_history.append(request_entry)
 
-    # Write request/response files to disk
+    # Write request/response files to disk, then prune the oldest pair out of the rolling window
     write_request_response_files(request_id=request_id, proxy_result=proxy_result, entry=request_entry)
+    prune_old_request_response_pairs(current_request_id=request_id, max_pairs=MAX_REQUEST_PAIRS)
 
     return proxy_result.response
 
