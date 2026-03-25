@@ -96,7 +96,9 @@ async def test_twenty_concurrent_gets_all_listeners_triggered(cactus_runner_clie
 
     result = await cactus_runner_client.post(
         "/edev",
-        headers={"ssl-client-cert": URI_ENCODED_CERT, },
+        headers={
+            "ssl-client-cert": URI_ENCODED_CERT,
+        },
         data=EndDeviceRequest(lFDI=TEST_CERTIFICATE_LFDI, sFDI=357827241281, changedTime=1766110684).to_xml(
             skip_empty=True, exclude_none=True
         ),
