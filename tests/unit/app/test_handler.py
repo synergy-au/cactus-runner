@@ -1,6 +1,6 @@
 import asyncio
 import http
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, call
 
@@ -742,6 +742,13 @@ async def test_proxied_request_handler_replaces_existing_proxied_request_interac
 
     # Arrange
     request = MagicMock()
+
+    # Storage extension specific
+    request.headers = {
+        "Accept": env.HEADER_MEDIA_ALL,
+        "Content-Type": env.HEADER_MEDIA_ALL,
+    }
+
     request.path = "/dcap"
     request.path_qs = "/dcap"
     request.method = "GET"
@@ -758,7 +765,8 @@ async def test_proxied_request_handler_replaces_existing_proxied_request_interac
 
     # Seed a prior PROXIED_REQUEST so the replace branch is exercised
     prior_interaction = ClientInteraction(
-        interaction_type=ClientInteractionType.PROXIED_REQUEST, timestamp=datetime(2020, 1, 1, tzinfo=timezone.utc)
+        interaction_type=ClientInteractionType.PROXIED_REQUEST,
+        timestamp=datetime.now(tz=timezone.utc) - timedelta(seconds=10),
     )
     request.app[APPKEY_RUNNER_STATE].client_interactions.append(prior_interaction)
     interactions_before = len(request.app[APPKEY_RUNNER_STATE].client_interactions)
@@ -1012,12 +1020,13 @@ async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str) 
     """Test to ensure 406 returned on bad header"""
     request = MagicMock()
     request.headers = {"accept": accept_header, "content-type": env.HEADER_MEDIA_ALL}
-    request.app[APPKEY_RUNNER_STATE].active_test_procedure = generate_class_instance(
+    active_test_procedure = generate_class_instance(
         ActiveTestProcedure,
+        optional_is_none=True,
         communications_disabled=False,
-        finished_zip_data=None,
         step_status={"1": StepStatus.PENDING},
     )
+    request.app[APPKEY_RUNNER_STATE].active_test_procedure = active_test_procedure
     mock_logger_warning = mocker.patch("cactus_runner.app.handler.logger.error")
     response = await handler.proxied_request_handler(request=request)
 

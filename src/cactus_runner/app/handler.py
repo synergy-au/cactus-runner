@@ -836,17 +836,17 @@ async def proxied_request_handler(request: web.Request) -> web.Response:
     # Store timestamp of when the request was received
     request_timestamp = datetime.now(timezone.utc)
 
-    # Only proceed if authorized
-    if not (DEV_SKIP_AUTHORIZATION_CHECK or auth.request_is_authorized(request=request)):
-        return web.Response(
-            status=http.HTTPStatus.FORBIDDEN, text="Forwarded certificate does not match for registered aggregator"
-        )
-
     # Fail the request if the incorret media type headers are supplied
     if header_problems := await media_headers_check(request):
         # Send the lowest order response header
         res_status, res_msg = header_problems[0]
         return web.Response(status=res_status, text=res_msg)
+
+    # Only proceed if authorized
+    if not (DEV_SKIP_AUTHORIZATION_CHECK or auth.request_is_authorized(request=request)):
+        return web.Response(
+            status=http.HTTPStatus.FORBIDDEN, text="Forwarded certificate does not match for registered aggregator"
+        )
 
     # Update last client interaction - replace rather than append to avoid unbounded list growth
     new_interaction = ClientInteraction(

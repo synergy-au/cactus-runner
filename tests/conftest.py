@@ -169,7 +169,9 @@ async def cactus_runner_client(
     with environment_snapshot():
         with mock.patch("cactus_runner.app.main.generate_admin_client") as mock_generate_admin_client:
             mock_generate_admin_client.return_value = envoy_admin_client
-            async with await aiohttp_client(create_app(), headers={"Accept": HEADER_MEDIA_ALL}) as app:
+            async with await aiohttp_client(
+                create_app(), headers={"Accept": HEADER_MEDIA_ALL, "Content-Type": HEADER_MEDIA_ALL}
+            ) as app:
                 yield app
 
 
