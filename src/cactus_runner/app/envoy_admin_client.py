@@ -10,6 +10,7 @@ from http import HTTPStatus
 from aiohttp import BasicAuth, ClientSession, ClientTimeout, TCPConnector
 from aiohttp.typedefs import StrOrURL
 from envoy_schema.admin.schema.aggregator import AggregatorPageResponse
+from envoy_schema.admin.schema.base import BatchCreateResponse
 from envoy_schema.admin.schema.config import (
     RuntimeServerConfigRequest,
     RuntimeServerConfigResponse,
@@ -139,14 +140,17 @@ class EnvoyAdminClient:
             json = await resp.json()
             return SiteControlGroupPageResponse(**json)
 
-    async def create_site_controls(self, group_id: int, control_list: list[SiteControlRequest]) -> HTTPStatus:
+    async def create_site_controls(self, group_id: int, control_list: list[SiteControlRequest]) -> list[int]:
+        """Creates the specified controls - returns the ID's of the created site_control (will correspond 1-1 with
+        control_list)"""
         resp = await self._session.post(
             SiteControlUri.format(group_id=group_id),
             data="[" + ",".join([site_control.model_dump_json() for site_control in control_list]) + "]",
             headers={"Content-Type": "application/json"},
         )
         resp.raise_for_status()
-        return HTTPStatus(resp.status)
+        json = await resp.json()
+        return BatchCreateResponse(**json).ids
 
     async def get_all_site_controls(
         self,

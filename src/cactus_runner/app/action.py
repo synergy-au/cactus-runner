@@ -7,7 +7,6 @@ from typing import Any
 from cactus_test_definitions.client import Action
 from envoy.server.crud.doe import select_site_control_groups
 from envoy.server.model.site import Site
-from sqlalchemy import select
 from envoy_schema.admin.schema.config import (
     RuntimeServerConfigRequest,
 )
@@ -16,9 +15,9 @@ from envoy_schema.admin.schema.site_control import (
     SiteControlGroupDefaultRequest,
     SiteControlGroupRequest,
     SiteControlRequest,
-    SiteControlResponse,
     UpdateDefaultValue,
 )
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
@@ -246,7 +245,7 @@ async def action_create_der_control(
             )
         await envoy_client.update_runtime_config(RuntimeServerConfigRequest(site_control_pow10_encoding=effective_mult))
 
-    await envoy_client.create_site_controls(
+    site_control_ids = await envoy_client.create_site_controls(
         site_control_group_id,
         [
             SiteControlRequest(
@@ -269,19 +268,9 @@ async def action_create_der_control(
         ],
     )
 
-    # If we have tagged a control, we now need to find the site_control_id and add it to the test procedure annotations
-    # Ideally this would be part of the admin client return functionality, but for now we will just grab the latest
-    # control we made, and match it to the tag
+    # If we have tagged a control, we add it to the test procedure annotations
     if annotation is not None:
-        controls: list[SiteControlResponse] = await envoy_client.get_all_site_controls(group_id=site_control_group_id)
-
-        if controls:
-            sorted_controls = sorted(controls, key=lambda c: c.created_time, reverse=True)
-            latest_site_control_id = sorted_controls[0].site_control_id
-        else:
-            raise FailedActionError("No controls exist for this site control group despite creation in this action.")
-
-        active_test_procedure.resource_annotations.der_control_ids_by_alias[annotation] = latest_site_control_id
+        active_test_procedure.resource_annotations.der_control_ids_by_alias[annotation] = site_control_ids[0]
 
 
 async def action_cancel_active_controls(envoy_client: EnvoyAdminClient):

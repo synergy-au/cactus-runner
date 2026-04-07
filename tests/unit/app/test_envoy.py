@@ -207,7 +207,7 @@ async def test_post_site_control_group(mock_session_with_json_response):
 @pytest.mark.asyncio
 async def test_create_site_controls(mock_session_with_json_response):
     # Arrange
-    mock_session, _ = mock_session_with_json_response(status=201, method="post")
+    mock_session, _ = mock_session_with_json_response(json_data={"ids": [11, 22]}, status=201, method="post")
 
     client = EnvoyAdminClient("http://localhost", EnvoyAdminClientAuthParams("admin", "pw"))
     client._session = mock_session
@@ -216,10 +216,10 @@ async def test_create_site_controls(mock_session_with_json_response):
     control_2 = generate_class_instance(SiteControlRequest, seed=345)
 
     # Act
-    status = await client.create_site_controls(group_id=42, control_list=[control_1, control_2])
+    returned_ids = await client.create_site_controls(group_id=42, control_list=[control_1, control_2])
 
     # Assert
-    assert status == HTTPStatus.CREATED
+    assert returned_ids == [11, 22]
     mock_session.post.assert_called_once_with(
         SiteControlUri.format(group_id=42),
         data="[" + ",".join([control_1.model_dump_json(), control_2.model_dump_json()]) + "]",
