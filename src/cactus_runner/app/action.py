@@ -141,6 +141,7 @@ async def action_set_default_der_control(
     export_limit_watts = resolved_parameters.get("opModExpLimW", None)
     gen_limit_watts = resolved_parameters.get("opModGenLimW", None)
     load_limit_watts = resolved_parameters.get("opModLoadLimW", None)
+    storage_target_watts = resolved_parameters.get("opModStorageTargetW", None)
     setGradW = resolved_parameters.get("setGradW", None)
     cancelled = resolved_parameters.get("cancelled", False)
     default_val: UpdateDefaultValue | None = UpdateDefaultValue(value=None) if cancelled else None
@@ -168,6 +169,9 @@ async def action_set_default_der_control(
             ),
             load_limit_watts=(
                 UpdateDefaultValue(value=load_limit_watts) if load_limit_watts is not None else default_val
+            ),
+            storage_target_watts=(
+                UpdateDefaultValue(value=storage_target_watts) if storage_target_watts is not None else default_val
             ),
             ramp_rate_percent_per_second=UpdateDefaultValue(value=setGradW) if setGradW is not None else default_val,
         ),
@@ -226,6 +230,7 @@ async def action_create_der_control(
     gen_limit_watts: Decimal | None = resolved_parameters.get("opModGenLimW", None)
     load_limit_watts: Decimal | None = resolved_parameters.get("opModLoadLimW", None)
     set_point_percent: Decimal | None = resolved_parameters.get("opModFixedW", None)
+    storage_target_watts: Decimal | None = resolved_parameters.get("opModStorageTargetW", None)
 
     # Update the pow10 multiplier system config - adjusting upward if any watt values would overflow Int16
     # at the requested multiplier. This mirrors the server's auto-scaling in DERControlMapper.map_to_active_power
@@ -258,6 +263,8 @@ async def action_create_der_control(
                 load_limit_watts=load_limit_watts,
                 set_point_percentage=set_point_percent,
                 ramp_time_seconds=ramp_time_seconds,
+                # Storage extension
+                storage_target_watts=storage_target_watts,
             )
         ],
     )

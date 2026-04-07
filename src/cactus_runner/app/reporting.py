@@ -669,6 +669,8 @@ def generate_site_der_rating_table(site_der_rating: SiteDERRating, stylesheet: S
         "v_nom_value",
         "der_type",
         "doe_modes_supported",
+        # Storage extension
+        "vpp_modes_supported",
     ]
     non_null_attributes = get_non_null_attributes(site_der_rating, attributes_to_include)
     null_attributes_paragraph = make_null_attributes_paragraph(attributes_to_include, non_null_attributes)
@@ -717,6 +719,9 @@ def generate_site_der_setting_table(site_der_setting: SiteDERSetting, stylesheet
         "v_ref_value",
         "v_ref_ofs_value",
         "doe_modes_enabled",
+        # Storage extension
+        "vpp_modes_enabled",
+        "min_wh_value",
     ]
     non_null_attributes = get_non_null_attributes(site_der_setting, attributes_to_include)
     null_attributes_paragraph = make_null_attributes_paragraph(attributes_to_include, non_null_attributes)
@@ -1311,7 +1316,13 @@ def validate_cell(reading_type: SiteReadingType, col_idx: int, row_num: int) -> 
 
     elif col_idx == 3:  # UOM
         uom = UomType(reading_type.uom)
-        if uom not in [UomType.REAL_POWER_WATT, UomType.REACTIVE_POWER_VAR, UomType.FREQUENCY_HZ, UomType.VOLTAGE]:
+        if uom not in [
+            UomType.REAL_POWER_WATT,
+            UomType.REACTIVE_POWER_VAR,
+            UomType.FREQUENCY_HZ,
+            UomType.VOLTAGE,
+            UomType.REAL_ENERGY_WATT_HOURS,
+        ]:
             return f"UOM {uom.name} ({uom.value}) is not supported"
 
     elif col_idx == 4:  # Data qualifier
@@ -1321,13 +1332,14 @@ def validate_cell(reading_type: SiteReadingType, col_idx: int, row_num: int) -> 
             DataQualifierType.STANDARD,
             DataQualifierType.MAXIMUM,
             DataQualifierType.MINIMUM,
+            DataQualifierType.NOT_APPLICABLE,
         ]:
             return f"Data qualifier {qualifier.name} ({qualifier.value}) is not supported"
 
     elif col_idx == 5:  # Kind
         kind = KindType(reading_type.kind)
-        if kind != KindType.POWER:
-            return f"KindType is expected to be Power (37), got {kind.name} ({kind.value})"
+        if kind not in [KindType.POWER, KindType.ENERGY]:
+            return f"KindType {kind.name} ({kind.value}) is not supported."
 
     elif col_idx == 6:  # Phase (Only applicable to voltage readings)
         uom = UomType(reading_type.uom)

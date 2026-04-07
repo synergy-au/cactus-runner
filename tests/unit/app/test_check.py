@@ -465,6 +465,7 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
     der_bool_param_scenario("site_der_setting", SiteDERSetting, param, param_value, db_prop, db_prop_value, expected)
     for param, db_prop in [
         ("doeModesEnabled", "doe_modes_enabled"),
+        ("vppModesEnabled", "vpp_modes_enabled"),
         ("setMaxVA", "max_va_value"),
         ("setMaxVar", "max_var_value"),
         ("setMaxVarNeg", "max_var_neg_value"),
@@ -755,6 +756,125 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
             {"modesEnabled_unset": evaluator.ResolvedParam("03")},
             False,
         ),  # Bit flag 1 set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("ff", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesEnabled_set": evaluator.ResolvedParam("03")},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("fe", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesEnabled_set": evaluator.ResolvedParam("03")},
+            False,
+        ),  # Bit flag 1 not set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("fc", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesEnabled_unset": evaluator.ResolvedParam("03")},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("fd", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesEnabled_unset": evaluator.ResolvedParam("03")},
+            False,
+        ),  # Bit flag 1 set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_setting=generate_class_instance(
+                                SiteDERSetting, min_wh_value=12345, min_wh_multiplier=1
+                            ),
+                        )
+                    ],
+                )
+            ],
+            {"setMinWh": evaluator.ResolvedParam(True)},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER, site_der_setting=generate_class_instance(SiteDERSetting, min_wh_value=12345)
+                        )
+                    ],
+                )
+            ],
+            {"setMinWh": evaluator.ResolvedParam(True)},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER, site_der_setting=generate_class_instance(SiteDERSetting, min_wh_value=0)
+                        )
+                    ],
+                )
+            ],
+            {"setMinWh": evaluator.ResolvedParam(False)},
+            False,
+        ),
         *DERSETTING_BOOL_PARAM_SCENARIOS,
     ],
 )
@@ -775,6 +895,7 @@ DERRATING_BOOL_PARAM_SCENARIOS = [
     der_bool_param_scenario("site_der_rating", SiteDERRating, param, param_value, db_prop, db_prop_value, expected)
     for param, db_prop in [
         ("doeModesSupported", "doe_modes_supported"),
+        ("vppModesSupported", "vpp_modes_supported"),
         ("rtgMaxVA", "max_va_value"),
         ("rtgMaxVar", "max_var_value"),
         ("rtgMaxVarNeg", "max_var_neg_value"),
@@ -1031,6 +1152,74 @@ DERRATING_BOOL_PARAM_SCENARIOS = [
                 )
             ],
             {"modesSupported_unset": evaluator.ResolvedParam("03")},
+            False,
+        ),  # Bit flag 1 set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, vpp_modes_supported=int("ff", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesSupported_set": evaluator.ResolvedParam("03")},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, vpp_modes_supported=int("fe", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesSupported_set": evaluator.ResolvedParam("03")},
+            False,
+        ),  # Bit flag 1 not set on actual value
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, vpp_modes_supported=int("fc", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesSupported_unset": evaluator.ResolvedParam("03")},
+            True,
+        ),
+        (
+            [
+                generate_class_instance(
+                    Site,
+                    seed=101,
+                    aggregator_id=1,
+                    site_ders=[
+                        generate_class_instance(
+                            SiteDER,
+                            site_der_rating=generate_class_instance(SiteDERRating, vpp_modes_supported=int("fd", 16)),
+                        )
+                    ],
+                )
+            ],
+            {"vppModesSupported_unset": evaluator.ResolvedParam("03")},
             False,
         ),  # Bit flag 1 set on actual value
         *DERRATING_BOOL_PARAM_SCENARIOS,
@@ -1913,6 +2102,16 @@ async def test_do_check_reading_type_mrids_match_pen(
             0,
             0,
         ),
+        (
+            {"minimum_count": 1},
+            UomType.REAL_ENERGY_WATT_HOURS,
+            ReadingLocation.DEVICE_READING,
+            DataQualifierType.NOT_APPLICABLE,
+            KindType.ENERGY,
+            [generate_class_instance(SiteReadingType, seed=303, site_reading_type_id=1)],
+            666,
+            1,
+        ),
     ],
 )
 @mock.patch("cactus_runner.app.check.get_csip_aus_site_reading_types_partitioned")
@@ -2605,7 +2804,7 @@ async def test_check_response_contents_all(
         await session.commit()
 
     async with generate_async_session(pg_base_config) as session:
-        params = {"all": True}
+        params: dict[str, Any] = {"all": True}
         if status is not None:
             params["status"] = status
         assert_check_result(await check_response_contents(params, session, active_test_procedure), expected)
@@ -2903,7 +3102,7 @@ async def test_first_failing_check(
 
     # Arrange
     mock_session = create_mock_session()
-    side_effects = []
+    side_effects: list[bool | type[Exception] | CheckResult] = []
     for r in run_check_results:
         if isinstance(r, type):
             side_effects.append(r)
@@ -2953,7 +3152,7 @@ async def test_all_checks_passing(
 
     # Arrange
     mock_session = create_mock_session()
-    side_effects = []
+    side_effects: list[bool | type[Exception] | CheckResult] = []
     for r in run_check_results:
         if isinstance(r, type):
             side_effects.append(r)

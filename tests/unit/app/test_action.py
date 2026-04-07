@@ -282,6 +282,7 @@ async def test_action_set_default_der_control_with_derp_id(pg_base_config, envoy
         "opModLoadLimW": 13,
         "setGradW": 14,
         "derp_id": derp_id,
+        "opModStorageTargetW": 15,
     }
     if cancelled is not None:
         resolved_params["cancelled"] = cancelled
@@ -303,6 +304,7 @@ async def test_action_set_default_der_control_with_derp_id(pg_base_config, envoy
         assert saved_result.generation_limit_active_watts == 12
         assert saved_result.load_limit_active_watts == 13
         assert saved_result.ramp_rate_percent_per_second == 14
+        assert saved_result.storage_target_active_watts == 15
 
 
 @pytest.mark.parametrize(
@@ -441,6 +443,7 @@ async def test_action_create_der_control_no_group(pg_base_config, envoy_admin_cl
         "opModGenLimW": 0,
         "opModLoadLimW": 0,
         "opModFixedW": 0,
+        "opModStorageTargetW": 0,
     }
     if fsa_id is not None:
         resolved_params["fsa_id"] = fsa_id
@@ -512,6 +515,7 @@ async def test_action_create_der_control_existing_group(pg_base_config, envoy_ad
         "opModGenLimW": 0,
         "opModLoadLimW": 0,
         "opModFixedW": 0,
+        "opModStorageTargetW": 0,
     }
     if fsa_id is not None:
         resolved_params["fsa_id"] = fsa_id
@@ -566,6 +570,7 @@ async def test_action_create_der_control_control_values(pg_base_config, envoy_ad
         "opModLoadLimW": gen_float(value_seed, 6),
         "opModFixedW": gen_float(value_seed, 7),
         "ramp_time_seconds": gen_float(value_seed, 8),
+        "opModStorageTargetW": gen_float(value_seed, 9),
     }
     for k in list(resolved_params.keys()):
         if resolved_params[k] is None:
@@ -587,6 +592,7 @@ async def test_action_create_der_control_control_values(pg_base_config, envoy_ad
         assert doe.load_limit_active_watts == gen_float(value_seed, 6)
         assert doe.set_point_percentage == gen_float(value_seed, 7)
         assert doe.ramp_time_seconds == gen_float(value_seed, 8)
+        assert doe.storage_target_active_watts == gen_float(value_seed, 9)
 
 
 @pytest.mark.anyio

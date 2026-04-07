@@ -361,6 +361,7 @@ async def test_get_reading_counts_grouped_by_reading_type(pg_base_config):
             data_qualifier=DataQualifierType.AVERAGE,
             kind=KindType.POWER,
             role_flags=ReadingLocation.DEVICE_READING,
+            mrid="mrid-1",
         )
         voltage = generate_class_instance(
             SiteReadingType,
@@ -372,6 +373,7 @@ async def test_get_reading_counts_grouped_by_reading_type(pg_base_config):
             data_qualifier=DataQualifierType.AVERAGE,
             kind=KindType.POWER,
             role_flags=ReadingLocation.DEVICE_READING,
+            mrid="mrid-2",
         )
         energy = generate_class_instance(
             SiteReadingType,
@@ -383,6 +385,7 @@ async def test_get_reading_counts_grouped_by_reading_type(pg_base_config):
             data_qualifier=DataQualifierType.NOT_APPLICABLE,
             kind=KindType.ENERGY,
             role_flags=ReadingLocation.DEVICE_READING,
+            mrid="mrid-3",
         )
         session.add_all([power, voltage, energy])
 

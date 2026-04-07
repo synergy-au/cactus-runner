@@ -83,7 +83,7 @@ async def test_twenty_concurrent_gets_all_listeners_triggered(cactus_runner_clie
         run_group=RunGroup(
             run_group_id="1",
             name="group 1",
-            csip_aus_version=CSIPAusVersion.RELEASE_1_2,
+            csip_aus_version=CSIPAusVersion.BETA_1_3_STORAGE,
             test_certificates=TestCertificates(aggregator=TEST_CERTIFICATE_PEM.decode(), device=None),
         ),
         test_config=TestConfig(pen=12345, subscription_domain=None, is_static_url=False),
@@ -96,7 +96,9 @@ async def test_twenty_concurrent_gets_all_listeners_triggered(cactus_runner_clie
 
     result = await cactus_runner_client.post(
         "/edev",
-        headers={"ssl-client-cert": URI_ENCODED_CERT},
+        headers={
+            "ssl-client-cert": URI_ENCODED_CERT,
+        },
         data=EndDeviceRequest(lFDI=TEST_CERTIFICATE_LFDI, sFDI=357827241281, changedTime=1766110684).to_xml(
             skip_empty=True, exclude_none=True
         ),
