@@ -2,11 +2,10 @@ import http
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from email import message, policy
 from itertools import groupby
 from pathlib import Path
 from typing import cast
-from email import message
-from email import policy
 
 from aiohttp import ContentTypeError, web
 from cactus_schema.runner import (
@@ -29,13 +28,13 @@ from cactus_runner.app.check import first_failing_check
 from cactus_runner.app.database import begin_session
 from cactus_runner.app.env import (
     DEV_SKIP_AUTHORIZATION_CHECK,
+    HEADER_MEDIA_ALL,
+    HEADER_MEDIA_PARAM_NAME,
+    HEADER_MEDIA_PARAM_VALUE,
+    HEADER_MEDIA_TYPE,
     MAX_REQUEST_PAIRS,
     MOUNT_POINT,
     SERVER_URL,
-    HEADER_MEDIA_TYPE,
-    HEADER_MEDIA_PARAM_NAME,
-    HEADER_MEDIA_PARAM_VALUE,
-    HEADER_MEDIA_ALL,
 )
 from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
 from cactus_runner.app.health import is_admin_api_healthy, is_db_healthy
@@ -734,7 +733,6 @@ def media_type_header_check(raw_value: str) -> bool:
 async def media_headers_check(request: web.Request) -> list[tuple[http.HTTPStatus, str]]:
     """Performs media type checks.
 
-    Currently this is only implemented for the storage extension v1.3-beta/storage
     If an accept header is missing on get requests, an error is generated
     If a content-type is missing on put or post requests, an error is generated
     If a header value is provided on any requests for either content-type and accept that doesn't match

@@ -1,6 +1,6 @@
 import asyncio
 import http
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, call
 
@@ -28,10 +28,13 @@ from cactus_test_definitions import CSIPAusVersion
 from cactus_test_definitions.client import TestProcedureId
 from cactus_test_definitions.client.test_procedures import get_yaml_contents
 
-from cactus_runner.app import action, handler
-from cactus_runner.app import env
+from cactus_runner.app import action, env, handler
 from cactus_runner.app.proxy import ProxyResult
-from cactus_runner.app.shared import APPKEY_ENVOY_ADMIN_CLIENT, APPKEY_PROXY_LOCK, APPKEY_RUNNER_STATE
+from cactus_runner.app.shared import (
+    APPKEY_ENVOY_ADMIN_CLIENT,
+    APPKEY_PROXY_LOCK,
+    APPKEY_RUNNER_STATE,
+)
 from cactus_runner.models import (
     ActiveTestProcedure,
     Listener,
@@ -1016,7 +1019,7 @@ async def test_proceed_handler_logs_error_with_finished_test(mocker):
     ],
 )
 @pytest.mark.asyncio
-async def test_incorrect_accept_header_not_accepted(mocker, accept_header: str) -> None:
+async def test_incorrect_accept_header_not_accepted(mocker, assertical_extensions, accept_header: str) -> None:
     """Test to ensure 406 returned on bad header"""
     request = MagicMock()
     request.headers = {"accept": accept_header, "content-type": env.HEADER_MEDIA_ALL}

@@ -3,9 +3,8 @@ import sys
 from datetime import datetime
 
 from assertical.asserts.generator import assert_class_instance_equality
-from assertical.fake.generator import (
-    generate_class_instance,
-)
+from assertical.fake.generator import generate_class_instance, register_base_type
+from assertical.fixtures.generator import generator_registry_snapshot
 from envoy.server.model import SiteReadingType
 from envoy.server.model.site import Site as EnvoySite
 
@@ -67,7 +66,7 @@ def test_site_serialization():
     assert Site.from_dict(site.to_dict()) == site
 
 
-def test_reporting_data_versions():
+def test_reporting_data_versions(assertical_extensions):
     CLASS_NAME_PREFIX = "ReportingData_v"
     MODULE = "cactus_runner.models"
 

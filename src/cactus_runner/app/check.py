@@ -1116,7 +1116,9 @@ async def check_subscription_contents(
 
     # Decode the href so we know what to look for in the DB
     try:
-        resource_type, scoped_site_id, resource_id = SubscriptionMapper.parse_resource_href(subscribed_resource)
+        resource_type, scoped_site_id, resource_id, resource_parent_id = SubscriptionMapper.parse_resource_href(
+            subscribed_resource
+        )
     except InvalidMappingError as exc:
         logger.error(f"check_subscription_contents: Caught InvalidMappingError for {subscribed_resource}", exc_info=exc)
         return CheckResult(False, f"Unable to interpret resource {subscribed_resource}: {exc.message}")
@@ -1128,6 +1130,7 @@ async def check_subscription_contents(
                 & (Subscription.scoped_site_id == scoped_site_id)
                 & (Subscription.resource_type == resource_type)
                 & (Subscription.resource_id == resource_id)
+                & (Subscription.resource_parent_id == resource_parent_id)
             )
         )
     ).scalar_one_or_none()

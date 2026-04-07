@@ -5,13 +5,12 @@ import unittest.mock as mock
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
-from cactus_schema.runner import RequestEntry
-
 import pytest
 import pytest_mock
 from assertical.fake.generator import generate_class_instance
 from assertical.fake.sqlalchemy import assert_mock_session, create_mock_session
 from assertical.fixtures.postgres import generate_async_session
+from cactus_schema.runner import RequestEntry
 from cactus_test_definitions import variable_expressions
 from cactus_test_definitions.client import (
     CHECK_PARAMETER_SCHEMA,
@@ -2390,6 +2389,7 @@ async def test_check_subscription_contents_no_site_edev_list(pg_base_config):
                 Subscription,
                 resource_type=SubscriptionResource.SITE,
                 resource_id=None,
+                resource_parent_id=None,
                 scoped_site_id=None,
                 aggregator=agg,
             )
@@ -2507,6 +2507,7 @@ async def test_check_subscription_contents_success(pg_base_config):
                 seed=202,
                 resource_type=SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE,
                 resource_id=2,
+                resource_parent_id=None,
                 aggregator=agg1,
                 scoped_site=site2,
             )
@@ -2519,6 +2520,7 @@ async def test_check_subscription_contents_success(pg_base_config):
                 seed=303,
                 resource_type=SubscriptionResource.READING,
                 resource_id=2,
+                resource_parent_id=None,
                 aggregator=agg1,
                 scoped_site=site1,
             )
@@ -2531,6 +2533,7 @@ async def test_check_subscription_contents_success(pg_base_config):
                 seed=404,
                 resource_type=SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE,
                 resource_id=99,
+                resource_parent_id=None,
                 aggregator=agg1,
                 scoped_site=site1,
             )
@@ -2543,7 +2546,21 @@ async def test_check_subscription_contents_success(pg_base_config):
                 seed=505,
                 resource_type=SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE,
                 resource_id=2,
+                resource_parent_id=None,
                 aggregator=agg2,
+                scoped_site=site1,
+            )
+        )
+
+        # Wrong resource parent id
+        session.add(
+            generate_class_instance(
+                Subscription,
+                seed=606,
+                resource_type=SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE,
+                resource_id=2,
+                resource_parent_id=99,  # This is nonsensical for a DOE resource but allows us to test the query
+                aggregator=agg1,
                 scoped_site=site1,
             )
         )
@@ -2552,9 +2569,10 @@ async def test_check_subscription_contents_success(pg_base_config):
         session.add(
             generate_class_instance(
                 Subscription,
-                seed=606,
+                seed=707,
                 resource_type=SubscriptionResource.DYNAMIC_OPERATING_ENVELOPE,
                 resource_id=2,
+                resource_parent_id=None,
                 aggregator=agg1,
                 scoped_site=site1,
             )
@@ -2594,6 +2612,7 @@ async def test_check_subscription_contents_success_unscoped(pg_base_config):
                 seed=202,
                 resource_type=SubscriptionResource.SITE,
                 resource_id=None,
+                resource_parent_id=None,
                 aggregator=agg1,
                 scoped_site_id=None,
             )

@@ -8,8 +8,10 @@ from urllib.parse import urlparse
 
 import aiohttp.web as web
 import pytest
+from assertical.fake.generator import register_base_type
 from assertical.fixtures.environment import environment_snapshot
 from assertical.fixtures.fastapi import start_app_with_client
+from assertical.fixtures.generator import generator_registry_snapshot
 from assertical.fixtures.postgres import generate_async_conn_str_from_connection
 from cactus_schema.runner import (
     RunGroup,
@@ -34,11 +36,11 @@ from cactus_runner.app.database import (
     initialise_database_connection,
     remove_database_connection,
 )
+from cactus_runner.app.env import HEADER_MEDIA_ALL
 from cactus_runner.app.envoy_admin_client import (
     EnvoyAdminClient,
     EnvoyAdminClientAuthParams,
 )
-from cactus_runner.app.env import HEADER_MEDIA_ALL
 from cactus_runner.app.main import create_app
 from cactus_runner.app.requests_archive import REQUEST_DATA_DIR
 from tests.adapter import HttpxClientSessionAdapter
@@ -55,6 +57,13 @@ def execute_test_sql_file(cfg: Connection, path_to_sql_file: str) -> None:
 @pytest.fixture
 def preserved_environment():
     with environment_snapshot():
+        yield
+
+
+@pytest.fixture
+def assertical_extensions():
+    with generator_registry_snapshot():
+        register_base_type(Path, lambda x: Path(f"fake.{x}"), lambda x: [])
         yield
 
 

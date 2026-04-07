@@ -10,7 +10,9 @@ import pandas as pd
 import pytest
 from assertical.asserts.generator import assert_class_instance_equality
 from assertical.asserts.time import assert_nowish
+from assertical.asserts.type import assert_list_type
 from assertical.fake.generator import generate_class_instance
+from cactus_schema.runner.schema import RequestEntry
 
 from cactus_runner.app import finalize
 from cactus_runner.app.timeline import Timeline
@@ -21,7 +23,6 @@ from cactus_runner.models import (
     RunnerState,
     Site,
 )
-from cactus_schema.runner.schema import RequestEntry
 
 DT_NOW = datetime.now(timezone.utc)
 
@@ -265,7 +266,7 @@ async def test_generate_json_reporting_data(version):
         errors=errors,
         version=version,
     )
-    reporting_data = ReportingData.from_json(version, reporting_data_str)
+    reporting_data: ReportingData = ReportingData.from_json(version, reporting_data_str)
 
     # Assert
     assert_nowish(reporting_data.created_at)
@@ -273,7 +274,11 @@ async def test_generate_json_reporting_data(version):
     assert_class_instance_equality(RunnerState, runner_state, reporting_data.runner_state)
     assert len(checks) == len(reporting_data.check_results)
     assert len(readings) == len(reporting_data.readings)
-    assert_class_instance_equality(list[Site], sites, reporting_data.sites)
+    assert_list_type(Site, sites, count=site_count)
+    assert_list_type(Site, reporting_data.sites, count=site_count)
+    for expected, actual in zip(sites, reporting_data.sites):
+        assert_class_instance_equality(Site, expected, actual)
+
     assert_class_instance_equality(Timeline, timeline, reporting_data.timeline)
 
 
