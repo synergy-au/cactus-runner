@@ -295,6 +295,9 @@ async def action_set_comms_rate(
     fsa_list_poll_seconds: int | None = resolved_parameters.get("fsa_list_poll_seconds", None)
     derp_list_poll_seconds: int | None = resolved_parameters.get("derp_list_poll_seconds", None)
     der_list_poll_seconds: int | None = resolved_parameters.get("der_list_poll_seconds", None)
+    tp_list_poll_seconds: int | None = resolved_parameters.get("tp_list_poll_seconds", None)
+    tti_list_poll_seconds: int | None = resolved_parameters.get("tti_list_poll_seconds", None)
+
     mup_post_seconds: int | None = resolved_parameters.get("mup_post_seconds", None)
     edev_post_seconds: int | None = resolved_parameters.get("edev_post_seconds", None)
 
@@ -307,6 +310,8 @@ async def action_set_comms_rate(
             derp_list_poll_seconds,
             fsa_list_poll_seconds,
             mup_post_seconds,
+            tp_list_poll_seconds,
+            tti_list_poll_seconds,
         ]
     ):
         await envoy_client.update_runtime_config(
@@ -317,6 +322,8 @@ async def action_set_comms_rate(
                 derpl_pollrate_seconds=derp_list_poll_seconds,
                 fsal_pollrate_seconds=fsa_list_poll_seconds,
                 mup_postrate_seconds=mup_post_seconds,
+                tp_pollrate_seconds=tp_list_poll_seconds,
+                tti_pollrate_seconds=tti_list_poll_seconds,
             )
         )
 

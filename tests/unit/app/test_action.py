@@ -765,6 +765,8 @@ async def test_action_set_comms_rate_all_values(pg_base_config, envoy_admin_clie
         "derp_list_poll_seconds": 14,
         "der_list_poll_seconds": 15,
         "mup_post_seconds": 16,
+        "tp_list_poll_seconds": 17,
+        "tti_list_poll_seconds": 18,
     }
 
     async with generate_async_session(pg_base_config) as session:
@@ -788,6 +790,8 @@ async def test_action_set_comms_rate_all_values(pg_base_config, envoy_admin_clie
         assert runtime_config.derpl_pollrate_seconds == 14
         assert runtime_config.derl_pollrate_seconds == 15
         assert runtime_config.mup_postrate_seconds == 16
+        assert runtime_config.tp_pollrate_seconds == 17
+        assert runtime_config.tti_pollrate_seconds == 18
 
         assert_nowish(site.changed_time)
         assert site.post_rate_seconds == 11
