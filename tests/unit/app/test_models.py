@@ -3,8 +3,7 @@ import sys
 from datetime import datetime
 
 from assertical.asserts.generator import assert_class_instance_equality
-from assertical.fake.generator import generate_class_instance, register_base_type
-from assertical.fixtures.generator import generator_registry_snapshot
+from assertical.fake.generator import generate_class_instance
 from envoy.server.model import SiteReadingType
 from envoy.server.model.site import Site as EnvoySite
 
