@@ -26,9 +26,6 @@ dependencies = [
   "envoy @ git+https://github.com/bsgip/envoy.git@v1.3.6",
   "psycopg[binary]>=3.2.5,<4",
   "asyncpg>=0.30.0,<1",
-  "reportlab>=4.4.1,<5",
-  "plotly>=6.1.2,<7",
-  "kaleido>=0.2.1,<1",
   "pandas>=2.2.3,<3",
   "pydantic_xml[lxml]>=2.11.7,<3",
   "pydantic!=2.7.0",
@@ -55,7 +52,6 @@ dev = [
   "coverage",
   "lxml-stubs",
   "pandas-stubs",
-  "types-reportlab",
 ]
 test = [
   "pytest",
@@ -77,6 +73,12 @@ addopts = "-ra -q -v"
 postgresql_exec = "/usr/lib/postgresql/16/bin/pg_ctl"
 testpaths = ["tests"]
 asyncio_default_fixture_loop_scope = "session"
+filterwarnings = [
+  # cactus_schema contains dataclasses named Test* (e.g. TestDefinition, TestUser, TestConfig,
+  # TestCertificates) that pytest mistakenly tries to collect as test classes. Matched by message
+  # rather than module because pytest raises PytestCollectionWarning internally, not from cactus_schema.
+  "ignore:cannot collect test class 'Test(Definition|User|Config|Certificates)':pytest.PytestCollectionWarning",
+]
 markers = [
   "slow: Metadata to say this is a test that takes a (relatively) long time to execute",
 ]
