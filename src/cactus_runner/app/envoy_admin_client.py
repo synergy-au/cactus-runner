@@ -15,6 +15,11 @@ from envoy_schema.admin.schema.config import (
     RuntimeServerConfigRequest,
     RuntimeServerConfigResponse,
 )
+from envoy_schema.admin.schema.pricing import (
+    TariffComponentRequest,
+    TariffGeneratedRateRequest,
+    TariffRequest,
+)
 from envoy_schema.admin.schema.site import SiteResponse, SiteUpdateRequest
 from envoy_schema.admin.schema.site_control import (
     SiteControlGroupDefaultRequest,
@@ -35,6 +40,11 @@ from envoy_schema.admin.schema.uri import (
     SiteControlRangeUri,
     SiteControlUri,
     SiteUri,
+    TariffComponentCreateUri,
+    TariffComponentUpdateUri,
+    TariffCreateUri,
+    TariffGeneratedRateCreateUri,
+    TariffGeneratedRateUpdateUri,
 )
 
 logger = logging.getLogger(__name__)
@@ -223,3 +233,40 @@ class EnvoyAdminClient:
         resp = await self._session.delete(SiteControlGroupListUri)
         resp.raise_for_status()
         return HTTPStatus(resp.status)
+
+    async def create_tariff(self, tariff: TariffRequest) -> int:
+        resp = await self._session.post(TariffCreateUri, json=tariff.model_dump())
+        resp.raise_for_status()
+
+        json = await resp.json()
+        return BatchCreateResponse(**json).ids[0]
+
+    async def create_tariff_component(self, tariff_component: TariffComponentRequest) -> int:
+        resp = await self._session.post(TariffComponentCreateUri, json=tariff_component.model_dump())
+        resp.raise_for_status()
+
+        json = await resp.json()
+        return BatchCreateResponse(**json).ids[0]
+
+    async def create_tariff_generated_rate(self, rate: TariffGeneratedRateRequest) -> int:
+        resp = await self._session.post(
+            TariffGeneratedRateCreateUri,
+            data="[" + rate.model_dump_json() + "]",
+            headers={"Content-Type": "application/json"},
+        )
+        resp.raise_for_status()
+
+        json = await resp.json()
+        return BatchCreateResponse(**json).ids[0]
+
+    async def delete_tariff_component(self, tariff_component_id: int) -> None:
+        resp = await self._session.delete(
+            TariffComponentUpdateUri.format(tariff_component_id=tariff_component_id),
+        )
+        resp.raise_for_status()
+
+    async def delete_tariff_generated_rate(self, tariff_generated_rate_id: int) -> None:
+        resp = await self._session.delete(
+            TariffGeneratedRateUpdateUri.format(tariff_generated_rate_id=tariff_generated_rate_id),
+        )
+        resp.raise_for_status()

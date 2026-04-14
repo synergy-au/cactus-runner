@@ -13,6 +13,7 @@ from envoy.server.model.doe import (
 )
 from envoy.server.model.site import Site, SiteDER
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
+from envoy.server.model.tariff import Tariff, TariffComponent
 from envoy_schema.server.schema.sep2.types import (
     DataQualifierType,
     KindType,
@@ -230,3 +231,15 @@ async def get_site_control_group_defaults_with_archive(
     deleted_control_groups = (await session.execute(select(ArchiveSiteControlGroupDefault))).scalars().all()
 
     return list(chain(active_control_groups, deleted_control_groups))
+
+
+async def get_tariffs(session: AsyncSession) -> Sequence[Tariff]:
+    statement = select(Tariff).order_by(Tariff.tariff_id.asc())
+    response = await session.execute(statement)
+    return response.scalars().all()
+
+
+async def get_tariff_components(session: AsyncSession) -> Sequence[TariffComponent]:
+    statement = select(TariffComponent).order_by(TariffComponent.tariff_component_id.asc())
+    response = await session.execute(statement)
+    return response.scalars().all()

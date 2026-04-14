@@ -10,6 +10,11 @@ from envoy.server.model.site import Site
 from envoy_schema.admin.schema.config import (
     RuntimeServerConfigRequest,
 )
+from envoy_schema.admin.schema.pricing import (
+    TariffComponentRequest,
+    TariffGeneratedRateRequest,
+    TariffRequest,
+)
 from envoy_schema.admin.schema.site import SiteUpdateRequest
 from envoy_schema.admin.schema.site_control import (
     SiteControlGroupDefaultRequest,
@@ -17,11 +22,25 @@ from envoy_schema.admin.schema.site_control import (
     SiteControlRequest,
     UpdateDefaultValue,
 )
+from envoy_schema.server.schema.sep2.types import (
+    CommodityType,
+    CurrencyCode,
+    DataQualifierType,
+    FlowDirectionType,
+    KindType,
+    PhaseCode,
+    RoleFlagsType,
+    UomType,
+)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
-from cactus_runner.app.envoy_common import get_active_site
+from cactus_runner.app.envoy_common import (
+    get_active_site,
+    get_tariff_components,
+    get_tariffs,
+)
 from cactus_runner.app.evaluator import (
     resolve_variable_expressions_from_parameters,
 )
@@ -405,6 +424,87 @@ async def action_edev_registration_links(resolved_parameters: dict[str, Any], en
     await envoy_client.update_runtime_config(RuntimeServerConfigRequest(disable_edev_registration=not links_enabled))
 
 
+async def action_create_tariff_profile(
+    resolved_parameters: dict[str, Any],
+    envoy_client: EnvoyAdminClient,
+    active_test_procedure: ActiveTestProcedure,
+):
+    primacy: int = resolved_parameters["primacy"]
+    fsa_id: int = resolved_parameters.get("fsa_id", 1)
+    price_pow_10_multiplier: int = resolved_parameters.get("price_pow_10_multiplier", 0)
+    tag: str | None = resolved_parameters.get("tag", None)
+
+    tariff_id = await envoy_client.create_tariff(
+        TariffRequest(
+            name=f"Tariff {primacy}",
+            dnsp_code="CACTUS",
+            currency_code=CurrencyCode.AUSTRALIAN_DOLLAR,
+            price_power_of_ten_multiplier=price_pow_10_multiplier,
+            primacy=primacy,
+            fsa_id=fsa_id,
+        )
+    )
+
+    if tag is not None:
+        active_test_procedure.resource_annotations.tariff_profile_ids_by_alias[tag] = tariff_id
+
+
+async def action_create_rate_component(
+    resolved_parameters: dict[str, Any],
+    envoy_client: EnvoyAdminClient,
+    active_test_procedure: ActiveTestProcedure,
+    session: AsyncSession,
+):
+    tariff_profile_tag: str | None = resolved_parameters.get("tariff_profile_tag", None)
+    role_flags: RoleFlagsType = resolved_parameters.get("role_flags", RoleFlagsType.NONE)
+    commodity: CommodityType | None = resolved_parameters.get("commodity", None)
+    data_qualifier: DataQualifierType | None = resolved_parameters.get("data_qualifier", None)
+    flow_direction: FlowDirectionType | None = resolved_parameters.get("flow_direction", None)
+    kind: KindType | None = resolved_parameters.get("kind", None)
+    phase: PhaseCode | None = resolved_parameters.get("phase", None)
+    power_of_ten_multiplier: int | None = resolved_parameters.get("power_of_ten_multiplier", None)
+    uom: UomType | None = resolved_parameters.get("uom", None)
+    tag: str | None = resolved_parameters.get("tag", None)
+
+    parent_tariff_id: int | None = None
+    if tariff_profile_tag is None:
+        # If we have no parent tag - we assume there must be a single TariffProfile and we'll use that ID
+        existing_tariffs = await get_tariffs(session)
+        if len(existing_tariffs) != 1:
+            raise Exception(
+                f"Can't find an unambiguous TariffProfile to use as a parent. Discovered {len(existing_tariffs)}."
+                + " This is a test definition error."
+            )
+        parent_tariff_id = existing_tariffs[0].tariff_id
+    else:
+        parent_tariff_id = active_test_procedure.resource_annotations.tariff_profile_ids_by_alias.get(
+            tariff_profile_tag, None
+        )
+        if parent_tariff_id is None:
+            raise Exception(
+                f"No TariffProfile with tag '{tariff_profile_tag}' exists. This is a test definition error."
+            )
+
+    tariff_component_id = await envoy_client.create_tariff_component(
+        TariffComponentRequest(
+            tariff_id=parent_tariff_id,
+            accumulation_behaviour=None,
+            commodity=commodity,
+            data_qualifier=data_qualifier,
+            description=None,
+            flow_direction=flow_direction,
+            kind=kind,
+            phase=phase,
+            power_of_ten_multiplier=power_of_ten_multiplier,
+            role_flags=role_flags,
+            uom=uom,
+        )
+    )
+
+    if tag is not None:
+        active_test_procedure.resource_annotations.rate_component_ids_by_alias[tag] = tariff_component_id
+
+
 async def apply_action(
     action: Action, runner_state: RunnerState, session: AsyncSession, envoy_client: EnvoyAdminClient
 ):
@@ -460,6 +560,12 @@ async def apply_action(
                 return
             case "edev-registration-links":
                 await action_edev_registration_links(resolved_parameters, envoy_client)
+                return
+            case "create-tariff-profile":
+                await action_create_tariff_profile(resolved_parameters, envoy_client, active_test_procedure)
+                return
+            case "create-rate-component":
+                await action_create_rate_component(resolved_parameters, envoy_client, active_test_procedure, session)
                 return
 
     except Exception as exc:

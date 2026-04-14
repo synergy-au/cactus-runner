@@ -91,6 +91,9 @@ class StepInfo:
 @dataclass
 class ResourceAnnotations:
     der_control_ids_by_alias: dict[str, int] = field(default_factory=dict)
+    tariff_profile_ids_by_alias: dict[str, int] = field(default_factory=dict)
+    rate_component_ids_by_alias: dict[str, int] = field(default_factory=dict)
+    tariff_generated_rate_ids_by_alias: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass

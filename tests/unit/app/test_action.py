@@ -16,6 +16,7 @@ from envoy.server.model.doe import (
 )
 from envoy.server.model.server import RuntimeServerConfig
 from envoy.server.model.site import Site
+from envoy.server.model.tariff import Tariff, TariffComponent, TariffGeneratedRate
 from sqlalchemy import func, select
 
 from cactus_runner.app.action import (
@@ -26,6 +27,7 @@ from cactus_runner.app.action import (
     action_communications_status,
     action_create_der_control,
     action_create_der_program,
+    action_create_tariff_profile,
     action_edev_registration_links,
     action_enable_steps,
     action_register_end_device,
@@ -1025,3 +1027,69 @@ async def test_action_edev_registration_links(
             pg_base_config.execute("select disable_edev_registration from runtime_server_config;").fetchone()[0]
             == expected_db_value
         )
+
+
+@pytest.mark.anyio
+async def test_action_create_tariff_profile(pg_base_config, envoy_admin_client):
+    """Verifies that creating a tariff with a tag properly annotates it in the active test procedure"""
+    # Arrange
+    active_test_procedure = generate_class_instance(
+        ActiveTestProcedure, step_status={}, finished_zip_path=None, resource_annotations=ResourceAnnotations()
+    )
+    tag = "TP-1"
+    resolved_params = {
+        "primacy": 1,
+        "fsa_id": 2,
+        "price_pow_10_multiplier": -1,
+        "tag": tag,
+    }
+
+    # Act
+    await action_create_tariff_profile(resolved_params, envoy_admin_client, active_test_procedure)
+
+    # Assert
+    assert pg_base_config.execute("select count(*) from tariff;").fetchone()[0] == 1
+
+    # Verify the tag was added to the active test procedure
+    assert tag in active_test_procedure.resource_annotations.tariff_profile_ids_by_alias
+
+    # Verify the tagged tariff ID matches the created control
+    async with generate_async_session(pg_base_config) as session:
+        tariff = (await session.execute(select(Tariff).limit(1))).scalar_one()
+        tagged_tariff_id = active_test_procedure.resource_annotations.tariff_profile_ids_by_alias[tag]
+        assert tagged_tariff_id == tariff.tariff_id
+
+
+
+@pytest.mark.anyio
+async def test_action_create_rate_component_tagged_parent(pg_base_config, envoy_admin_client):
+    """Verifies that creating a rate component with a definitive parent tag properly annotates it in the active test 
+    procedure"""
+    # Arrange
+    tariff_profile_tag = "TP-1"
+    active_test_procedure = generate_class_instance(
+        ActiveTestProcedure, step_status={}, finished_zip_path=None, resource_annotations=ResourceAnnotations(tariff_profile_ids_by_alias={tariff_profile_tag: })
+    )
+    
+    tag = "RC-1"
+    resolved_params = {
+        "primacy": 1,
+        "fsa_id": 2,
+        "price_pow_10_multiplier": -1,
+        "tag": tag,
+    }
+
+    # Act
+    await action_create_tariff_profile(resolved_params, envoy_admin_client, active_test_procedure)
+
+    # Assert
+    assert pg_base_config.execute("select count(*) from tariff;").fetchone()[0] == 1
+
+    # Verify the tag was added to the active test procedure
+    assert tag in active_test_procedure.resource_annotations.tariff_profile_ids_by_alias
+
+    # Verify the tagged tariff ID matches the created control
+    async with generate_async_session(pg_base_config) as session:
+        tariff = (await session.execute(select(Tariff).limit(1))).scalar_one()
+        tagged_tariff_id = active_test_procedure.resource_annotations.tariff_profile_ids_by_alias[tag]
+        assert tagged_tariff_id == tariff.tariff_id

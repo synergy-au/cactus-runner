@@ -9,6 +9,11 @@ from envoy_schema.admin.schema.config import (
     RuntimeServerConfigRequest,
     RuntimeServerConfigResponse,
 )
+from envoy_schema.admin.schema.pricing import (
+    TariffComponentRequest,
+    TariffGeneratedRateRequest,
+    TariffRequest,
+)
 from envoy_schema.admin.schema.site import SiteResponse
 from envoy_schema.admin.schema.site_control import (
     SiteControlGroupRequest,
@@ -225,3 +230,87 @@ async def test_create_site_controls(mock_session_with_json_response):
         data="[" + ",".join([control_1.model_dump_json(), control_2.model_dump_json()]) + "]",
         headers={"Content-Type": "application/json"},
     )
+
+
+@pytest.mark.asyncio
+async def test_create_tariff(mock_session_with_json_response):
+    # Arrange
+    mock_session, _ = mock_session_with_json_response(json_data={"ids": [11]}, status=201, method="post")
+
+    client = EnvoyAdminClient("http://localhost", EnvoyAdminClientAuthParams("admin", "pw"))
+    client._session = mock_session
+
+    tariff_request = generate_class_instance(TariffRequest, seed=123)
+
+    # Act
+    returned_id = await client.create_tariff(tariff_request)
+
+    # Assert
+    assert returned_id == 11
+    mock_session.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_create_tariff_component(mock_session_with_json_response):
+    # Arrange
+    mock_session, _ = mock_session_with_json_response(json_data={"ids": [11]}, status=201, method="post")
+
+    client = EnvoyAdminClient("http://localhost", EnvoyAdminClientAuthParams("admin", "pw"))
+    client._session = mock_session
+
+    tc_request = generate_class_instance(TariffComponentRequest, seed=123)
+
+    # Act
+    returned_id = await client.create_tariff_component(tc_request)
+
+    # Assert
+    assert returned_id == 11
+    mock_session.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_create_tariff_generated_rate(mock_session_with_json_response):
+    # Arrange
+    mock_session, _ = mock_session_with_json_response(json_data={"ids": [11]}, status=201, method="post")
+
+    client = EnvoyAdminClient("http://localhost", EnvoyAdminClientAuthParams("admin", "pw"))
+    client._session = mock_session
+
+    rate_request = generate_class_instance(TariffGeneratedRateRequest, seed=123)
+
+    # Act
+    returned_id = await client.create_tariff_generated_rate(rate_request)
+
+    # Assert
+    assert returned_id == 11
+    mock_session.post.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_tariff_component(mock_session_with_json_response):
+    # Arrange
+    mock_session, _ = mock_session_with_json_response(status=204, method="delete")
+
+    client = EnvoyAdminClient("http://localhost", EnvoyAdminClientAuthParams("admin", "pw"))
+    client._session = mock_session
+
+    # Act
+    await client.delete_tariff_component(123)
+
+    # Assert
+    mock_session.delete.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_tariff_generated_rate(mock_session_with_json_response):
+    # Arrange
+    mock_session, _ = mock_session_with_json_response(status=204, method="delete")
+
+    client = EnvoyAdminClient("http://localhost", EnvoyAdminClientAuthParams("admin", "pw"))
+    client._session = mock_session
+
+    # Act
+    await client.delete_tariff_generated_rate(123)
+
+    # Assert
+    mock_session.delete.assert_called_once()
