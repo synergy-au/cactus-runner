@@ -6,9 +6,19 @@ from envoy.server import model
 from envoy.server.mapper import common
 from sqlalchemy.ext.asyncio import AsyncSession
 
+AEST = dt.timezone(dt.timedelta(hours=10))  # Australian Eastern Standard Time (or NEM time)
+
 
 def resolve_named_variable_now() -> dt.datetime:
     return dt.datetime.now(tz=dt.timezone.utc)
+
+
+def resolve_named_variable_now_hour() -> dt.datetime:
+    return dt.datetime.now(tz=AEST).replace(minute=0, second=0, microsecond=0)
+
+
+def resolve_named_variable_now_day() -> dt.datetime:
+    return dt.datetime.now(tz=AEST).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 async def _select_single_site_der_setting(session: AsyncSession, variable_name: str) -> model.SiteDERSetting:

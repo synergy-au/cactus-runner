@@ -40,8 +40,11 @@ async def resolve_variable(session: AsyncSession, v: NamedVariable | Expression 
     elif isinstance(v, NamedVariable):
         match v.variable:
             case NamedVariableType.NOW:
-                # Return the tz aware datetime "now"
                 return resolvers.resolve_named_variable_now()
+            case NamedVariableType.NOW_DAY:
+                return resolvers.resolve_named_variable_now_day()
+            case NamedVariableType.NOW_HOUR:
+                return resolvers.resolve_named_variable_now_hour()
             case NamedVariableType.DERSETTING_SET_MAX_W:
                 return await resolvers.resolve_named_variable_der_setting_max_w(session)
             case NamedVariableType.DERSETTING_SET_MAX_VA:

@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from assertical.fake.generator import generate_class_instance
 from assertical.fake.sqlalchemy import assert_mock_session, create_mock_session
+from cactus_test_definitions.errors import UnresolvableVariableError
 from cactus_test_definitions.variable_expressions import (
     Constant,
     Expression,
@@ -13,7 +14,6 @@ from cactus_test_definitions.variable_expressions import (
     NamedVariableType,
     OperationType,
 )
-from cactus_test_definitions.errors import UnresolvableVariableError
 from envoy.server.model.site import Site, SiteDER, SiteDERSetting
 from freezegun import freeze_time
 
@@ -81,6 +81,14 @@ DATABASE_SET_MAX_W = 2020.0
             NamedVariable(NamedVariableType.NOW),
             datetime(2024, 9, 10, 1, 2, 3, tzinfo=timezone.utc),
         ),  # Time frozen to this
+        (
+            NamedVariable(NamedVariableType.NOW_DAY),
+            datetime(2024, 9, 10, 0, 0, 0, tzinfo=timezone(timedelta(hours=10))),
+        ),  # Time frozen to this (also forced to AEST)
+        (
+            NamedVariable(NamedVariableType.NOW_HOUR),
+            datetime(2024, 9, 10, 11, 0, 0, tzinfo=timezone(timedelta(hours=10))),
+        ),  # Time frozen to this (also forced to AEST)
         (NamedVariable(NamedVariableType.DERSETTING_SET_MAX_W), DATABASE_SET_MAX_W),  # DB fixed with this
         (
             Expression(OperationType.ADD, NamedVariable(NamedVariableType.NOW), Constant(timedelta(hours=1))),
