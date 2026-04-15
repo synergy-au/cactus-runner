@@ -27,7 +27,9 @@ from cactus_runner.app.action import (
     action_communications_status,
     action_create_der_control,
     action_create_der_program,
+    action_create_rate_component,
     action_create_tariff_profile,
+    action_create_time_tariff_interval,
     action_edev_registration_links,
     action_enable_steps,
     action_register_end_device,
@@ -1060,36 +1062,213 @@ async def test_action_create_tariff_profile(pg_base_config, envoy_admin_client):
         assert tagged_tariff_id == tariff.tariff_id
 
 
-
+@pytest.mark.parametrize(
+    "tp_tags, tariff_profile_tag, expect_success",
+    [
+        ([None], None, True),  # Untagged single parent can reference fine
+        (["TPTag"], None, True),  # Tagged single parent can reference fine
+        ([None, "TPTag", "TPTag2"], "TPTag", True),  # Multiple parents is OK with tag
+        ([None, "TPTag", "TPTag2"], "TPTag2", True),  # Multiple parents is OK with tag
+        ([None, "TPTag", "TPTag2"], "TPTagDNE", False),  # Tag reference DNE
+        ([None, "TPTag", "TPTag2"], None, False),  # Multiple parents REQUIRES a tag
+        ([], None, False),  # No parents to use
+        ([], "DNE", False),  # No parents to use
+    ],
+)
 @pytest.mark.anyio
-async def test_action_create_rate_component_tagged_parent(pg_base_config, envoy_admin_client):
-    """Verifies that creating a rate component with a definitive parent tag properly annotates it in the active test 
-    procedure"""
+async def test_action_create_rate_component(
+    pg_base_config, envoy_admin_client, tp_tags: list[str | None], tariff_profile_tag: str | None, expect_success: bool
+):
+    """Verifies that creating a rate component in a context that may/may not have tariff profiles behaves as expected"""
     # Arrange
-    tariff_profile_tag = "TP-1"
     active_test_procedure = generate_class_instance(
-        ActiveTestProcedure, step_status={}, finished_zip_path=None, resource_annotations=ResourceAnnotations(tariff_profile_ids_by_alias={tariff_profile_tag: })
+        ActiveTestProcedure, step_status={}, finished_zip_path=None, resource_annotations=ResourceAnnotations()
     )
-    
+
+    # For each parent TariffProfile - create a Tariff to reference
+    for idx, tp_tag in enumerate(tp_tags):
+        await action_create_tariff_profile(
+            {
+                "primacy": idx,
+                "fsa_id": idx,
+                "price_pow_10_multiplier": 0,
+                "tag": tp_tag,
+            },
+            envoy_admin_client,
+            active_test_procedure,
+        )
+
     tag = "RC-1"
     resolved_params = {
-        "primacy": 1,
-        "fsa_id": 2,
-        "price_pow_10_multiplier": -1,
+        "tariff_profile_tag": tariff_profile_tag,
+        "role_flags": 1,
+        "commodity": 2,
+        "data_qualifier": 8,
+        "flow_direction": 19,
+        "kind": 12,
+        "phase": 32,
+        "power_of_ten_multiplier": -2,
+        "uom": 134,
         "tag": tag,
     }
 
     # Act
-    await action_create_tariff_profile(resolved_params, envoy_admin_client, active_test_procedure)
+    async with generate_async_session(pg_base_config) as session:
+        if expect_success:
+            await action_create_rate_component(resolved_params, envoy_admin_client, active_test_procedure, session)
+            expected_tariff_component_count = 1
+        else:
+            with pytest.raises(Exception):
+                await action_create_rate_component(resolved_params, envoy_admin_client, active_test_procedure, session)
+            expected_tariff_component_count = 0
 
     # Assert
-    assert pg_base_config.execute("select count(*) from tariff;").fetchone()[0] == 1
+    assert (
+        pg_base_config.execute("select count(*) from tariff_component;").fetchone()[0]
+        == expected_tariff_component_count
+    )
 
     # Verify the tag was added to the active test procedure
-    assert tag in active_test_procedure.resource_annotations.tariff_profile_ids_by_alias
+    if expect_success:
+        assert tag in active_test_procedure.resource_annotations.rate_component_ids_by_alias
 
-    # Verify the tagged tariff ID matches the created control
+        # Verify the tagged tariff ID matches the created tariff component
+        async with generate_async_session(pg_base_config) as session:
+            tc = (await session.execute(select(TariffComponent).limit(1))).scalar_one()
+            tagged_tc_id = active_test_procedure.resource_annotations.rate_component_ids_by_alias[tag]
+            assert tagged_tc_id == tc.tariff_component_id
+
+            # Check our TariffComponent is under the correct Tariff
+            #
+            # This assert only makes sense when we are selecting a specific Tariff - the alternative is that there is
+            # only a single Tariff to choose from in which case the test is covered by FK restricions in the DB
+            if tariff_profile_tag is not None:
+                tagged_tariff_id = active_test_procedure.resource_annotations.tariff_profile_ids_by_alias[
+                    tariff_profile_tag
+                ]
+                assert tagged_tariff_id == tc.tariff_id
+
+            # Sanity check some fields match what we suplied
+            assert tc.commodity == 2
+            assert tc.power_of_ten_multiplier == -2
+            assert tc.flow_direction == 19
+            assert tc.role_flags == 1
+            assert tc.uom == 134
+            assert tc.kind == 12
+    else:
+        assert tag not in active_test_procedure.resource_annotations.rate_component_ids_by_alias
+
+
+@pytest.mark.parametrize(
+    "rc_tags, rate_component_tag, expect_success",
+    [
+        ([None], None, True),  # Untagged single parent can reference fine
+        (["RCTag"], None, True),  # Tagged single parent can reference fine
+        ([None, "RCTag", "RCTag2"], "RCTag", True),  # Multiple parents is OK with tag
+        ([None, "RCTag", "RCTag2"], "RCTag2", True),  # Multiple parents is OK with tag
+        ([None, "RCTag", "RCTag2"], "RCTagDNE", False),  # Tag reference DNE
+        ([None, "RCTag", "RCTag2"], None, False),  # Multiple parents REQUIRES a tag
+        ([], None, False),  # No parents to use
+        ([], "DNE", False),  # No parents to use
+    ],
+)
+@pytest.mark.anyio
+async def test_action_create_time_tariff_interval(
+    pg_base_config, envoy_admin_client, rc_tags: list[str | None], rate_component_tag: str | None, expect_success: bool
+):
+    """Verifies that creating a time tariff interval in a context that may/may not have RateComponents behaves as
+    expected"""
+
+    # Arrange
+    active_test_procedure = generate_class_instance(
+        ActiveTestProcedure, step_status={}, finished_zip_path=None, resource_annotations=ResourceAnnotations()
+    )
+
+    # Create an EndDevice
     async with generate_async_session(pg_base_config) as session:
-        tariff = (await session.execute(select(Tariff).limit(1))).scalar_one()
-        tagged_tariff_id = active_test_procedure.resource_annotations.tariff_profile_ids_by_alias[tag]
-        assert tagged_tariff_id == tariff.tariff_id
+        session.add(generate_class_instance(Site, aggregator_id=1))
+        await session.commit()
+
+    # Create a top level TariffProfile
+    await action_create_tariff_profile(
+        {"primacy": 0, "fsa_id": 1, "price_pow_10_multiplier": 1},
+        envoy_admin_client,
+        active_test_procedure,
+    )
+
+    # Create each parent RateComponent
+    async with generate_async_session(pg_base_config) as session:
+        for idx, rc_tag in enumerate(rc_tags):
+            await action_create_rate_component(
+                {
+                    "role_flags": 1,
+                    "commodity": 2,
+                    "data_qualifier": 8,
+                    "flow_direction": 19,
+                    "kind": 12,
+                    "phase": 32,
+                    "power_of_ten_multiplier": idx,
+                    "uom": 134,
+                    "tag": rc_tag,
+                },
+                envoy_admin_client,
+                active_test_procedure,
+                session,
+            )
+
+    tag = "TTI-1"
+    resolved_params = {
+        "rate_component_tag": rate_component_tag,
+        "start": datetime(2023, 4, 5, tzinfo=timezone.utc),
+        "duration_seconds": 123,
+        "price_pow10_encoded_block0": 1,
+        "price_pow10_encoded_block1": 2,
+        "price_start_pow10_block1": 3,
+        "tag": tag,
+    }
+
+    # Act
+    async with generate_async_session(pg_base_config) as session:
+        if expect_success:
+            await action_create_time_tariff_interval(
+                resolved_params, envoy_admin_client, active_test_procedure, session
+            )
+            expected_tti_count = 1
+        else:
+            with pytest.raises(Exception):
+                await action_create_time_tariff_interval(
+                    resolved_params, envoy_admin_client, active_test_procedure, session
+                )
+            expected_tti_count = 0
+
+    # Assert
+    assert pg_base_config.execute("select count(*) from tariff_generated_rate;").fetchone()[0] == expected_tti_count
+
+    # Verify the tag was added to the active test procedure
+    if expect_success:
+        assert tag in active_test_procedure.resource_annotations.time_tariff_interval_ids_by_alias
+
+        # Verify the tagged rate ID matches the created rate
+        async with generate_async_session(pg_base_config) as session:
+            rate = (await session.execute(select(TariffGeneratedRate).limit(1))).scalar_one()
+            tagged_rate_id = active_test_procedure.resource_annotations.time_tariff_interval_ids_by_alias[tag]
+            assert tagged_rate_id == rate.tariff_generated_rate_id
+
+            # Check our TariffGenerateRate is under the correct TariffComponent
+            #
+            # This assert only makes sense when we are selecting a specific TariffComponent - the alternative is that
+            # there is only a single Tariff to choose from in which case the test is covered by FK restricions in the DB
+            if rate_component_tag is not None:
+                tagged_tc_id = active_test_procedure.resource_annotations.rate_component_ids_by_alias[
+                    rate_component_tag
+                ]
+                assert tagged_tc_id == rate.tariff_component_id
+
+            # Sanity check some fields match what we suplied
+            assert rate.start_time == datetime(2023, 4, 5, tzinfo=timezone.utc)
+            assert rate.duration_seconds == 123
+            assert rate.price_pow10_encoded == 1
+            assert rate.price_pow10_encoded_block_1 == 2
+            assert rate.block_1_start_pow10_encoded == 3
+    else:
+        assert tag not in active_test_procedure.resource_annotations.time_tariff_interval_ids_by_alias

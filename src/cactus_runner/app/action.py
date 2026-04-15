@@ -39,6 +39,7 @@ from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
 from cactus_runner.app.envoy_common import (
     get_active_site,
     get_tariff_components,
+    get_tariff_generated_rates,
     get_tariffs,
 )
 from cactus_runner.app.evaluator import (
@@ -505,6 +506,82 @@ async def action_create_rate_component(
         active_test_procedure.resource_annotations.rate_component_ids_by_alias[tag] = tariff_component_id
 
 
+async def action_create_time_tariff_interval(
+    resolved_parameters: dict[str, Any],
+    envoy_client: EnvoyAdminClient,
+    active_test_procedure: ActiveTestProcedure,
+    session: AsyncSession,
+):
+    start: datetime = resolved_parameters["start"]
+    duration_seconds: int = resolved_parameters["duration_seconds"]
+    price_pow10_encoded_block0: int = resolved_parameters["price_pow10_encoded_block0"]
+    rate_component_tag: str | None = resolved_parameters.get("rate_component_tag", None)
+    price_pow10_encoded_block1: int | None = resolved_parameters.get("price_pow10_encoded_block1", None)
+    price_start_pow10_block1: int | None = resolved_parameters.get("price_start_pow10_block1", None)
+    tag: str | None = resolved_parameters.get("tag", None)
+
+    active_site = await get_active_site(session)
+    if active_site is None:
+        raise Exception("Can't create TimeTariffInterval if there is no EndDevice. This is a test definition error.")
+
+    parent_tc_id: int | None = None
+    if rate_component_tag is None:
+        # If we have no parent tag - we assume there must be a single TariffComponent and we'll use that ID
+        existing_tcs = await get_tariff_components(session)
+        if len(existing_tcs) != 1:
+            raise Exception(
+                f"Can't find an unambiguous RateComponent to use as a parent. Discovered {len(existing_tcs)}."
+                + " This is a test definition error."
+            )
+        parent_tc_id = existing_tcs[0].tariff_component_id
+    else:
+        parent_tc_id = active_test_procedure.resource_annotations.rate_component_ids_by_alias.get(
+            rate_component_tag, None
+        )
+        if parent_tc_id is None:
+            raise Exception(
+                f"No RateComponent with tag '{rate_component_tag}' exists. This is a test definition error."
+            )
+
+    rate_id = await envoy_client.create_tariff_generated_rate(
+        TariffGeneratedRateRequest(
+            tariff_component_id=parent_tc_id,
+            site_id=active_site.site_id,
+            start_time=start,
+            duration_seconds=duration_seconds,
+            price_pow10_encoded=price_pow10_encoded_block0,
+            price_pow10_encoded_block_1=price_pow10_encoded_block1,
+            block_1_start_pow10_encoded=price_start_pow10_block1,
+            calculation_log_id=None,
+        )
+    )
+
+    if tag is not None:
+        active_test_procedure.resource_annotations.time_tariff_interval_ids_by_alias[tag] = rate_id
+
+
+async def action_cancel_time_tariff_interval(
+    resolved_parameters: dict[str, Any],
+    envoy_client: EnvoyAdminClient,
+    active_test_procedure: ActiveTestProcedure,
+    session: AsyncSession,
+):
+
+    tag: str | None = resolved_parameters.get("tag", None)
+
+    # Are we deleting EVERYTHING or just a specific rate
+    if tag is not None:
+        tagged_id = active_test_procedure.resource_annotations.time_tariff_interval_ids_by_alias.get(tag, None)
+        if tagged_id is None:
+            raise Exception(f"No TimeTariffInterval with tag '{tag}' exists. This is a test definition error.")
+
+        await envoy_client.delete_tariff_generated_rate(tagged_id)
+    else:
+        all_rates = await get_tariff_generated_rates(session)
+        for r in all_rates:
+            await envoy_client.delete_tariff_generated_rate(r.tariff_generated_rate_id)
+
+
 async def apply_action(
     action: Action, runner_state: RunnerState, session: AsyncSession, envoy_client: EnvoyAdminClient
 ):
@@ -566,6 +643,11 @@ async def apply_action(
                 return
             case "create-rate-component":
                 await action_create_rate_component(resolved_parameters, envoy_client, active_test_procedure, session)
+                return
+            case "create-time-tariff-interval":
+                await action_create_time_tariff_interval(
+                    resolved_parameters, envoy_client, active_test_procedure, session
+                )
                 return
 
     except Exception as exc:

@@ -13,7 +13,7 @@ from envoy.server.model.doe import (
 )
 from envoy.server.model.site import Site, SiteDER
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
-from envoy.server.model.tariff import Tariff, TariffComponent
+from envoy.server.model.tariff import Tariff, TariffComponent, TariffGeneratedRate
 from envoy_schema.server.schema.sep2.types import (
     DataQualifierType,
     KindType,
@@ -241,5 +241,11 @@ async def get_tariffs(session: AsyncSession) -> Sequence[Tariff]:
 
 async def get_tariff_components(session: AsyncSession) -> Sequence[TariffComponent]:
     statement = select(TariffComponent).order_by(TariffComponent.tariff_component_id.asc())
+    response = await session.execute(statement)
+    return response.scalars().all()
+
+
+async def get_tariff_generated_rates(session: AsyncSession) -> Sequence[TariffGeneratedRate]:
+    statement = select(TariffGeneratedRate).order_by(TariffGeneratedRate.tariff_generated_rate_id.asc())
     response = await session.execute(statement)
     return response.scalars().all()
