@@ -69,6 +69,11 @@ ACTION_TYPE_TO_HANDLER: dict[str, str] = {
     "register-end-device": "action_register_end_device",
     "communications-status": "action_communications_status",
     "edev-registration-links": "action_edev_registration_links",
+    "create-tariff-profile": "action_create_tariff_profile",
+    "create-rate-component": "action_create_rate_component",
+    "create-time-tariff-interval": "action_create_time_tariff_interval",
+    "cancel-time-tariff-intervals": "action_cancel_time_tariff_intervals",
+    "delete-rate-component": "action_delete_rate_component",
 }
 
 
