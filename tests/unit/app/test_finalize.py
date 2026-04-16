@@ -62,7 +62,6 @@ def test_write_zip_to_file(mocker, tmp_path):
     json_reporting_data = random_string(length=100)
     contents_of_logfile1 = bytes(random_string(length=100), encoding="utf-8")
     contents_of_logfile2 = bytes(random_string(length=100), encoding="utf-8")
-    pdf_data = bytes(random_string(length=100), encoding="utf-8")  # not legimate pdf data
     errors = []
     output_path = tmp_path / "output.zip"
 
@@ -83,7 +82,6 @@ def test_write_zip_to_file(mocker, tmp_path):
             json_status_summary=json_status_summary,
             json_reporting_data=json_reporting_data,
             log_file_paths=[logfile1_name, logfile2_name],
-            pdf_data=pdf_data,
             errors=errors,
         )
 
@@ -111,7 +109,7 @@ def test_write_zip_to_file(mocker, tmp_path):
         zip.read(get_filename(prefix=finalize.get_file_name_no_extension(logfile2_name), filenames=filenames))
         == contents_of_logfile2
     )
-    subprocess_run_mock.assert_called_once()
+    assert subprocess_run_mock.call_count == 2, "Expected two pg_dump calls (schema + data)"
     assert len(errors) == 0, "This shouldn't have been mutated"
 
 
@@ -137,7 +135,6 @@ def test_write_zip_to_file_truncates_large_log(mocker, tmp_path):
         json_status_summary=None,
         json_reporting_data=None,
         log_file_paths=[str(logfile)],
-        pdf_data=None,
         errors=[],
     )
 
@@ -198,7 +195,6 @@ def test_write_zip_to_file_with_errors(mocker, tmp_path):
         json_status_summary=None,
         json_reporting_data=None,
         log_file_paths=["file-that-dne.txt", "file-that-dne-2.txt"],
-        pdf_data=None,
         errors=errors,
     )
 
