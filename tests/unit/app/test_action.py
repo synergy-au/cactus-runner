@@ -9,6 +9,10 @@ from assertical.fake.generator import generate_class_instance
 from assertical.fake.sqlalchemy import assert_mock_session, create_mock_session
 from assertical.fixtures.postgres import generate_async_session
 from cactus_test_definitions.client import ACTION_PARAMETER_SCHEMA, Action, Event
+from envoy.server.model.archive.tariff import (
+    ArchiveTariffComponent,
+    ArchiveTariffGeneratedRate,
+)
 from envoy.server.model.doe import (
     DynamicOperatingEnvelope,
     SiteControlGroup,
@@ -24,12 +28,14 @@ from cactus_runner.app.action import (
     UnknownActionError,
     _effective_pow10_multiplier,
     action_cancel_active_controls,
+    action_cancel_time_tariff_intervals,
     action_communications_status,
     action_create_der_control,
     action_create_der_program,
     action_create_rate_component,
     action_create_tariff_profile,
     action_create_time_tariff_interval,
+    action_delete_rate_component,
     action_edev_registration_links,
     action_enable_steps,
     action_register_end_device,
@@ -1272,3 +1278,217 @@ async def test_action_create_time_tariff_interval(
             assert rate.block_1_start_pow10_encoded == 3
     else:
         assert tag not in active_test_procedure.resource_annotations.time_tariff_interval_ids_by_alias
+
+
+@pytest.mark.parametrize(
+    "tti_tags, cancel_tag, expected_cancel_tti_indexes",
+    [
+        ([], None, []),
+        ([], "TTITagDNE", None),
+        ([None, "TTITag1", "TTITag2", None], None, [0, 1, 2, 3]),
+        ([None, "TTITag1", "TTITag2", None], "TTITag1", [1]),
+        ([None, "TTITag1", "TTITag2", None], "TTITag2", [2]),
+        ([None, "TTITag1", "TTITag2", None], "TTITagDNE", None),
+    ],
+)
+@pytest.mark.anyio
+async def test_action_cancel_time_tariff_intervals(
+    pg_base_config, envoy_admin_client, tti_tags, cancel_tag, expected_cancel_tti_indexes
+):
+    active_test_procedure = generate_class_instance(
+        ActiveTestProcedure, step_status={}, finished_zip_path=None, resource_annotations=ResourceAnnotations()
+    )
+
+    # Create a top level TariffProfile
+    await action_create_tariff_profile(
+        {"primacy": 0, "fsa_id": 1, "price_pow_10_multiplier": 1}, envoy_admin_client, active_test_procedure
+    )
+
+    # Create an EndDevice, RateComponent and the TTIs
+    async with generate_async_session(pg_base_config) as session:
+        session.add(generate_class_instance(Site, aggregator_id=1))
+        await session.commit()
+
+        await action_create_rate_component(
+            {
+                "role_flags": 1,
+                "commodity": 2,
+                "data_qualifier": 8,
+                "flow_direction": 19,
+                "kind": 12,
+                "phase": 32,
+                "power_of_ten_multiplier": 0,
+                "uom": 134,
+            },
+            envoy_admin_client,
+            active_test_procedure,
+            session,
+        )
+
+        for idx, tag in enumerate(tti_tags):
+            await action_create_time_tariff_interval(
+                {
+                    "start": datetime(2023, 4, 5, tzinfo=timezone.utc) + timedelta(hours=idx),
+                    "duration_seconds": 123,
+                    "price_pow10_encoded_block0": idx,
+                    "price_pow10_encoded_block1": 2,
+                    "price_start_pow10_block1": 3,
+                    "tag": tag,
+                },
+                envoy_admin_client,
+                active_test_procedure,
+                session,
+            )
+
+        # Map our created tti_id_by_index - we use idx as price so we can track what rates came from where
+        rates = (await session.execute(select(TariffGeneratedRate))).scalars().all()
+        tti_id_by_index = dict([(r.price_pow10_encoded, r.tariff_generated_rate_id) for r in rates])
+
+    # Act
+    async with generate_async_session(pg_base_config) as session:
+        if expected_cancel_tti_indexes is None:
+            expected_tti_count = len(tti_tags)
+            expected_tti_archive_count = 0
+            with pytest.raises(Exception):
+                await action_cancel_time_tariff_intervals(
+                    {"tag": cancel_tag}, envoy_admin_client, active_test_procedure, session
+                )
+        else:
+            expected_tti_count = len(tti_tags) - len(expected_cancel_tti_indexes)
+            expected_tti_archive_count = len(expected_cancel_tti_indexes)
+            await action_cancel_time_tariff_intervals(
+                {"tag": cancel_tag}, envoy_admin_client, active_test_procedure, session
+            )
+
+    # Assert DB counts
+    assert pg_base_config.execute("select count(*) from tariff_generated_rate;").fetchone()[0] == expected_tti_count
+    assert (
+        pg_base_config.execute("select count(*) from archive_tariff_generated_rate;").fetchone()[0]
+        == expected_tti_archive_count
+    )
+    assert (
+        pg_base_config.execute(
+            "select count(*) from archive_tariff_generated_rate where deleted_time is not NULL;"
+        ).fetchone()[0]
+        == expected_tti_archive_count
+    )
+
+    # Assert the deleted records matched our our expectations
+    remaining_rate_ids = (await session.execute(select(TariffGeneratedRate.tariff_generated_rate_id))).scalars().all()
+    deleted_rate_ids = (
+        (await session.execute(select(ArchiveTariffGeneratedRate.tariff_generated_rate_id))).scalars().all()
+    )
+    for idx in range(len(tti_tags)):
+        if expected_cancel_tti_indexes is not None and idx in expected_cancel_tti_indexes:
+            assert tti_id_by_index[idx] in deleted_rate_ids
+            assert tti_id_by_index[idx] not in remaining_rate_ids
+        else:
+            assert tti_id_by_index[idx] not in deleted_rate_ids
+            assert tti_id_by_index[idx] in remaining_rate_ids
+
+
+@pytest.mark.parametrize(
+    "rate_component_tags, delete_tag, expected_delete_index",
+    [
+        ([], "RCTagDNE", None),
+        ([None, "RCTag11", "RCTag2", None], "TTITagDNE", None),
+        ([None, "RCTag11", "RCTag2", None], "RCTag11", 1),
+        ([None, "RCTag11", "RCTag2", None], "RCTag2", 2),
+    ],
+)
+@pytest.mark.anyio
+async def test_action_delete_rate_component(
+    pg_base_config, envoy_admin_client, rate_component_tags, delete_tag, expected_delete_index
+):
+    active_test_procedure = generate_class_instance(
+        ActiveTestProcedure, step_status={}, finished_zip_path=None, resource_annotations=ResourceAnnotations()
+    )
+
+    # Create a top level TariffProfile
+    await action_create_tariff_profile(
+        {"primacy": 0, "fsa_id": 1, "price_pow_10_multiplier": 1}, envoy_admin_client, active_test_procedure
+    )
+
+    # Create an EndDevice, RateComponents (with rates if appropriate)
+    async with generate_async_session(pg_base_config) as session:
+        session.add(generate_class_instance(Site, aggregator_id=1))
+        await session.commit()
+
+        for idx, tag in enumerate(rate_component_tags):
+            await action_create_rate_component(
+                {
+                    "role_flags": 1,
+                    "commodity": 2,
+                    "data_qualifier": 8,
+                    "flow_direction": 19,
+                    "kind": 12,
+                    "phase": 32,
+                    "power_of_ten_multiplier": idx,  # Used for tracking this RateComponent in the DB
+                    "uom": 134,
+                    "tag": tag,
+                },
+                envoy_admin_client,
+                active_test_procedure,
+                session,
+            )
+
+            if tag is not None:
+                await action_create_time_tariff_interval(
+                    {
+                        "rate_component_tag": tag,
+                        "start": datetime(2023, 4, 5, tzinfo=timezone.utc) + timedelta(hours=idx),
+                        "duration_seconds": 123,
+                        "price_pow10_encoded_block0": idx,
+                        "price_pow10_encoded_block1": 2,
+                        "price_start_pow10_block1": 3,
+                    },
+                    envoy_admin_client,
+                    active_test_procedure,
+                    session,
+                )
+
+        # Map our created rc_id_by_index - we use idx as pow10 mult so we can track what rates came from where
+        tcs = (await session.execute(select(TariffComponent))).scalars().all()
+        tc_id_by_index = dict([(r.power_of_ten_multiplier, r.tariff_component_id) for r in tcs])
+
+    # Act
+    if expected_delete_index is None:
+        expected_tc_count = len(rate_component_tags)
+        expected_tc_archive_count = 0
+        expected_tti_archive_count = 0
+        with pytest.raises(Exception):
+            await action_delete_rate_component({"tag": delete_tag}, envoy_admin_client, active_test_procedure)
+    else:
+        expected_tc_count = len(rate_component_tags) - 1
+        expected_tc_archive_count = 1
+        expected_tti_archive_count = 1
+        await action_delete_rate_component({"tag": delete_tag}, envoy_admin_client, active_test_procedure)
+
+    # Assert DB counts
+    assert pg_base_config.execute("select count(*) from tariff_component;").fetchone()[0] == expected_tc_count
+    assert (
+        pg_base_config.execute("select count(*) from archive_tariff_component;").fetchone()[0]
+        == expected_tc_archive_count
+    )
+    assert (
+        pg_base_config.execute(
+            "select count(*) from archive_tariff_component where deleted_time is not NULL;"
+        ).fetchone()[0]
+        == expected_tc_archive_count
+    )
+    # The underlying TTI's should be archived too (this is a sanity check - envoy tests do this in more detail)
+    assert (
+        pg_base_config.execute("select count(*) from archive_tariff_generated_rate;").fetchone()[0]
+        == expected_tti_archive_count
+    )
+
+    # Assert the deleted record matched our our expectations
+    remaining_tc_ids = (await session.execute(select(TariffComponent.tariff_component_id))).scalars().all()
+    deleted_tc_ids = (await session.execute(select(ArchiveTariffComponent.tariff_component_id))).scalars().all()
+    for idx in range(len(rate_component_tags)):
+        if idx == expected_delete_index:
+            assert tc_id_by_index[idx] in deleted_tc_ids
+            assert tc_id_by_index[idx] not in remaining_tc_ids
+        else:
+            assert tc_id_by_index[idx] not in deleted_tc_ids
+            assert tc_id_by_index[idx] in remaining_tc_ids

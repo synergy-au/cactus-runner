@@ -560,7 +560,7 @@ async def action_create_time_tariff_interval(
         active_test_procedure.resource_annotations.time_tariff_interval_ids_by_alias[tag] = rate_id
 
 
-async def action_cancel_time_tariff_interval(
+async def action_cancel_time_tariff_intervals(
     resolved_parameters: dict[str, Any],
     envoy_client: EnvoyAdminClient,
     active_test_procedure: ActiveTestProcedure,
@@ -580,6 +580,19 @@ async def action_cancel_time_tariff_interval(
         all_rates = await get_tariff_generated_rates(session)
         for r in all_rates:
             await envoy_client.delete_tariff_generated_rate(r.tariff_generated_rate_id)
+
+
+async def action_delete_rate_component(
+    resolved_parameters: dict[str, Any], envoy_client: EnvoyAdminClient, active_test_procedure: ActiveTestProcedure
+):
+
+    tag: str = resolved_parameters["tag"]
+
+    tagged_id = active_test_procedure.resource_annotations.rate_component_ids_by_alias.get(tag, None)
+    if tagged_id is None:
+        raise Exception(f"No RateComponent with tag '{tag}' exists. This is a test definition error.")
+
+    await envoy_client.delete_tariff_component(tagged_id)
 
 
 async def apply_action(
@@ -648,6 +661,14 @@ async def apply_action(
                 await action_create_time_tariff_interval(
                     resolved_parameters, envoy_client, active_test_procedure, session
                 )
+                return
+            case "cancel-time-tariff-intervals":
+                await action_cancel_time_tariff_intervals(
+                    resolved_parameters, envoy_client, active_test_procedure, session
+                )
+                return
+            case "delete-rate-component":
+                await action_delete_rate_component(resolved_parameters, envoy_client, active_test_procedure)
                 return
 
     except Exception as exc:
