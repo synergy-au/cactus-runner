@@ -14,8 +14,12 @@ from envoy.server.crud.common import convert_lfdi_to_sfdi
 from envoy.server.exception import InvalidMappingError
 from envoy.server.mapper.sep2.pub_sub import SubscriptionMapper
 from envoy.server.model.archive.doe import ArchiveDynamicOperatingEnvelope
+from envoy.server.model.archive.tariff import ArchiveTariffGeneratedRate
 from envoy.server.model.doe import DynamicOperatingEnvelope
-from envoy.server.model.response import DynamicOperatingEnvelopeResponse
+from envoy.server.model.response import (
+    DynamicOperatingEnvelopeResponse,
+    TariffGeneratedRateResponse,
+)
 from envoy.server.model.site import (
     SiteDER,
     SiteDERRating,
@@ -24,6 +28,7 @@ from envoy.server.model.site import (
 )
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
 from envoy.server.model.subscription import Subscription, TransmitNotificationLog
+from envoy.server.model.tariff import TariffGeneratedRate
 from envoy_schema.server.schema.sep2.response import ResponseType
 from envoy_schema.server.schema.sep2.types import DataQualifierType, KindType, UomType
 from sqlalchemy import ColumnElement, func, select, text
@@ -1180,6 +1185,248 @@ def match_all_responses(
         return CheckResult(True, f"All DERControl(s) have a Response with a status of {status_str}")
 
 
+async def do_check_response_all(
+    session: AsyncSession, check_price_response: bool, status_filter: int | None, exists: bool
+) -> CheckResult:
+    """Handles a Response check where EVERY site control / rate must have a Response
+
+    status_filter: restrict the Response matching to ONLY Responses with this status value
+    check_price_response: Use PriceResponses for TimeTariffIntervals OR DERControlResponses for DERControls?
+    exists: If True - assert EVERY event has a Response, if False assert NO event has a Response."""
+    # First we need to abstract the site control tables from the rate tables
+    if check_price_response:
+        event_type = "TariffGeneratedRate"
+        active_event_ids = (await session.execute(select(TariffGeneratedRate.tariff_generated_rate_id))).scalars().all()
+        deleted_event_ids = (
+            (
+                await session.execute(
+                    select(ArchiveTariffGeneratedRate.tariff_generated_rate_id).where(
+                        ArchiveTariffGeneratedRate.deleted_time.is_not(None)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        tariff_response_stmt = select(TariffGeneratedRateResponse.tariff_generated_rate_id_snapshot)
+        if status_filter is not None:
+            tariff_response_stmt = tariff_response_stmt.where(
+                TariffGeneratedRateResponse.response_type == status_filter
+            )
+        event_ids_with_response = set((await session.execute(tariff_response_stmt)).scalars().all())
+
+    else:
+        event_type = "DERControl"
+        active_event_ids = (
+            (await session.execute(select(DynamicOperatingEnvelope.dynamic_operating_envelope_id))).scalars().all()
+        )
+        deleted_event_ids = (
+            (
+                await session.execute(
+                    select(ArchiveDynamicOperatingEnvelope.dynamic_operating_envelope_id).where(
+                        ArchiveDynamicOperatingEnvelope.deleted_time.is_not(None)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        control_response_stmt = select(DynamicOperatingEnvelopeResponse.dynamic_operating_envelope_id_snapshot)
+        if status_filter is not None:
+            control_response_stmt = control_response_stmt.where(
+                DynamicOperatingEnvelopeResponse.response_type == status_filter
+            )
+        event_ids_with_response = set((await session.execute(control_response_stmt)).scalars().all())
+
+    # Now we can perform the actual check
+    unmatched_events: int = 0
+    matched_events: int = 0
+    for event_id in chain(active_event_ids, deleted_event_ids):
+        if event_id in event_ids_with_response:
+            matched_events += 1
+        else:
+            unmatched_events += 1
+
+    status_string: str = response_type_to_string(status_filter)
+
+    if exists:
+        if unmatched_events > 0:
+            return CheckResult(
+                False,
+                f"{unmatched_events} {event_type}(s) failed to receive a Response with a status of {status_string}",
+            )
+        else:
+            return CheckResult(True, f"All {event_type}(s) have a Response with a status of {status_string}")
+    else:
+        if matched_events == 0:
+            return CheckResult(
+                True, f"No {event_type}(s) have a Response with a status of {status_string}. (as expected)"
+            )
+        else:
+            return CheckResult(
+                False, f"{matched_events} {event_type}(s) have a Response '{status_string}' but zero was expected."
+            )
+
+
+async def do_check_response_latest(
+    session: AsyncSession,
+    check_price_response: bool,
+    active_test_procedure: ActiveTestProcedure,
+    status_filter: int | None,
+    subject_tag: str | None,
+    exists: bool,
+) -> CheckResult:
+    """Handles a Response check where only the most recent Response for a site control / rate is considered
+
+    status_filter: restrict the Response matching to ONLY Responses with this status value
+    check_price_response: Use PriceResponses for TimeTariffIntervals OR DERControlResponses for DERControls?
+    exists: If True - assert EVERY event has a Response, if False assert NO event has a Response."""
+
+    # First we need to abstract the site control responses from the rate responses
+    context_description = ""
+    if check_price_response:
+        event_type = "TariffGeneratedRate"
+        rate_stmt = (
+            select(TariffGeneratedRateResponse.response_type)
+            .order_by(TariffGeneratedRateResponse.created_time.desc())
+            .limit(1)
+        )
+        if subject_tag is not None:
+            rate_id = active_test_procedure.resource_annotations.time_tariff_interval_ids_by_alias.get(subject_tag)
+            if rate_id is None:
+                return CheckResult(False, f"No {event_type} found with tag: {subject_tag}")
+            rate_stmt = rate_stmt.where(TariffGeneratedRateResponse.tariff_generated_rate_id_snapshot == rate_id)
+            context_description = f" for tag {subject_tag}"
+
+        latest_status = (await session.execute(rate_stmt)).scalar_one_or_none()
+
+    else:
+        event_type = "DERControl"
+        control_stmt = (
+            select(DynamicOperatingEnvelopeResponse.response_type)
+            .order_by(DynamicOperatingEnvelopeResponse.created_time.desc())
+            .limit(1)
+        )
+        if subject_tag is not None:
+            control_id = active_test_procedure.resource_annotations.der_control_ids_by_alias.get(subject_tag)
+            if control_id is None:
+                return CheckResult(False, f"No {event_type} found with tag: {subject_tag}")
+            control_stmt = control_stmt.where(
+                DynamicOperatingEnvelopeResponse.dynamic_operating_envelope_id_snapshot == control_id
+            )
+            context_description = f" for tag {subject_tag}"
+
+        latest_status = (await session.execute(control_stmt)).scalar_one_or_none()
+
+    # If there is no Response - we can easily mark succes/fail based on whether we expect it to exist or not
+    if latest_status is None:
+        return CheckResult(not exists, f"No {event_type} responses found{context_description}")
+
+    rt_string = response_type_to_string(latest_status)
+    if exists:
+        if status_filter is not None and latest_status != status_filter:
+            expected_string = response_type_to_string(status_filter)
+            return CheckResult(
+                False,
+                f"Latest {event_type} Response{context_description} is of type {rt_string}, not {expected_string}",
+            )
+        return CheckResult(True, f"Latest {event_type} response{context_description} of type {rt_string} matches check")
+    else:
+        # We are looking for NON existence - we've already confirmed there IS a Response. The only way to pass
+        # this check is if the latest status does NOT match our status filter
+        if status_filter is not None and latest_status != status_filter:
+            expected_string = response_type_to_string(status_filter)
+            return CheckResult(
+                True,
+                f"Latest {event_type} Response{context_description} has type {rt_string}"
+                + f" not equal to {expected_string} (exists is False)",
+            )
+        return CheckResult(
+            False,
+            f"Latest {event_type} response{context_description} of type {rt_string} matches check"
+            + " (exists is False)",
+        )
+
+
+async def do_check_response_any(
+    session: AsyncSession,
+    check_price_response: bool,
+    active_test_procedure: ActiveTestProcedure,
+    status_filter: int | None,
+    subject_tag: str | None,
+    exists: bool,
+) -> CheckResult:
+    """Handles a Response check where ANY matching Response for a site control / rate will pass
+
+    status_filter: restrict the Response matching to ONLY Responses with this status value
+    check_price_response: Use PriceResponses for TimeTariffIntervals OR DERControlResponses for DERControls?
+    exists: If True - assert ANY event has a Response, if False assert NO event has a Response."""
+
+    # First we need to abstract the site control responses from the rate responses
+    context_description = ""
+    if check_price_response:
+        event_type = "TariffGeneratedRate"
+        matching_rate_responses = select(func.count()).select_from(TariffGeneratedRateResponse)
+        if subject_tag is not None:
+            rate_id = active_test_procedure.resource_annotations.time_tariff_interval_ids_by_alias.get(subject_tag)
+            if rate_id is None:
+                return CheckResult(False, f"No {event_type} found with tag: {subject_tag}")
+            matching_rate_responses = matching_rate_responses.where(
+                TariffGeneratedRateResponse.tariff_generated_rate_id_snapshot == rate_id
+            )
+            context_description = f" for tag {subject_tag}"
+
+        if status_filter is not None:
+            matching_rate_responses = matching_rate_responses.where(
+                TariffGeneratedRateResponse.response_type == status_filter
+            )
+
+        match_count = (await session.execute(matching_rate_responses)).scalar_one()
+
+    else:
+        event_type = "DERControl"
+        matching_control_responses = select(func.count()).select_from(DynamicOperatingEnvelopeResponse)
+        if subject_tag is not None:
+            control_id = active_test_procedure.resource_annotations.der_control_ids_by_alias.get(subject_tag)
+            if control_id is None:
+                return CheckResult(False, f"No {event_type} found with tag: {subject_tag}")
+            matching_control_responses = matching_control_responses.where(
+                DynamicOperatingEnvelopeResponse.dynamic_operating_envelope_id_snapshot == control_id
+            )
+            context_description = f" for tag {subject_tag}"
+
+        if status_filter is not None:
+            matching_control_responses = matching_control_responses.where(
+                DynamicOperatingEnvelopeResponse.response_type == status_filter
+            )
+
+        match_count = (await session.execute(matching_control_responses)).scalar_one()
+
+    filter_string: str = response_type_to_string(status_filter)
+    if exists:
+        if match_count == 0:
+            return CheckResult(
+                False,
+                f"No {event_type} Response{context_description} of type {filter_string} exist",
+            )
+        else:
+            return CheckResult(
+                True,
+                f"Found {match_count} {event_type} Response{context_description} of type {filter_string}",
+            )
+    else:
+        if match_count == 0:
+            return CheckResult(
+                True,
+                f"No {event_type} Response{context_description} of type {filter_string} exist (as expected)",
+            )
+        else:
+            return CheckResult(
+                False,
+                f"Found {match_count} {event_type} Response{context_description} of type {filter_string}. Expected 0.",
+            )
+
+
 async def check_response_contents(
     resolved_parameters: dict[str, Any], session: AsyncSession, active_test_procedure: ActiveTestProcedure
 ) -> CheckResult:
@@ -1188,77 +1435,70 @@ async def check_response_contents(
     is_latest: bool = resolved_parameters.get("latest", False)
     is_all: bool = resolved_parameters.get("all", False)
     status_filter: int | None = resolved_parameters.get("status", None)
-    status_filter_string: str = response_type_to_string(status_filter)
     subject_tag: Optional[str] = resolved_parameters.get("subject_tag", None)
+    exists: bool = resolved_parameters.get("exists", True)
 
     # Handle the "all" case separately
     if is_all:
-        controls = (await session.execute(select(DynamicOperatingEnvelope))).scalars().all()
-        deleted_controls = (
-            (
-                await session.execute(
-                    select(ArchiveDynamicOperatingEnvelope).where(
-                        ArchiveDynamicOperatingEnvelope.deleted_time.is_not(None)
-                    )
-                )
-            )
-            .scalars()
-            .all()
+        return await do_check_response_all(
+            session, check_price_response=False, status_filter=status_filter, exists=exists
         )
-        response_stmt = select(DynamicOperatingEnvelopeResponse)
-        if status_filter is not None:
-            response_stmt = response_stmt.where(DynamicOperatingEnvelopeResponse.response_type == status_filter)
-        responses = (await session.execute(response_stmt)).scalars().all()
-        return match_all_responses(status_filter_string, chain(controls, deleted_controls), responses)
 
-    # For other cases: Start by building base query
-    query = select(DynamicOperatingEnvelopeResponse)
-
-    # Apply tag filter
-    context_description = ""
-    if subject_tag is not None:
-        control_id = active_test_procedure.resource_annotations.der_control_ids_by_alias.get(subject_tag)
-        if control_id is None:
-            return CheckResult(False, f"No DERControl found with tag: {subject_tag}")
-
-        query = query.where(DynamicOperatingEnvelopeResponse.dynamic_operating_envelope_id_snapshot == control_id)
-        context_description = f" for tag {subject_tag}"
-
-    # Handle the "latest" case - get latest first, then check status
     if is_latest:
-        query = query.order_by(DynamicOperatingEnvelopeResponse.created_time.desc()).limit(1)
-        matching_response = (await session.execute(query)).scalar_one_or_none()
+        return await do_check_response_latest(
+            session,
+            check_price_response=False,
+            active_test_procedure=active_test_procedure,
+            status_filter=status_filter,
+            subject_tag=subject_tag,
+            exists=exists,
+        )
 
-        if matching_response is None:
-            return CheckResult(False, f"No responses found{context_description}")
+    return await do_check_response_any(
+        session,
+        check_price_response=False,
+        active_test_procedure=active_test_procedure,
+        status_filter=status_filter,
+        subject_tag=subject_tag,
+        exists=exists,
+    )
 
-        # Now check if it matches the status filter (if provided)
-        if status_filter is not None and matching_response.response_type != status_filter:
-            rt_string = response_type_to_string(matching_response.response_type)
-            expected_string = response_type_to_string(status_filter)
-            return CheckResult(
-                False, f"Latest response{context_description} is of type {rt_string}, not {expected_string}"
-            )
 
-        rt_string = response_type_to_string(matching_response.response_type)
-        return CheckResult(True, f"Latest DERControl response{context_description} of type {rt_string} matches check")
+async def check_price_response_contents(
+    resolved_parameters: dict[str, Any], session: AsyncSession, active_test_procedure: ActiveTestProcedure
+) -> CheckResult:
+    """Implements the price-response-contents check by inspecting the response table for price responses"""
 
-    # For non-latest case: Apply status filter before executing
-    if status_filter is not None:
-        query = query.where(DynamicOperatingEnvelopeResponse.response_type == status_filter)
+    is_latest: bool = resolved_parameters.get("latest", False)
+    is_all: bool = resolved_parameters.get("all", False)
+    status_filter: int | None = resolved_parameters.get("status", None)
+    subject_tag: Optional[str] = resolved_parameters.get("subject_tag", None)
+    exists: bool = resolved_parameters.get("exists", True)
 
-    query = query.limit(1)
-    matching_response = (await session.execute(query)).scalar_one_or_none()
+    # Handle the "all" case separately
+    if is_all:
+        return await do_check_response_all(
+            session, check_price_response=True, status_filter=status_filter, exists=exists
+        )
 
-    # Handle no results
-    if matching_response is None:
-        if status_filter is not None:
-            return CheckResult(False, f"No responses of type {status_filter_string} found{context_description}")
-        return CheckResult(False, f"No responses found{context_description}")
+    if is_latest:
+        return await do_check_response_latest(
+            session,
+            check_price_response=True,
+            active_test_procedure=active_test_procedure,
+            status_filter=status_filter,
+            subject_tag=subject_tag,
+            exists=exists,
+        )
 
-    # Build success message
-    rt_string = response_type_to_string(matching_response.response_type)
-    return CheckResult(True, f"At least one DERControl response{context_description} of type {rt_string} was found")
+    return await do_check_response_any(
+        session,
+        check_price_response=True,
+        active_test_procedure=active_test_procedure,
+        status_filter=status_filter,
+        subject_tag=subject_tag,
+        exists=exists,
+    )
 
 
 def _check_poll_timing_for_path(
@@ -1434,6 +1674,9 @@ async def run_check(
 
             case "response-contents":
                 check_result = await check_response_contents(resolved_parameters, session, active_test_procedure)
+
+            case "price-response-contents":
+                check_result = await check_price_response_contents(resolved_parameters, session, active_test_procedure)
 
             case "all-polls-at-correct-time":
                 check_result = check_all_polls_at_correct_time(

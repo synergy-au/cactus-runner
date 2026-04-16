@@ -21,8 +21,12 @@ from cactus_test_definitions.client import (
 )
 from envoy.server.model.aggregator import Aggregator
 from envoy.server.model.archive.doe import ArchiveDynamicOperatingEnvelope
+from envoy.server.model.archive.tariff import ArchiveTariffGeneratedRate
 from envoy.server.model.doe import DynamicOperatingEnvelope, SiteControlGroup
-from envoy.server.model.response import DynamicOperatingEnvelopeResponse
+from envoy.server.model.response import (
+    DynamicOperatingEnvelopeResponse,
+    TariffGeneratedRateResponse,
+)
 from envoy.server.model.site import (
     Site,
     SiteDER,
@@ -36,6 +40,7 @@ from envoy.server.model.subscription import (
     SubscriptionResource,
     TransmitNotificationLog,
 )
+from envoy.server.model.tariff import Tariff, TariffComponent, TariffGeneratedRate
 from envoy_schema.server.schema.sep2.response import ResponseType
 from envoy_schema.server.schema.sep2.types import (
     DataQualifierType,
@@ -59,6 +64,7 @@ from cactus_runner.app.check import (
     check_der_settings_contents,
     check_der_status_contents,
     check_end_device_contents,
+    check_price_response_contents,
     check_readings_voltage,
     check_response_contents,
     check_subscription_contents,
@@ -2750,18 +2756,25 @@ async def test_check_response_contents_latest(pg_base_config):
 
 
 @pytest.mark.parametrize(
-    "status, control_ids, deleted_control_ids, response_status_values, expected",
+    "status, control_ids, deleted_control_ids, response_status_values, exists, expected",
     [
-        (1, [], [], [], True),
-        (1, [1], [], [], False),
-        (1, [1], [], [(1, 2), (1, 1)], True),
-        (1, [1], [2], [(1, 2), (1, 1)], False),  # Deleted control 2 was not responded to
-        (3, [1], [], [(1, 2), (1, 1)], False),  # No items with response_status 3
-        (None, [1], [], [(1, 2), (1, 1)], True),
-        (1, [1, 2], [], [(1, 2), (1, 1)], False),  # Control 2 has no responses
-        (1, [1, 2], [], [(1, 2), (1, 1), (2, 2)], False),  # Control 2 has no responses of type 2
-        (2, [1, 2], [], [(1, 2), (1, 1), (2, 2)], True),
-        (2, [1], [2], [(1, 2), (1, 1), (2, 2)], True),
+        (1, [], [], [], None, True),
+        (1, [], [], [], False, True),  # Nothing exists - this is an edge case that passes
+        (1, [1], [], [], None, False),
+        (1, [1], [], [], False, True),  # No response for the control
+        (1, [1], [], [(1, 2), (1, 1)], None, True),
+        (1, [1], [], [(1, 2), (1, 1)], False, False),
+        (1, [1], [2], [(1, 2), (1, 1)], None, False),  # Deleted control 2 was not responded to
+        (1, [1], [2], [(1, 2), (1, 1)], False, False),  # Control 1 WAS responded to (but shouldn't have been)
+        (3, [1], [2], [(1, 2), (1, 1)], False, True),  # No controls have status 3 Response
+        (3, [1], [], [(1, 2), (1, 1)], None, False),  # No items with response_status 3
+        (None, [1], [], [(1, 2), (1, 1)], None, True),
+        (1, [1, 2], [], [(1, 2), (1, 1)], None, False),  # Control 2 has no responses
+        (1, [1, 2], [], [(1, 2), (1, 1), (2, 2)], None, False),  # Control 2 has no responses of type 2
+        (1, [1, 2], [], [(1, 2), (1, 1), (2, 2)], False, False),  # Control 1 WAS responded to (but shouldnt have been)
+        (2, [1, 2], [], [(1, 2), (1, 1), (2, 2)], None, True),
+        (2, [1], [2], [(1, 2), (1, 1), (2, 2)], None, True),
+        (2, [1], [2], [(1, 2), (1, 1), (2, 2)], False, False),
     ],
 )
 @pytest.mark.anyio
@@ -2771,6 +2784,7 @@ async def test_check_response_contents_all(
     control_ids: list[int],
     deleted_control_ids: list[int],
     response_status_values: list[tuple[int, int]],
+    exists: bool | None,
     expected: bool,
 ):
     """check_response_contents should behave correctly when looking at all controls having responses
@@ -2826,6 +2840,10 @@ async def test_check_response_contents_all(
         params: dict[str, Any] = {"all": True}
         if status is not None:
             params["status"] = status
+
+        if exists is not None:
+            params["exists"] = exists
+
         assert_check_result(await check_response_contents(params, session, active_test_procedure), expected)
 
 
@@ -2918,6 +2936,22 @@ async def test_check_response_contents_any(pg_base_config):
             False,
         )
 
+        # Using exists inverts the check
+        assert_check_result(
+            await check_response_contents(
+                {"latest": False, "status": ResponseType.CANNOT_BE_DISPLAYED.value, "exists": False},
+                session,
+                active_test_procedure,
+            ),
+            True,
+        )
+        assert_check_result(
+            await check_response_contents(
+                {"status": ResponseType.EVENT_COMPLETED.value, "exists": False}, session, active_test_procedure
+            ),
+            False,
+        )
+
 
 @pytest.mark.anyio
 async def test_check_response_contents_empty(pg_base_config):
@@ -2939,6 +2973,14 @@ async def test_check_response_contents_empty(pg_base_config):
                 {"latest": True, "status": ResponseType.EVENT_COMPLETED.value}, session, active_test_procedure
             ),
             False,
+        )
+
+        assert_check_result(await check_response_contents({"exists": False}, session, active_test_procedure), True)
+        assert_check_result(
+            await check_response_contents({"all": True, "exists": False}, session, active_test_procedure), True
+        )
+        assert_check_result(
+            await check_response_contents({"latest": True, "exists": False}, session, active_test_procedure), True
         )
 
 
@@ -3050,6 +3092,14 @@ async def test_check_response_contents_tag_DERC1(pg_base_config):
             ),
             False,
         )
+        assert_check_result(
+            await check_response_contents(
+                {"subject_tag": "DERC1", "latest": True, "status": ResponseType.EVENT_CANCELLED.value, "exists": False},
+                session,
+                active_test_procedure,
+            ),
+            True,
+        )
 
         # Check DERC1 has a response of type EVENT_RECEIVED
         assert_check_result(
@@ -3074,10 +3124,24 @@ async def test_check_response_contents_tag_DERC1(pg_base_config):
             ),
             True,
         )
+        assert_check_result(
+            await check_response_contents(
+                {"subject_tag": "DERC2", "status": ResponseType.EVENT_CANCELLED.value, "exists": False},
+                session,
+                active_test_procedure,
+            ),
+            False,
+        )
 
         # Check non-existent tag returns failure
         assert_check_result(
             await check_response_contents({"subject_tag": "NONEXISTENT"}, session, active_test_procedure),
+            False,
+        )
+        assert_check_result(
+            await check_response_contents(
+                {"subject_tag": "NONEXISTENT", "exists": False}, session, active_test_procedure
+            ),
             False,
         )
 
@@ -3942,3 +4006,500 @@ def test_check_all_polls_at_correct_time_test_not_started_fails():
 
     assert_check_result(result, False)
     assert "Test has not started" in result.description
+
+
+@pytest.mark.anyio
+async def test_check_price_response_contents_latest(pg_base_config):
+    """check_price_response_contents should behave correctly when looking ONLY at the latest Response"""
+    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
+    # Fill up the DB with responses
+    async with generate_async_session(pg_base_config) as session:
+
+        tariff = generate_class_instance(Tariff, seed=1, tariff_id=1)
+        session.add(tariff)
+
+        tariff_component = generate_class_instance(TariffComponent, seed=2, tariff=tariff)
+        session.add(tariff_component)
+        await session.flush()
+
+        site1 = generate_class_instance(Site, seed=202, site_id=1, aggregator_id=1)
+        session.add(site1)
+
+        rate_1 = generate_class_instance(
+            TariffGeneratedRate,
+            seed=303,
+            site=site1,
+            tariff_component=tariff_component,
+            tariff_id=1,
+            calculation_log_id=None,
+        )
+        session.add(rate_1)
+
+        session.add(
+            generate_class_instance(
+                TariffGeneratedRateResponse,
+                seed=505,
+                response_type=ResponseType.EVENT_CANCELLED,
+                created_time=datetime(2024, 11, 10, tzinfo=timezone.utc),
+                site=site1,
+                tariff_generated_rate_id_snapshot=rate_1.tariff_generated_rate_id,
+            )
+        )
+
+        # This is the latest
+        session.add(
+            generate_class_instance(
+                TariffGeneratedRateResponse,
+                seed=606,
+                response_type=ResponseType.EVENT_COMPLETED,
+                created_time=datetime(2024, 11, 11, tzinfo=timezone.utc),
+                site=site1,
+                tariff_generated_rate_id_snapshot=rate_1.tariff_generated_rate_id,
+            )
+        )
+
+        session.add(
+            generate_class_instance(
+                TariffGeneratedRateResponse,
+                seed=707,
+                response_type=ResponseType.EVENT_RECEIVED,
+                created_time=datetime(2024, 11, 9, tzinfo=timezone.utc),
+                site=site1,
+                tariff_generated_rate_id_snapshot=rate_1.tariff_generated_rate_id,
+            )
+        )
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        # This will check that there is a latest
+        assert_check_result(await check_price_response_contents({"latest": True}, session, active_test_procedure), True)
+
+        # This will check that there is a latest and that the status matches the filter
+        assert_check_result(
+            await check_price_response_contents(
+                {"latest": True, "status": ResponseType.EVENT_COMPLETED.value}, session, active_test_procedure
+            ),
+            True,
+        )
+
+        # This will check that the filter on latest will fail if there is mismatch on the latest record
+        assert_check_result(
+            await check_price_response_contents(
+                {"latest": True, "status": ResponseType.EVENT_CANCELLED.value}, session, active_test_procedure
+            ),
+            False,
+        )
+
+
+@pytest.mark.parametrize(
+    "status, rate_ids, deleted_rate_ids, response_status_values, exists, expected",
+    [
+        (1, [], [], [], None, True),
+        (1, [], [], [], False, True),  # Nothing exists - this is an edge case that passes
+        (1, [1], [], [], None, False),
+        (1, [1], [], [], False, True),  # No response for the rate
+        (1, [1], [], [(1, 2), (1, 1)], None, True),
+        (1, [1], [], [(1, 2), (1, 1)], False, False),
+        (1, [1], [2], [(1, 2), (1, 1)], None, False),  # Deleted rate 2 was not responded to
+        (1, [1], [2], [(1, 2), (1, 1)], False, False),  # rate 1 WAS responded to (but shouldn't have been)
+        (3, [1], [2], [(1, 2), (1, 1)], False, True),  # No rates have status 3 Response
+        (3, [1], [], [(1, 2), (1, 1)], None, False),  # No items with response_status 3
+        (None, [1], [], [(1, 2), (1, 1)], None, True),
+        (1, [1, 2], [], [(1, 2), (1, 1)], None, False),  # rate 2 has no responses
+        (1, [1, 2], [], [(1, 2), (1, 1), (2, 2)], None, False),  # rate 2 has no responses of type 2
+        (1, [1, 2], [], [(1, 2), (1, 1), (2, 2)], False, False),  # rate 1 WAS responded to (but shouldnt have been)
+        (2, [1, 2], [], [(1, 2), (1, 1), (2, 2)], None, True),
+        (2, [1], [2], [(1, 2), (1, 1), (2, 2)], None, True),
+        (2, [1], [2], [(1, 2), (1, 1), (2, 2)], False, False),
+    ],
+)
+@pytest.mark.anyio
+async def test_check_price_response_contents_all(
+    pg_base_config,
+    status: int | None,
+    rate_ids: list[int],
+    deleted_rate_ids: list[int],
+    response_status_values: list[tuple[int, int]],
+    exists: bool | None,
+    expected: bool,
+):
+    """check_price_response_contents should behave correctly when looking at all controls having responses
+
+    response_status_values: tuple[control_id, response_status_type]"""
+    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
+    # Fill up the DB with responses
+    async with generate_async_session(pg_base_config) as session:
+
+        tariff = generate_class_instance(Tariff, seed=1, tariff_id=1)
+        session.add(tariff)
+
+        tariff_component = generate_class_instance(TariffComponent, seed=2, tariff=tariff)
+        session.add(tariff_component)
+
+        site1 = generate_class_instance(Site, seed=202, site_id=1, aggregator_id=1)
+        session.add(site1)
+
+        for idx, control_id in enumerate(rate_ids):
+            control = generate_class_instance(
+                TariffGeneratedRate,
+                seed=idx,
+                site=site1,
+                tariff_component=tariff_component,
+                tariff_id=1,
+                calculation_log_id=None,
+                tariff_generated_rate_id=control_id,
+            )
+            session.add(control)
+
+        for idx, control_id in enumerate(deleted_rate_ids):
+            control = generate_class_instance(
+                ArchiveTariffGeneratedRate,
+                seed=idx * 1001,
+                site_id=site1.site_id,
+                deleted_time=datetime(2022, 11, 14, tzinfo=timezone.utc),
+                tariff_component_id=tariff_component.tariff_component_id,
+                calculation_log_id=None,
+                tariff_generated_rate_id=control_id,
+            )
+            session.add(control)
+
+        for idx, t in enumerate(response_status_values):
+            response_control_id, response_status = t
+            session.add(
+                generate_class_instance(
+                    TariffGeneratedRateResponse,
+                    seed=idx,
+                    site=site1,
+                    response_type=response_status,
+                    tariff_generated_rate_id_snapshot=response_control_id,
+                )
+            )
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        params: dict[str, Any] = {"all": True}
+        if status is not None:
+            params["status"] = status
+
+        if exists is not None:
+            params["exists"] = exists
+
+        assert_check_result(await check_price_response_contents(params, session, active_test_procedure), expected)
+
+
+@pytest.mark.anyio
+async def test_check_price_response_contents_any(pg_base_config):
+    """check_price_response_contents should behave correctly when looking at ANY of the Responses"""
+    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
+    # Fill up the DB with responses
+    async with generate_async_session(pg_base_config) as session:
+
+        tariff = generate_class_instance(Tariff, seed=1, tariff_id=1)
+        session.add(tariff)
+
+        tariff_component = generate_class_instance(TariffComponent, seed=2, tariff=tariff)
+        session.add(tariff_component)
+
+        site1 = generate_class_instance(Site, seed=202, site_id=1, aggregator_id=1)
+        session.add(site1)
+
+        rate_1 = generate_class_instance(
+            TariffGeneratedRate,
+            seed=303,
+            site=site1,
+            tariff_component=tariff_component,
+            tariff_id=1,
+            calculation_log_id=None,
+        )
+        session.add(rate_1)
+
+        session.add(
+            generate_class_instance(
+                TariffGeneratedRateResponse,
+                seed=505,
+                response_type=ResponseType.EVENT_CANCELLED,
+                created_time=datetime(2024, 11, 10, tzinfo=timezone.utc),
+                site=site1,
+                tariff_generated_rate_id_snapshot=rate_1.tariff_generated_rate_id,
+            )
+        )
+
+        session.add(
+            generate_class_instance(
+                TariffGeneratedRateResponse,
+                seed=606,
+                response_type=ResponseType.EVENT_COMPLETED,
+                created_time=datetime(2024, 11, 11, tzinfo=timezone.utc),
+                site=site1,
+                tariff_generated_rate_id_snapshot=rate_1.tariff_generated_rate_id,
+            )
+        )
+
+        session.add(
+            generate_class_instance(
+                TariffGeneratedRateResponse,
+                seed=707,
+                response_type=ResponseType.EVENT_RECEIVED,
+                created_time=datetime(2024, 11, 9, tzinfo=timezone.utc),
+                site=site1,
+                tariff_generated_rate_id_snapshot=rate_1.tariff_generated_rate_id,
+            )
+        )
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        # This will check that there is any response
+        assert_check_result(
+            await check_price_response_contents({"latest": False}, session, active_test_procedure), True
+        )
+        assert_check_result(await check_price_response_contents({}, session, active_test_procedure), True)
+
+        # Checks on existing values
+        assert_check_result(
+            await check_price_response_contents(
+                {"status": ResponseType.EVENT_COMPLETED.value}, session, active_test_procedure
+            ),
+            True,
+        )
+        assert_check_result(
+            await check_price_response_contents(
+                {"status": ResponseType.EVENT_RECEIVED.value}, session, active_test_procedure
+            ),
+            True,
+        )
+        assert_check_result(
+            await check_price_response_contents(
+                {"status": ResponseType.EVENT_CANCELLED.value}, session, active_test_procedure
+            ),
+            True,
+        )
+
+        # This will check that the filter will fail if a matching record cant be found
+        assert_check_result(
+            await check_price_response_contents(
+                {"latest": False, "status": ResponseType.CANNOT_BE_DISPLAYED.value}, session, active_test_procedure
+            ),
+            False,
+        )
+
+        # Using exists inverts the check
+        assert_check_result(
+            await check_price_response_contents(
+                {"latest": False, "status": ResponseType.CANNOT_BE_DISPLAYED.value, "exists": False},
+                session,
+                active_test_procedure,
+            ),
+            True,
+        )
+        assert_check_result(
+            await check_price_response_contents(
+                {"status": ResponseType.EVENT_COMPLETED.value, "exists": False}, session, active_test_procedure
+            ),
+            False,
+        )
+
+
+@pytest.mark.anyio
+async def test_check_price_response_contents_empty(pg_base_config):
+    """check_price_response_contents should behave correctly when the DB is empty of responses"""
+    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
+    async with generate_async_session(pg_base_config) as session:
+        # This will check that there is any response
+        assert_check_result(
+            await check_price_response_contents({"latest": False}, session, active_test_procedure), False
+        )
+        assert_check_result(
+            await check_price_response_contents({"latest": True}, session, active_test_procedure), False
+        )
+        assert_check_result(await check_price_response_contents({}, session, active_test_procedure), False)
+        assert_check_result(
+            await check_price_response_contents(
+                {"status": ResponseType.EVENT_COMPLETED.value}, session, active_test_procedure
+            ),
+            False,
+        )
+        assert_check_result(
+            await check_price_response_contents(
+                {"latest": True, "status": ResponseType.EVENT_COMPLETED.value}, session, active_test_procedure
+            ),
+            False,
+        )
+
+        assert_check_result(
+            await check_price_response_contents({"exists": False}, session, active_test_procedure), True
+        )
+        assert_check_result(
+            await check_price_response_contents({"all": True, "exists": False}, session, active_test_procedure), True
+        )
+        assert_check_result(
+            await check_price_response_contents({"latest": True, "exists": False}, session, active_test_procedure), True
+        )
+
+
+@pytest.mark.anyio
+async def test_check_price_response_contents_tag_RATE1(pg_base_config):
+    """check_price_response_contents should behave correctly when filtering by tag"""
+    active_test_procedure = generate_class_instance(
+        ActiveTestProcedure, resource_annotations=ResourceAnnotations(), step_status={}, finished_zip_path=None
+    )
+
+    # Set up resource annotations with tagged control IDs
+    active_test_procedure.resource_annotations.time_tariff_interval_ids_by_alias = {"RATE1": 100, "RATE2": 200}
+
+    # Fill up the DB with responses
+    async with generate_async_session(pg_base_config) as session:
+
+        tariff = generate_class_instance(Tariff, seed=1, tariff_id=1)
+        session.add(tariff)
+
+        tariff_component = generate_class_instance(TariffComponent, seed=2, tariff=tariff)
+        session.add(tariff_component)
+
+        site1 = generate_class_instance(Site, seed=202, site_id=1, aggregator_id=1)
+        session.add(site1)
+
+        # Create control with ID 100 (tagged as RATE1)
+        rate_1 = generate_class_instance(
+            TariffGeneratedRate,
+            seed=303,
+            site=site1,
+            tariff_component=tariff_component,
+            tariff_id=1,
+            calculation_log_id=None,
+            tariff_generated_rate_id=100,
+        )
+        session.add(rate_1)
+
+        # Create control with ID 200 (tagged as RATE2)
+        rate_2 = generate_class_instance(
+            TariffGeneratedRate,
+            seed=304,
+            site=site1,
+            tariff_component=tariff_component,
+            tariff_id=1,
+            calculation_log_id=None,
+            tariff_generated_rate_id=200,
+        )
+        session.add(rate_2)
+
+        # Add responses for RATE1 (control_id=100)
+        session.add(
+            generate_class_instance(
+                TariffGeneratedRateResponse,
+                seed=505,
+                response_type=ResponseType.EVENT_RECEIVED,
+                created_time=datetime(2024, 11, 9, tzinfo=timezone.utc),
+                site=site1,
+                tariff_generated_rate_id_snapshot=100,
+            )
+        )
+
+        session.add(
+            generate_class_instance(
+                TariffGeneratedRateResponse,
+                seed=606,
+                response_type=ResponseType.EVENT_COMPLETED,
+                created_time=datetime(2024, 11, 11, tzinfo=timezone.utc),
+                site=site1,
+                tariff_generated_rate_id_snapshot=100,
+            )
+        )
+
+        # Add response for RATE2 (control_id=200)
+        session.add(
+            generate_class_instance(
+                TariffGeneratedRateResponse,
+                seed=707,
+                response_type=ResponseType.EVENT_CANCELLED,
+                created_time=datetime(2024, 11, 10, tzinfo=timezone.utc),
+                site=site1,
+                tariff_generated_rate_id_snapshot=200,
+            )
+        )
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        # Check responses for RATE1 tag can be found
+        assert_check_result(
+            await check_price_response_contents({"subject_tag": "RATE1"}, session, active_test_procedure), True
+        )
+
+        # Check latest response for RATE1 is EVENT_COMPLETED
+        assert_check_result(
+            await check_price_response_contents(
+                {"subject_tag": "RATE1", "latest": True}, session, active_test_procedure
+            ),
+            True,
+        )
+
+        # Check latest response for RATE1 with correct status matches
+        assert_check_result(
+            await check_price_response_contents(
+                {"subject_tag": "RATE1", "latest": True, "status": ResponseType.EVENT_COMPLETED.value},
+                session,
+                active_test_procedure,
+            ),
+            True,
+        )
+
+        # Check latest response for RATE1 with wrong status fails
+        assert_check_result(
+            await check_price_response_contents(
+                {"subject_tag": "RATE1", "latest": True, "status": ResponseType.EVENT_CANCELLED.value},
+                session,
+                active_test_procedure,
+            ),
+            False,
+        )
+        assert_check_result(
+            await check_price_response_contents(
+                {"subject_tag": "RATE1", "latest": True, "status": ResponseType.EVENT_CANCELLED.value, "exists": False},
+                session,
+                active_test_procedure,
+            ),
+            True,
+        )
+
+        # Check RATE1 has a response of type EVENT_RECEIVED
+        assert_check_result(
+            await check_price_response_contents(
+                {"subject_tag": "RATE1", "status": ResponseType.EVENT_RECEIVED.value}, session, active_test_procedure
+            ),
+            True,
+        )
+
+        # Check RATE1 does not have a response of type EVENT_CANCELLED
+        assert_check_result(
+            await check_price_response_contents(
+                {"subject_tag": "RATE1", "status": ResponseType.EVENT_CANCELLED.value}, session, active_test_procedure
+            ),
+            False,
+        )
+
+        # Check RATE2 has EVENT_CANCELLED (different control)
+        assert_check_result(
+            await check_price_response_contents(
+                {"subject_tag": "RATE2", "status": ResponseType.EVENT_CANCELLED.value}, session, active_test_procedure
+            ),
+            True,
+        )
+        assert_check_result(
+            await check_price_response_contents(
+                {"subject_tag": "RATE2", "status": ResponseType.EVENT_CANCELLED.value, "exists": False},
+                session,
+                active_test_procedure,
+            ),
+            False,
+        )
+
+        # Check non-existent tag returns failure
+        assert_check_result(
+            await check_price_response_contents({"subject_tag": "NONEXISTENT"}, session, active_test_procedure),
+            False,
+        )
+        assert_check_result(
+            await check_price_response_contents(
+                {"subject_tag": "NONEXISTENT", "exists": False}, session, active_test_procedure
+            ),
+            False,
+        )
