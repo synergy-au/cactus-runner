@@ -47,7 +47,7 @@ from cactus_runner.models import (
 
 # This is a list of every action type paired with the handler function. This must be kept in sync with
 # the actions defined in cactus test definitions (via ACTION_PARAMETER_SCHEMA). This sync will be enforced
-ACTION_TYPE_TO_HANDLER: dict[str, str] = {
+ACTION_TYPE_TO_HANDLER: dict[str, str | None] = {
     "enable-steps": "action_enable_steps",
     "remove-steps": "action_remove_steps",
     "finish-test": "action_finish_test",
@@ -59,6 +59,11 @@ ACTION_TYPE_TO_HANDLER: dict[str, str] = {
     "register-end-device": "action_register_end_device",
     "communications-status": "action_communications_status",
     "edev-registration-links": "action_edev_registration_links",
+    "create-tariff-profile": None,  # Not supported in v1.2
+    "create-rate-component": None,  # Not supported in v1.2
+    "create-time-tariff-interval": None,  # Not supported in v1.2
+    "cancel-time-tariff-intervals": None,  # Not supported in v1.2
+    "delete-rate-component": None,  # Not supported in v1.2
 }
 
 
@@ -77,8 +82,9 @@ def test_ACTION_TYPE_TO_HANDLER_in_sync():
             action_type in ACTION_PARAMETER_SCHEMA
         ), f"The action type {action_type} isn't defined in the test definitions (has it been removed/renamed)"
 
-    assert len(set(ACTION_TYPE_TO_HANDLER.values())) == len(
-        ACTION_TYPE_TO_HANDLER
+    supported_actions = dict(((k, v) for k, v in ACTION_TYPE_TO_HANDLER.items() if v is not None))
+    assert len(set(supported_actions.values())) == len(
+        supported_actions
     ), "At least 1 action type have listed the same action handler. This is likely a bug"
 
 
@@ -183,6 +189,7 @@ async def test_action_remove_steps(steps_to_disable: list[str], listeners: list[
     [
         (Action(type=action_type, parameters={}), handler_fn)
         for action_type, handler_fn in ACTION_TYPE_TO_HANDLER.items()
+        if handler_fn is not None
     ],
 )
 @pytest.mark.anyio

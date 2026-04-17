@@ -5,13 +5,12 @@ import unittest.mock as mock
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
-from cactus_schema.runner import RequestEntry
-
 import pytest
 import pytest_mock
 from assertical.fake.generator import generate_class_instance
 from assertical.fake.sqlalchemy import assert_mock_session, create_mock_session
 from assertical.fixtures.postgres import generate_async_session
+from cactus_schema.runner import RequestEntry
 from cactus_test_definitions import variable_expressions
 from cactus_test_definitions.client import (
     CHECK_PARAMETER_SCHEMA,
@@ -89,7 +88,7 @@ from cactus_runner.models import (
 
 # This is a list of every check type paired with the handler function. This must be kept in sync with
 # the checks defined in cactus test definitions (via CHECK_PARAMETER_SCHEMA). This sync will be enforced
-CHECK_TYPE_TO_HANDLER: dict[str, str] = {
+CHECK_TYPE_TO_HANDLER: dict[str, str | None] = {
     "all-steps-complete": "check_all_steps_complete",
     "end-device-contents": "check_end_device_contents",
     "der-settings-contents": "check_der_settings_contents",
@@ -103,8 +102,10 @@ CHECK_TYPE_TO_HANDLER: dict[str, str] = {
     "all-notifications-transmitted": "check_all_notifications_transmitted",
     "subscription-contents": "check_subscription_contents",
     "response-contents": "check_response_contents",
+    "price-response-contents": None,  # Not supported in v1.2
     "readings-der-stored-energy": "check_readings_der_stored_energy",
     "all-polls-at-correct-time": "check_all_polls_at_correct_time",
+    "resource-requests": None,  # Not supported in v1.2
 }
 
 
@@ -123,9 +124,10 @@ def test_CHECK_TYPE_TO_HANDLER_in_sync():
             check_type in CHECK_PARAMETER_SCHEMA
         ), f"The check type {check_type} isn't defined in the test definitions (has it been removed/renamed)"
 
-    assert len(set(CHECK_TYPE_TO_HANDLER.values())) == len(
-        CHECK_TYPE_TO_HANDLER
-    ), "At least 1 action type have listed the same action handler. This is likely a bug"
+    supported_checks = dict(((k, v) for k, v in CHECK_TYPE_TO_HANDLER.items() if v is not None))
+    assert len(set(supported_checks.values())) == len(
+        supported_checks
+    ), "At least 1 check type have listed the same check handler. This is likely a bug"
 
 
 def generate_active_test_procedure_steps(active_steps: list[str], all_steps: list[str]) -> ActiveTestProcedure:
@@ -2045,7 +2047,11 @@ async def test_do_check_site_readings_and_params_roleflags(
 
 @pytest.mark.parametrize(
     "check, apply_function_name",
-    [(Check(type=check_type, parameters={}), handler_fn) for check_type, handler_fn in CHECK_TYPE_TO_HANDLER.items()],
+    [
+        (Check(type=check_type, parameters={}), handler_fn)
+        for check_type, handler_fn in CHECK_TYPE_TO_HANDLER.items()
+        if handler_fn is not None
+    ],
 )
 @pytest.mark.anyio
 async def test_run_check(mocker, check: Check, apply_function_name: str):
