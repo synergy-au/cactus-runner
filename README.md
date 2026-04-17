@@ -6,6 +6,17 @@ Cactus Runner is a component of the Client CSIP-AUS Test Harness.
 
 Cactus Runner has a full demo for evaluation purposes. See the [demo/](demo/README.md) directory for instructions on how to get the demo up and running.
 
+
+## Versioning
+
+Cactus Runner has support for multiple versions of CSIP-Aus via specific development branches. The major version number is how you can differentiate what CSIP-Aus version is being targetted.
+
+| CSIP-Aus Version | cactus runner versions | dev branch |
+| ---------------- | ---------------------- | ---------- |
+| `v1.1a` | `v0.*`, `v1.*` | `main` |
+| `v1.2` | `v0.*`, `v1.*` | `main` |
+| `v1.3` | `v2.*` | `csipaus.org/ns/v1.3` |
+
 ## Test Procedures
 
 The test procedures are defined in the [cactus-test-definitions](https://github.com/bsgip/cactus-test-definitions) repository.
