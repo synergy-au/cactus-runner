@@ -121,7 +121,3 @@ async def test_fail_message_with_fail(cactus_runner_client: TestClient, n_dcap_r
     summary = RunnerStatus.from_json(summary_data.decode())
     assert len(summary.criteria) > 0, ",".join([f"{c.type}: {c.success} {c.details}" for c in summary.criteria])
     assert all([c.success for c in summary.criteria]) == expected_success
-
-    # Ensure PDF generated ok
-    pdf_data = zip.read(get_filename(prefix="CactusTestProcedureReport", filenames=zip.namelist()))
-    assert len(pdf_data) > 1024

@@ -143,7 +143,7 @@ async def test_get_active_runner_status(
     else:
         assert len(runner_status.criteria) == 2
         assert not runner_status.criteria[0].success
-        assert not runner_status.criteria[0].details == fail_message
+        assert runner_status.criteria[0].details == fail_message
         assert runner_status.criteria[1] == CriteriaEntry(True, "check-1", "Details on Check 1")
 
     # If we have timeline data - ensure it's set as expected. Otherwise it should not be there at all
