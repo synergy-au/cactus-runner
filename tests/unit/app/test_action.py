@@ -1,6 +1,7 @@
 import unittest.mock as mock
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from itertools import product
 from typing import Any
 
 import pytest
@@ -39,12 +40,14 @@ from cactus_runner.app.action import (
     action_edev_registration_links,
     action_enable_steps,
     action_register_end_device,
+    action_remove_function_set_assignment,
     action_remove_steps,
     action_set_comms_rate,
     action_set_default_der_control,
     apply_action,
     apply_actions,
 )
+from cactus_runner.app.envoy_common import get_all_site_control_groups
 from cactus_runner.models import (
     ActiveTestProcedure,
     ClientCertificateType,
@@ -74,6 +77,7 @@ ACTION_TYPE_TO_HANDLER: dict[str, str | None] = {
     "create-time-tariff-interval": "action_create_time_tariff_interval",
     "cancel-time-tariff-intervals": "action_cancel_time_tariff_intervals",
     "delete-rate-component": "action_delete_rate_component",
+    "remove-function-set-assignment": "action_remove_function_set_assignment",
 }
 
 
@@ -482,27 +486,35 @@ async def test_action_create_der_control_no_group(pg_base_config, envoy_admin_cl
             assert new_scg.fsa_id == fsa_id
 
 
-@pytest.mark.parametrize("fsa_id", [None, 6812])
+@pytest.mark.parametrize("fsa_id, end_device_indexes", product([None, 6812], [None, [0, 1]]))
 @pytest.mark.anyio
-async def test_action_create_der_program(pg_base_config, envoy_admin_client, fsa_id):
+async def test_action_create_der_program(pg_base_config, envoy_admin_client, fsa_id, end_device_indexes):
     # Arrange
     resolved_params = {
         "primacy": 17,
     }
     if fsa_id is not None:
         resolved_params["fsa_id"] = fsa_id
+    if end_device_indexes is not None:
+        resolved_params["end_device_indexes"] = end_device_indexes
 
     # Act
-    await action_create_der_program(resolved_params, envoy_admin_client)
+    async with generate_async_session(pg_base_config) as session:
+        await action_create_der_program(resolved_params, envoy_admin_client, session)
 
     # Assert
     if fsa_id is None:
         expected_fsa_id = 1
     else:
         expected_fsa_id = fsa_id
+    if end_device_indexes is None:
+        display_id_clause = "is null"
+    else:
+        display_id_clause = "> 0"
     assert (
         pg_base_config.execute(
-            f"select count(*) from site_control_group where primacy = 17 and fsa_id = {expected_fsa_id};"
+            f"select count(*) from site_control_group where primacy = 17 and fsa_id = {expected_fsa_id} and"
+            + f" display_id {display_id_clause};"
         ).fetchone()[0]
         == 1
     )
@@ -741,6 +753,106 @@ async def test_action_create_der_control_with_tag_that_supersedes(pg_base_config
 
         assert derc_id_by_alias[existing_derc_tag] == existing.dynamic_operating_envelope_id
         assert derc_id_by_alias[inserted_tag] == inserted.dynamic_operating_envelope_id
+
+
+@pytest.mark.anyio
+async def test_action_create_der_control_with_tag_and_edev_indexes(pg_base_config, envoy_admin_client):
+    """Verifies that creating a DER control with a tag AND end_device_indexes bails out"""
+    # Arrange
+    active_test_procedure = generate_class_instance(
+        ActiveTestProcedure, step_status={}, finished_zip_path=None, resource_annotations=ResourceAnnotations()
+    )
+    async with generate_async_session(pg_base_config) as session:
+        session.add(generate_class_instance(Site, aggregator_id=1))
+        await session.commit()
+    tag = "DERC1"
+    resolved_params = {
+        "start": datetime.now(timezone.utc),
+        "duration_seconds": 300,
+        "pow_10_multipliers": -1,
+        "primacy": 2,
+        "randomizeStart_seconds": 0,
+        "ramp_time_seconds": 0,
+        "opModEnergize": 0,
+        "opModConnect": 0,
+        "opModImpLimW": 0,
+        "opModExpLimW": 0,
+        "opModGenLimW": 0,
+        "opModLoadLimW": 0,
+        "opModFixedW": 0,
+        "tag": tag,
+        "end_device_indexes": [0, 1],
+    }
+
+    # Act
+    async with generate_async_session(pg_base_config) as session:
+        with pytest.raises(Exception):
+            await action_create_der_control(resolved_params, session, envoy_admin_client, active_test_procedure)
+
+    # Assert nothing in the DB
+    assert pg_base_config.execute("select count(*) from dynamic_operating_envelope;").fetchone()[0] == 0
+
+    # Verify the tag was NOT added to the active test procedure
+    assert tag not in active_test_procedure.resource_annotations.der_control_ids_by_alias
+
+
+@pytest.mark.anyio
+async def test_action_create_der_control_with_end_device_indexes(pg_base_config, envoy_admin_client):
+    """Verifies that creating a DER control with end_device_indexes creates multiple controls with the same display
+    id for the appropriate site_ids"""
+    # Arrange
+    async with generate_async_session(pg_base_config) as session:
+        session.add(generate_class_instance(Site, seed=101, site_id=11, aggregator_id=1))
+        session.add(generate_class_instance(Site, seed=202, site_id=22, aggregator_id=1))
+        session.add(generate_class_instance(Site, seed=303, site_id=44, aggregator_id=1))
+        session.add(generate_class_instance(Site, seed=404, site_id=33, aggregator_id=1))
+        await session.commit()
+
+    active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
+
+    resolved_params_1 = {
+        "start": datetime.now(timezone.utc),
+        "duration_seconds": 300,
+        "pow_10_multipliers": -1,
+        "primacy": 2,
+        "opModExpLimW": 10,
+        "end_device_indexes": [0, 2],  # These will correspond to site_id 11 and 33
+    }
+    resolved_params_2 = {
+        "start": datetime.now(timezone.utc),
+        "duration_seconds": 300,
+        "pow_10_multipliers": -1,
+        "primacy": 2,
+        "opModExpLimW": 20,
+        "end_device_indexes": [0, 2],  # These will correspond to site_id 11 and 33
+    }
+
+    # Act
+    async with generate_async_session(pg_base_config) as session:
+        # We do this twice so we can ensure display_id is unique PER call
+        await action_create_der_control(resolved_params_1, session, envoy_admin_client, active_test_procedure)
+        await action_create_der_control(resolved_params_2, session, envoy_admin_client, active_test_procedure)
+
+    # Verify the tagged control ID matches the created control
+    async with generate_async_session(pg_base_config) as session:
+
+        all_does = (await session.execute(select(DynamicOperatingEnvelope))).scalars().all()
+        assert len(all_does) == 4
+        assert len(set([d.export_limit_watts for d in all_does])) == 2, "Two sets of opModExpLimW"
+
+        does_by_display_id: dict[int, list[DynamicOperatingEnvelope]] = {}
+        for d in all_does:
+            assert d.display_id
+            existing = does_by_display_id.get(d.display_id, None)
+            if existing is None:
+                does_by_display_id[d.display_id] = [d]
+            else:
+                existing.append(d)
+
+        for grouped_does in does_by_display_id.values():
+            assert len(grouped_does) == 2
+            assert len(set([d.export_limit_watts for d in grouped_does])) == 1
+            assert set([d.site_id for d in all_does]) == {11, 33}
 
 
 @pytest.mark.anyio
@@ -1042,6 +1154,54 @@ async def test_action_edev_registration_links(
             pg_base_config.execute("select disable_edev_registration from runtime_server_config;").fetchone()[0]
             == expected_db_value
         )
+
+
+@pytest.mark.parametrize(
+    "scg_fsa_ids, fsa_id, expected_update_indexes",
+    [
+        ([], 1, []),
+        ([1, 2, 3], 1, [0]),
+        ([1, 2, 3], 2, [1]),
+        ([1, None, 3, 1, 2, 11, None], 1, [0, 3]),
+        ([1, 1], 1, [0, 1]),
+        ([1, 1], 2, []),
+    ],
+)
+@pytest.mark.anyio
+async def test_action_remove_function_set_assignment(
+    pg_base_config, envoy_admin_client, scg_fsa_ids: list[int | None], fsa_id: int, expected_update_indexes: list[int]
+):
+    # Arrange
+    primacies: list[int] = []
+    descriptions: list[str] = []
+    async with generate_async_session(pg_base_config) as session:
+        for idx, scg_fsa_id in enumerate(scg_fsa_ids):
+            new_instance = generate_class_instance(
+                SiteControlGroup, seed=idx * 101, fsa_id=scg_fsa_id, site_control_group_id=(idx + 1)
+            )
+            primacies.append(new_instance.primacy)
+            descriptions.append(new_instance.description)
+            session.add(new_instance)
+        await session.commit()
+
+    # Act
+    async with generate_async_session(pg_base_config) as session:
+        await action_remove_function_set_assignment({"fsa_id": fsa_id}, session, envoy_admin_client)
+
+    # Assert
+    async with generate_async_session(pg_base_config) as session:
+        scgs = await get_all_site_control_groups(session)
+        assert len(scgs) == len(scg_fsa_ids)
+        for idx, original_fsa_id, original_primacy, original_description, site_control_group in zip(
+            range(len(scg_fsa_ids)), scg_fsa_ids, primacies, descriptions, scgs
+        ):
+            assert site_control_group.primacy == original_primacy
+            assert site_control_group.description == original_description
+            if idx in expected_update_indexes:
+                assert site_control_group.fsa_id is None
+                assert_nowish(site_control_group.changed_time)
+            else:
+                assert site_control_group.fsa_id == original_fsa_id
 
 
 @pytest.mark.anyio

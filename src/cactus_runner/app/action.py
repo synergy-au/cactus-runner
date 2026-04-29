@@ -37,7 +37,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
 from cactus_runner.app.envoy_common import (
+    count_all_site_controls_with_cancelled,
     get_active_site,
+    get_all_site_control_groups,
+    get_all_sites,
     get_tariff_components,
     get_tariff_generated_rates,
     get_tariffs,
@@ -202,12 +205,20 @@ async def action_set_default_der_control(
     )
 
 
-async def action_create_der_program(resolved_parameters: dict[str, Any], envoy_client: EnvoyAdminClient):
+async def action_create_der_program(
+    resolved_parameters: dict[str, Any], envoy_client: EnvoyAdminClient, session: AsyncSession
+):
     primacy: int = int(resolved_parameters["primacy"])  # mandatory param
     fsa_id: int = int(resolved_parameters.get("fsa_id", 1))
+    end_device_indexes: list[int] | None = resolved_parameters.get("end_device_indexes", None)
+
+    display_id: int | None = None
+    if end_device_indexes:
+        # We can't fully implement this for a subset of end_device_indexes - so we just apply it globally
+        display_id = len(await get_all_site_control_groups(session)) + 1
 
     await envoy_client.post_site_control_group(
-        SiteControlGroupRequest(description=f"Primacy {primacy}", primacy=primacy, fsa_id=fsa_id)
+        SiteControlGroupRequest(description=f"Primacy {primacy}", primacy=primacy, fsa_id=fsa_id, display_id=display_id)
     )
 
 
@@ -217,14 +228,37 @@ async def action_create_der_control(
     envoy_client: EnvoyAdminClient,
     active_test_procedure: ActiveTestProcedure,
 ):
-    # We need to know the "active" site - we are interpreting that as the LAST site created/modified by the client
-    active_site = await get_active_site(session)
-    if active_site is None:
-        raise Exception("No active EndDevice could be resolved. Has an EndDevice been registered?")
 
     start_time: datetime = resolved_parameters["start"]
     duration_seconds: int = resolved_parameters["duration_seconds"]
     annotation: str | None = resolved_parameters.get("tag")
+    end_device_indexes: list[int] | None = resolved_parameters.get("end_device_indexes", None)
+    display_id: int | None = None
+
+    site_ids: list[int]
+    if not end_device_indexes:
+        # We need to know the "active" site - we are interpreting that as the LAST site created/modified by the client
+        active_site = await get_active_site(session)
+        if active_site is None:
+            raise Exception("No active EndDevice could be resolved. Has an EndDevice been registered?")
+        site_ids = [active_site.site_id]
+    else:
+        site_ids = []
+        all_sites = await get_all_sites(session)
+        for idx in end_device_indexes:
+            if idx < 0 or idx >= len(all_sites):
+                raise Exception(f"end_device_index {idx} doesn't map to a valid EndDevice. {len(all_sites)} registered")
+            site_ids.append(all_sites[idx].site_id)
+
+        # We also need a unique display_id if we are "sharing" this DERControl virtually across multiple EndDevices
+        # We could just use the current count of DERControls but that will recycle between test runs - not ideal
+        # so we ALSO combine that with a timestamp to get a 64 bit display_id
+        existing_control_count = await count_all_site_controls_with_cancelled(session, site_id=None)
+        now_seconds = int(datetime.now(timezone.utc).timestamp())
+        display_id = existing_control_count << 32 | (now_seconds & 0xFFFFFFFF)
+
+    if len(site_ids) > 1 and annotation:
+        raise Exception("Cannot combine 'tag' and 'end_device_indexes' parameters. This is a test definition error.")
 
     # For primacy/fsa_id - we need to find the site_control_group with the specified values (creating one if required)
     primacy: int = resolved_parameters.get("primacy", 0)
@@ -279,6 +313,7 @@ async def action_create_der_control(
                 duration_seconds=duration_seconds,
                 start_time=start_time,
                 randomize_start_seconds=randomize_seconds,
+                display_id=display_id,
                 set_energized=energize,
                 set_connect=connect,
                 import_limit_watts=import_limit_watts,
@@ -295,6 +330,7 @@ async def action_create_der_control(
 
     # If we have tagged a control, we add it to the test procedure annotations
     if annotation is not None:
+        # We know due to an earlier check that if we have a tag annotation - there will ONLY be a single control created
         active_test_procedure.resource_annotations.der_control_ids_by_alias[annotation] = site_control_ids[0]
 
 
@@ -423,6 +459,24 @@ async def action_edev_registration_links(resolved_parameters: dict[str, Any], en
     links_enabled: bool = resolved_parameters["enabled"]
 
     await envoy_client.update_runtime_config(RuntimeServerConfigRequest(disable_edev_registration=not links_enabled))
+
+
+async def action_remove_function_set_assignment(
+    resolved_parameters: dict[str, Any], session: AsyncSession, envoy_client: EnvoyAdminClient
+):
+    fsa_id: int = resolved_parameters["fsa_id"]  # Mandatory param
+
+    # Identify which site control groups have the nominated function set assignment ID - and remove that FSA ID
+    # via the admin API
+    existing_groups = await get_all_site_control_groups(session)
+
+    for scg in existing_groups:
+        if scg.fsa_id == fsa_id:
+            logger.info(f"Removing fsa_id {scg.fsa_id} from SiteControlGroup {scg.site_control_group_id}")
+            request = SiteControlGroupRequest(
+                description=scg.description, primacy=scg.primacy, fsa_id=None, display_id=scg.display_id
+            )
+            await envoy_client.put_site_control_group(scg.site_control_group_id, request)
 
 
 async def action_create_tariff_profile(
@@ -634,7 +688,7 @@ async def apply_action(
                 await action_create_der_control(resolved_parameters, session, envoy_client, active_test_procedure)
                 return
             case "create-der-program":
-                await action_create_der_program(resolved_parameters, envoy_client)
+                await action_create_der_program(resolved_parameters, envoy_client, session)
                 return
             case "cancel-active-der-controls":
                 await action_cancel_active_controls(envoy_client)
@@ -650,6 +704,9 @@ async def apply_action(
                 return
             case "edev-registration-links":
                 await action_edev_registration_links(resolved_parameters, envoy_client)
+                return
+            case "remove-function-set-assignment":
+                await action_remove_function_set_assignment(resolved_parameters, session, envoy_client)
                 return
             case "create-tariff-profile":
                 await action_create_tariff_profile(resolved_parameters, envoy_client, active_test_procedure)

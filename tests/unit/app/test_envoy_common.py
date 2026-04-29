@@ -26,7 +26,10 @@ from envoy_schema.server.schema.sep2.types import (
 
 from cactus_runner.app.envoy_common import (
     ReadingLocation,
+    count_all_site_controls_with_cancelled,
     get_active_site,
+    get_all_site_control_groups,
+    get_all_sites,
     get_csip_aus_site_reading_types,
     get_reading_counts_grouped_by_reading_type,
     get_site_control_group_defaults_with_archive,
@@ -95,6 +98,33 @@ async def test_get_active_site_with_der_settings(pg_base_config):
         assert site.site_id == 2
         with pytest.raises(sqlalchemy.exc.InvalidRequestError, match="is not available due to lazy='raise'"):
             _ = site.site_ders
+
+
+@pytest.mark.anyio
+async def test_get_all_sites_no_sites(pg_base_config):
+    async with generate_async_session(pg_base_config) as session:
+        sites = await get_all_sites(session)
+        assert_list_type(Site, sites, count=0)
+
+
+@pytest.mark.anyio
+async def test_get_all_sites_many_sites(pg_base_config):
+    async with generate_async_session(pg_base_config) as session:
+        session.add(
+            generate_class_instance(Site, seed=101, aggregator_id=1, site_id=1, changed_time=datetime(2022, 11, 10))
+        )
+        session.add(
+            generate_class_instance(Site, seed=202, aggregator_id=1, site_id=22, changed_time=datetime(2022, 11, 11))
+        )
+        session.add(
+            generate_class_instance(Site, seed=303, aggregator_id=1, site_id=3, changed_time=datetime(2000, 11, 10))
+        )
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        sites = await get_all_sites(session)
+        assert_list_type(Site, sites, count=3)
+        assert [s.site_id for s in sites] == [1, 3, 22], "Must be ordered by PK"
 
 
 @pytest.mark.anyio
@@ -677,3 +707,108 @@ async def test_get_site_controls_active_archived(pg_base_config):
             )
             == 1
         )
+
+
+@pytest.mark.anyio
+async def test_get_all_site_control_groups(pg_base_config):
+    async with generate_async_session(pg_base_config) as session:
+        session.add(
+            generate_class_instance(
+                SiteControlGroup, seed=101, site_control_group_id=1, changed_time=datetime(2022, 11, 10)
+            )
+        )
+        session.add(
+            generate_class_instance(
+                SiteControlGroup, seed=202, site_control_group_id=22, changed_time=datetime(2022, 11, 11)
+            )
+        )
+        session.add(
+            generate_class_instance(
+                SiteControlGroup, seed=303, site_control_group_id=3, changed_time=datetime(2000, 11, 10)
+            )
+        )
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        groups = await get_all_site_control_groups(session)
+        assert_list_type(SiteControlGroup, groups, count=3)
+        assert [scg.site_control_group_id for scg in groups] == [1, 3, 22]
+
+
+@pytest.mark.anyio
+async def test_count_all_site_controls_with_cancelled(pg_base_config):
+    """Really simple test - can count_all_site_controls_with_cancelled handle the counting"""
+
+    async with generate_async_session(pg_base_config) as session:
+        # Add active site
+        site1 = generate_class_instance(Site, seed=11, aggregator_id=1, site_id=1)
+        site2 = generate_class_instance(Site, seed=22, aggregator_id=1, site_id=2)
+        session.add(site1)
+        session.add(site2)
+
+        session.add(
+            generate_class_instance(
+                SiteControlGroup,
+                site_control_group_id=1,
+                dynamic_operating_envelopes=[
+                    generate_class_instance(
+                        DynamicOperatingEnvelope,
+                        seed=101,
+                        site=site1,
+                        calculation_log_id=None,
+                    ),
+                    generate_class_instance(
+                        DynamicOperatingEnvelope,
+                        seed=202,
+                        site=site1,
+                        calculation_log_id=None,
+                    ),
+                    generate_class_instance(
+                        DynamicOperatingEnvelope,
+                        seed=303,
+                        site=site2,
+                        calculation_log_id=None,
+                    ),
+                ],
+            )
+        )
+
+        session.add_all(
+            [
+                generate_class_instance(
+                    ArchiveDynamicOperatingEnvelope,
+                    seed=404,
+                    deleted_time=None,
+                    site_id=1,
+                ),
+                generate_class_instance(
+                    ArchiveDynamicOperatingEnvelope,
+                    seed=505,
+                    site_id=1,
+                ),
+                generate_class_instance(
+                    ArchiveDynamicOperatingEnvelope,
+                    seed=606,
+                    site_id=2,
+                ),
+            ]
+        )
+        await session.commit()
+
+    # Act / Assert
+    async with generate_async_session(pg_base_config) as session:
+        result = await count_all_site_controls_with_cancelled(session, site_id=None)
+        assert isinstance(result, int)
+        assert result == 5, "3 active, 2 cancelled"
+
+        result = await count_all_site_controls_with_cancelled(session, site_id=1)
+        assert isinstance(result, int)
+        assert result == 3, "2 active, 1 cancelled"
+
+        result = await count_all_site_controls_with_cancelled(session, site_id=2)
+        assert isinstance(result, int)
+        assert result == 2, "1 active, 1 cancelled"
+
+        result = await count_all_site_controls_with_cancelled(session, site_id=99)
+        assert isinstance(result, int)
+        assert result == 0

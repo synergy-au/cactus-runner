@@ -65,6 +65,7 @@ from cactus_runner.app.check import (
     check_der_settings_contents,
     check_der_status_contents,
     check_end_device_contents,
+    check_end_device_count,
     check_price_response_contents,
     check_readings_voltage,
     check_resource_requests,
@@ -116,6 +117,7 @@ CHECK_TYPE_TO_HANDLER: dict[str, str | None] = {
     "readings-der-stored-energy": "check_readings_der_stored_energy",
     "all-polls-at-correct-time": "check_all_polls_at_correct_time",
     "resource-requests": "check_resource_requests",
+    "end-device-count": "check_end_device_count",
 }
 
 
@@ -471,6 +473,48 @@ def der_bool_param_scenario(
             expected,
             id=f"boolcheck-{param}-{param_value}-{db_property}-{db_property_value}-expecting-{expected}",
         )
+
+
+@pytest.mark.parametrize(
+    "site_ids, min_count, max_count, expected",
+    [
+        ([], None, None, True),
+        ([1, 2, 3], None, None, True),
+        ([], 0, 0, True),
+        ([], 1, None, False),
+        ([], None, 1, True),
+        ([1, 2, 3], 1, 3, True),
+        ([1, 2, 3], 3, 3, True),
+        ([1, 2, 3], 0, 5, True),
+        ([1, 2, 3], 4, 4, False),
+        ([1, 2, 3], 0, 2, False),
+        ([1, 2, 3], 4, 2, False),
+    ],
+)
+@mock.patch("cactus_runner.app.check.get_all_sites")
+@pytest.mark.anyio
+async def test_check_end_device_count(
+    mock_get_all_sites: mock.MagicMock,
+    site_ids: list[int],
+    min_count: int | None,
+    max_count: int | None,
+    expected: bool,
+):
+
+    mock_get_all_sites.return_value = [
+        generate_class_instance(Site, seed=site_id, site_id=site_id) for site_id in site_ids
+    ]
+    mock_session = create_mock_session()
+    resolved_params = {}
+    if min_count is not None:
+        resolved_params["minimum_count"] = min_count
+    if max_count is not None:
+        resolved_params["maximum_count"] = max_count
+
+    result = await check_end_device_count(mock_session, resolved_params)
+    assert_check_result(result, expected)
+
+    assert_mock_session(mock_session)
 
 
 DERSETTING_BOOL_PARAM_SCENARIOS = [
