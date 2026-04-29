@@ -9,6 +9,7 @@ from envoy.server.model.archive.doe import (
 )
 from envoy.server.model.doe import (
     DynamicOperatingEnvelope,
+    SiteControlGroup,
     SiteControlGroupDefault,
 )
 from envoy.server.model.site import Site, SiteDER
@@ -62,6 +63,11 @@ async def get_active_site(session: AsyncSession, include_der_settings: bool = Fa
         logger.error("get_active_site: There are no sites registered.")
 
     return site
+
+
+async def get_all_sites(session: AsyncSession) -> Sequence[Site]:
+    """Fetches every registered Site - ordered by their PK site_id"""
+    return (await session.execute(select(Site).order_by(Site.site_id.asc()))).scalars().all()
 
 
 async def get_csip_aus_site_reading_types_partitioned(
@@ -190,6 +196,22 @@ async def get_sites(session: AsyncSession) -> Sequence[Site]:
     return response.scalars().all()
 
 
+async def count_all_site_controls_with_cancelled(session: AsyncSession, site_id: int | None) -> int:
+    active_stmt = select(func.count()).select_from(DynamicOperatingEnvelope)
+    if site_id is not None:
+        active_stmt = active_stmt.where(DynamicOperatingEnvelope.site_id == site_id)
+
+    archive_stmt = (
+        select(func.count())
+        .select_from(ArchiveDynamicOperatingEnvelope)
+        .where(ArchiveDynamicOperatingEnvelope.deleted_time.is_not(None))
+    )
+    if site_id is not None:
+        archive_stmt = archive_stmt.where(ArchiveDynamicOperatingEnvelope.site_id == site_id)
+
+    return (await session.execute(active_stmt)).scalar_one() + (await session.execute(archive_stmt)).scalar_one()
+
+
 async def get_site_controls_active_archived(
     session: AsyncSession,
 ) -> list[DynamicOperatingEnvelope | ArchiveDynamicOperatingEnvelope]:
@@ -230,3 +252,12 @@ async def get_site_control_group_defaults_with_archive(
     deleted_control_groups = (await session.execute(select(ArchiveSiteControlGroupDefault))).scalars().all()
 
     return list(chain(active_control_groups, deleted_control_groups))
+
+
+async def get_all_site_control_groups(session: AsyncSession) -> Sequence[SiteControlGroup]:
+    """Fetches every registered SiteControlGroup - ordered by their PK site_control_group_id"""
+    return (
+        (await session.execute(select(SiteControlGroup).order_by(SiteControlGroup.site_control_group_id.asc())))
+        .scalars()
+        .all()
+    )
