@@ -309,7 +309,7 @@ async def action_create_der_control(
         [
             SiteControlRequest(
                 calculation_log_id=None,
-                site_id=active_site.site_id,
+                site_id=site_id,
                 duration_seconds=duration_seconds,
                 start_time=start_time,
                 randomize_start_seconds=randomize_seconds,
@@ -325,6 +325,7 @@ async def action_create_der_control(
                 # Storage extension
                 storage_target_watts=storage_target_watts,
             )
+            for site_id in site_ids
         ],
     )
 
