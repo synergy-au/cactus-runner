@@ -1,6 +1,7 @@
 import logging
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from lxml import etree
 
@@ -15,13 +16,13 @@ CSIP_AUS_12_DIR = Path(csipaus12.__file__).parent
 class LocalXsdResolver(etree.Resolver):
     """Finds specific XSD files in our local schema directory"""
 
-    def resolve(self, url, id, context):
-        if url == "sep.xsd":
-            return self.resolve_filename(str(CSIP_AUS_12_DIR / "sep.xsd"), context)
-        elif url == "csipaus-core.xsd":
-            return self.resolve_filename(str(CSIP_AUS_12_DIR / "csipaus-core.xsd"), context)
-        elif url == "csipaus-ext.xsd":
-            return self.resolve_filename(str(CSIP_AUS_12_DIR / "csipaus-ext.xsd"), context)
+    def resolve(self, system_url: str, public_id: str, context: Any = None) -> Any:  # noqa: ANN401
+        if system_url == "sep.xsd":
+            return self.resolve_filename(str(CSIP_AUS_12_DIR / "sep.xsd"), context)  # type: ignore[attr-defined]
+        elif system_url == "csipaus-core.xsd":
+            return self.resolve_filename(str(CSIP_AUS_12_DIR / "csipaus-core.xsd"), context)  # type: ignore[attr-defined]
+        elif system_url == "csipaus-ext.xsd":
+            return self.resolve_filename(str(CSIP_AUS_12_DIR / "csipaus-ext.xsd"), context)  # type: ignore[attr-defined]
         return None
 
 
@@ -34,7 +35,7 @@ def csip_aus_schema() -> etree.XMLSchema:
     parser.resolvers.add(LocalXsdResolver())
 
     # Load schema
-    with open(CSIP_AUS_12_DIR / "csipaus-core.xsd", "r") as fp:
+    with open(CSIP_AUS_12_DIR / "csipaus-core.xsd") as fp:
         xsd_content = fp.read()
     schema_root = etree.XML(xsd_content, parser)
     return etree.XMLSchema(schema_root)

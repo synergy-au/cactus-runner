@@ -1,9 +1,10 @@
 import http
 import logging
 import re
+from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
 from itertools import chain
-from typing import Annotated, Any, Iterable, Optional, Sequence
+from typing import Annotated, Any
 
 import pydantic
 import pydantic.alias_generators
@@ -63,7 +64,7 @@ class FailedCheckError(Exception):
 class SiteReadingTypeProperty:
     name: str
 
-    def __init__(self, name: str):
+    def __init__(self, name: str) -> None:
         self.name = name
 
 
@@ -164,7 +165,7 @@ class SoftChecker:
 
     _failures: list[CheckResult]
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._failures = []
 
     def add(self, msg: str) -> None:
@@ -220,12 +221,12 @@ def check_all_steps_complete(
         failing_active_steps.append(active_listener.step)
 
     if failing_active_steps:
-        return CheckResult(False, f"Steps {", ".join(failing_active_steps)} have not been completed.")
+        return CheckResult(False, f"Steps {', '.join(failing_active_steps)} have not been completed.")
     else:
         return CheckResult(True, None)
 
 
-async def check_end_device_contents(
+async def check_end_device_contents(  # noqa: C901
     active_test_procedure: ActiveTestProcedure, session: AsyncSession, resolved_parameters: dict[str, Any]
 ) -> CheckResult:
     """Implements the end-device-contents check
@@ -247,11 +248,11 @@ async def check_end_device_contents(
     if has_connection_point_id and not site.nmi:
         return CheckResult(False, f"EndDevice {site.site_id} has no ConnectionPoint id specified.")
 
-    deviceCategory_anyset: int = int(resolved_parameters.get("deviceCategory_anyset", "0"), 16)
-    if deviceCategory_anyset and (deviceCategory_anyset & int(site.device_category)) == 0:
+    device_category_anyset: int = int(resolved_parameters.get("deviceCategory_anyset", "0"), 16)
+    if device_category_anyset and (device_category_anyset & int(site.device_category)) == 0:
         return CheckResult(
             False,
-            f"EndDevice {site.site_id} has none of the expected ({deviceCategory_anyset:b}) deviceCategory bits set.",
+            f"EndDevice {site.site_id} has none of the expected ({device_category_anyset:b}) deviceCategory bits set.",
         )
 
     check_lfdi: bool = resolved_parameters.get("check_lfdi", False)
@@ -386,7 +387,7 @@ def do_field_exists_check(
         soft_checker.add(f"{field.alias} MUST be unset but is currently specified as: {actual_value}")
 
 
-async def check_der_settings_contents(
+async def check_der_settings_contents(  # noqa: C901
     session: AsyncSession, resolved_parameters: dict[str, ResolvedParam]
 ) -> CheckResult:
     """Implements the der-settings-contents check
@@ -503,7 +504,7 @@ def is_nth_bit_set_properly(value: int, nth_bit: int, expected: bool) -> bool:
     return bool(value & (1 << nth_bit)) is expected
 
 
-async def check_der_status_contents(session: AsyncSession, resolved_parameters: dict[str, Any]) -> CheckResult:
+async def check_der_status_contents(session: AsyncSession, resolved_parameters: dict[str, Any]) -> CheckResult:  # noqa: C901
     """Implements the der-status-contents check
 
     Returns pass if DERStatus has been submitted for the active site and optionally has certain fields set"""
@@ -581,7 +582,7 @@ async def check_der_status_contents(session: AsyncSession, resolved_parameters: 
 
 
 async def do_check_readings_for_types(
-    session: AsyncSession, site_reading_types: Sequence[SiteReadingType], minimum_count: Optional[int]
+    session: AsyncSession, site_reading_types: Sequence[SiteReadingType], minimum_count: int | None
 ) -> CheckResult:
     """Checks the SiteReading table for a specified set of SiteReadingType ID's. Makes sure that all conditions
     are met. "Valid" is that at least ONE of the site_reading_types supplied meets the conditions
@@ -592,7 +593,6 @@ async def do_check_readings_for_types(
 
     """
     if minimum_count is not None:
-
         if site_reading_types:
             srt_ids = [srt.site_reading_type_id for srt in site_reading_types]
             results = await session.execute(
@@ -624,7 +624,7 @@ async def do_check_readings_for_types(
         #
         # If the client breaks these assumptions - they're still getting marked as failing - the error message will
         # just end up being a little less than perfect.
-        total_mups = len(set((srt.group_id for srt in site_reading_types)))
+        total_mups = len(set(srt.group_id for srt in site_reading_types))
         total_mmrs = len(site_reading_types)
 
         if highest_found_count >= minimum_count:
@@ -685,7 +685,7 @@ async def do_check_single_level(
     )
 
     # Step 2: Alias the subquery to access its columns
-    RankedReading = aliased(SiteReading, ranked_subquery)
+    RankedReading = aliased(SiteReading, ranked_subquery)  # noqa: N806
 
     # Step 3: Join with SiteReadingType and filter to only the latest reading per type
     query = (
@@ -838,11 +838,11 @@ async def do_check_readings_on_minute_boundary(
         results = await session.execute(
             select(SiteReading.time_period_start).where(SiteReading.site_reading_type_id.in_(srt_ids))
         )
-        on_minute_boundary = [timestamp_on_minute_boundary(time_period_start) for time_period_start, in results.all()]
+        on_minute_boundary = [timestamp_on_minute_boundary(time_period_start) for (time_period_start,) in results.all()]
         aligned_count = on_minute_boundary.count(True)
         total_count = len(on_minute_boundary)
 
-        total_mups = len(set((srt.group_id for srt in site_reading_types)))
+        total_mups = len(set(srt.group_id for srt in site_reading_types))
         total_mmrs = len(site_reading_types)
 
         if aligned_count != total_count:
@@ -895,13 +895,13 @@ async def do_check_reading_type_mrids_match_pen(site_reading_types: Sequence[Sit
         return CheckResult(
             True,
             "All MRIDS and group MRIDS for the site readings types match the supplied Private Enterprise Number (PEN).",
-        )  # noqa: E501
+        )
 
     return CheckResult(True, None)
 
 
 async def do_check_site_readings_and_params(
-    session,
+    session: AsyncSession,
     resolved_parameters: dict[str, Any],
     pen: int,
     uom: UomType,
@@ -1181,7 +1181,7 @@ def match_all_responses(
         return CheckResult(True, f"All DERControl(s) have a Response with a status of {status_str}")
 
 
-async def check_response_contents(
+async def check_response_contents(  # noqa: C901
     resolved_parameters: dict[str, Any], session: AsyncSession, active_test_procedure: ActiveTestProcedure
 ) -> CheckResult:
     """Implements the response-contents check by inspecting the response table for site controls"""
@@ -1190,7 +1190,7 @@ async def check_response_contents(
     is_all: bool = resolved_parameters.get("all", False)
     status_filter: int | None = resolved_parameters.get("status", None)
     status_filter_string: str = response_type_to_string(status_filter)
-    subject_tag: Optional[str] = resolved_parameters.get("subject_tag", None)
+    subject_tag: str | None = resolved_parameters.get("subject_tag", None)
 
     # Handle the "all" case separately
     if is_all:
@@ -1369,7 +1369,7 @@ def check_all_polls_at_correct_time(
     return result
 
 
-async def run_check(
+async def run_check(  # noqa: C901
     check: Check,
     active_test_procedure: ActiveTestProcedure,
     session: AsyncSession,
@@ -1393,7 +1393,6 @@ async def run_check(
     pen: int = active_test_procedure.pen
     try:
         match check.type:
-
             case "all-steps-complete":
                 check_result = check_all_steps_complete(active_test_procedure, resolved_parameters)
 
@@ -1446,7 +1445,7 @@ async def run_check(
 
     except Exception as exc:
         logger.error(f"Failed performing check {check}", exc_info=exc)
-        raise FailedCheckError(f"Failed performing check {check}. {exc}")
+        raise FailedCheckError(f"Failed performing check {check}. {exc}") from None
 
     if check_result is None:
         raise UnknownCheckError(f"Unrecognised check '{check.type}'. This is a problem with the test definition")

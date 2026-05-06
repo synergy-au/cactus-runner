@@ -1,3 +1,6 @@
+WILDCARD = "*"
+
+
 def does_endpoint_match(path: str, match: str) -> bool:
     """Performs all logic for matching an "endpoint" to an incoming request's path.
 
@@ -12,7 +15,6 @@ def does_endpoint_match(path: str, match: str) -> bool:
     """
 
     # If we don't have a wildcard - do an EXACT match
-    WILDCARD = "*"
     if WILDCARD not in match:
         return path == match
 
@@ -25,7 +27,7 @@ def does_endpoint_match(path: str, match: str) -> bool:
         return False
 
     # Compare each component
-    for request_component, match_component in zip(request_components, match_components):
+    for request_component, match_component in zip(request_components, match_components, strict=True):
         if match_component != WILDCARD and request_component != match_component:
             return False
 

@@ -1,11 +1,12 @@
 import unittest.mock as mock
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 import pytest
 from assertical.fake.generator import generate_class_instance
 from assertical.fake.sqlalchemy import assert_mock_session, create_mock_session
+from cactus_test_definitions.errors import UnresolvableVariableError
 from cactus_test_definitions.variable_expressions import (
     Constant,
     Expression,
@@ -13,7 +14,6 @@ from cactus_test_definitions.variable_expressions import (
     NamedVariableType,
     OperationType,
 )
-from cactus_test_definitions.errors import UnresolvableVariableError
 from envoy.server.model.site import Site, SiteDER, SiteDERSetting
 from freezegun import freeze_time
 
@@ -79,16 +79,16 @@ DATABASE_SET_MAX_W = 2020.0
         (Constant(timedelta(hours=1.23)), timedelta(hours=1.23)),
         (
             NamedVariable(NamedVariableType.NOW),
-            datetime(2024, 9, 10, 1, 2, 3, tzinfo=timezone.utc),
+            datetime(2024, 9, 10, 1, 2, 3, tzinfo=UTC),
         ),  # Time frozen to this
         (NamedVariable(NamedVariableType.DERSETTING_SET_MAX_W), DATABASE_SET_MAX_W),  # DB fixed with this
         (
             Expression(OperationType.ADD, NamedVariable(NamedVariableType.NOW), Constant(timedelta(hours=1))),
-            datetime(2024, 9, 10, 2, 2, 3, tzinfo=timezone.utc),
+            datetime(2024, 9, 10, 2, 2, 3, tzinfo=UTC),
         ),
         (
             Expression(OperationType.SUBTRACT, NamedVariable(NamedVariableType.NOW), Constant(timedelta(hours=1))),
-            datetime(2024, 9, 10, 0, 2, 3, tzinfo=timezone.utc),
+            datetime(2024, 9, 10, 0, 2, 3, tzinfo=UTC),
         ),
         (
             Expression(OperationType.MULTIPLY, NamedVariable(NamedVariableType.DERSETTING_SET_MAX_W), Constant(0.5)),

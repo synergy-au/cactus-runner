@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def resolve_named_variable_now() -> dt.datetime:
-    return dt.datetime.now(tz=dt.timezone.utc)
+    return dt.datetime.now(tz=dt.UTC)
 
 
 async def _select_single_site_der_setting(session: AsyncSession, variable_name: str) -> model.SiteDERSetting:
@@ -18,8 +18,8 @@ async def _select_single_site_der_setting(session: AsyncSession, variable_name: 
             sa.select(model.SiteDERSetting).order_by(model.SiteDERSetting.changed_time.desc()).limit(1)
         )
         site_der_setting = response.scalar_one_or_none()
-    except Exception as exc:
-        raise errors.UnresolvableVariableError(f"Unable to fetch DERSetting from database: {exc}")
+    except Exception as err:
+        raise errors.UnresolvableVariableError(f"Unable to fetch DERSetting from database: {err}") from err
 
     if site_der_setting is None:
         raise errors.UnresolvableVariableError(f"Unable to find a suitable DERSetting to resolve {variable_name}")
@@ -34,8 +34,8 @@ async def _select_single_site_der_rating(session: AsyncSession, variable_name: s
             sa.select(model.SiteDERRating).order_by(model.SiteDERRating.changed_time.desc()).limit(1)
         )
         site_der_rating = response.scalar_one_or_none()
-    except Exception as exc:
-        raise errors.UnresolvableVariableError(f"Unable to fetch DERCapability from database: {exc}")
+    except Exception as err:
+        raise errors.UnresolvableVariableError(f"Unable to fetch DERCapability from database: {err}") from err
 
     if site_der_rating is None:
         raise errors.UnresolvableVariableError(f"Unable to find a suitable DERCapability to resolve {variable_name}")
