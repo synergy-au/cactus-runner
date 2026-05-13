@@ -1,9 +1,9 @@
 import os
 import shutil
 import unittest.mock as mock
+from collections.abc import Callable, Generator
 from http import HTTPStatus
 from pathlib import Path
-from typing import Callable, Generator
 from urllib.parse import urlparse
 
 import aiohttp.web as web
@@ -50,7 +50,7 @@ def execute_test_sql_file(cfg: Connection, path_to_sql_file: str) -> None:
     with open(path_to_sql_file) as f:
         sql = f.read()
     with cfg.cursor() as cursor:
-        cursor.execute(sql)
+        cursor.execute(sql)  # type: ignore
         cfg.commit()
 
 
@@ -63,7 +63,7 @@ def preserved_environment():
 @pytest.fixture
 def assertical_extensions():
     with generator_registry_snapshot():
-        register_base_type(Path, lambda x: Path(f"fake.{x}"), lambda x: [])
+        register_base_type(Path, lambda x, _: Path(f"fake.{x}"), lambda x: [])
         yield
 
 
@@ -118,7 +118,7 @@ async def envoy_admin_client(pg_empty_config: Connection):
         admin_client = EnvoyAdminClient(
             "http://test", EnvoyAdminClientAuthParams("", "")
         )  # NOTE: these are throw away variables, we replace instance next line
-        admin_client._session = session
+        admin_client._session = session  # type: ignore
         yield admin_client
 
 
@@ -155,9 +155,12 @@ async def envoy_server_client(pg_empty_config: Connection):
             else:
                 proxy_url = parsed_url.path
 
-            headers = {k: v for k, v in headers.items()}
-
-            response = await envoy_client.request(method, proxy_url, headers=headers, data=request_body)
+            response = await envoy_client.request(
+                method,
+                proxy_url,
+                headers=headers,
+                data=request_body,  # type: ignore
+            )
             response_headers = response.headers.copy()
             return web.Response(headers=response_headers, status=HTTPStatus(response.status_code), body=response.read())
 
@@ -209,9 +212,9 @@ async def cactus_runner_client_with_mount_point(aiohttp_client, envoy_admin_clie
 
 
 @pytest.fixture
-def run_request_generator() -> (
-    Callable[[TestProcedureId, str | None, str | None, CSIPAusVersion, str | None], RunRequest]
-):
+def run_request_generator() -> Callable[
+    [TestProcedureId, str | None, str | None, CSIPAusVersion, str | None], RunRequest
+]:
     """Yields a function for generating a RunRequest when supplied with a TestProcedureId"""
 
     def _generate_run_request(

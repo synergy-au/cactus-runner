@@ -2,7 +2,7 @@ import dataclasses
 import http
 import re
 import unittest.mock as mock
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 import pytest
@@ -132,14 +132,14 @@ def test_CHECK_TYPE_TO_HANDLER_in_sync():
 
     # Make sure we don't have any extra definitions not found in cactus-test-definitions
     for check_type in CHECK_TYPE_TO_HANDLER.keys():
-        assert (
-            check_type in CHECK_PARAMETER_SCHEMA
-        ), f"The check type {check_type} isn't defined in the test definitions (has it been removed/renamed)"
+        assert check_type in CHECK_PARAMETER_SCHEMA, (
+            f"The check type {check_type} isn't defined in the test definitions (has it been removed/renamed)"
+        )
 
     supported_checks = dict(((k, v) for k, v in CHECK_TYPE_TO_HANDLER.items() if v is not None))
-    assert len(set(supported_checks.values())) == len(
-        supported_checks
-    ), "At least 1 check type have listed the same check handler. This is likely a bug"
+    assert len(set(supported_checks.values())) == len(supported_checks), (
+        "At least 1 check type have listed the same check handler. This is likely a bug"
+    )
 
 
 def generate_active_test_procedure_steps(active_steps: list[str], all_steps: list[str]) -> ActiveTestProcedure:
@@ -443,7 +443,7 @@ def der_bool_param_scenario(
     """
     der_props: dict[DERKey, SiteDERSetting | SiteDERRating] = {
         der_key: generate_class_instance(der_type, **{db_property: db_property_value})
-    }
+    }  # ty:ignore[invalid-assignment]
 
     if der_key == "site_der_rating":
         return pytest.param(
@@ -1696,7 +1696,6 @@ async def test_do_check_readings_for_types(
     ]
 
     async with generate_async_session(pg_base_config) as session:
-
         result = await do_check_readings_for_types(session, faked_srts, minimum_count)
         assert_check_result(result, expected)
 
@@ -1794,7 +1793,6 @@ async def test_do_check_single_level(
     ]
 
     async with generate_async_session(pg_base_config) as session:
-
         result = await do_check_single_level(session, faked_srts, min_level, max_level)
         assert_check_result(result, expected)
 
@@ -1925,7 +1923,7 @@ async def test_do_check_reading_levels_for_types(
         case (False, False):
             assert_check_result(result, True)
         case _:
-            assert False, "Unhandled test case found"
+            raise AssertionError("Unhandled test case found")
 
 
 @pytest.mark.parametrize(
@@ -2352,9 +2350,9 @@ async def test_check_readings_unique(mock_do_check_site_readings_and_params: moc
 
     # Assert
     assert mock_do_check_site_readings_and_params.call_count == len(reading_checks)
-    assert len(set((a.args[2:] for a in mock_do_check_site_readings_and_params.call_args_list))) == len(
-        reading_checks
-    ), "Each call to do_check_site_readings_and_params should have unique params (ignoring session/resolved_params)"
+    assert len(set(a.args[2:] for a in mock_do_check_site_readings_and_params.call_args_list)) == len(reading_checks), (
+        "Each call to do_check_site_readings_and_params should have unique params (ignoring session/resolved_params)"
+    )
 
     assert_mock_session(mock_session)
 
@@ -2392,6 +2390,9 @@ async def test_check_readings_voltage(
     assert_mock_session(mock_session)
     assert isinstance(result, CheckResult)
     assert result.passed is expected_result
+    assert result.description is not None
+    assert site_check_result.description is not None
+    assert device_check_result.description is not None
     assert site_check_result.description in result.description or device_check_result.description in result.description
 
     # Cursory look at passed params
@@ -2475,7 +2476,7 @@ async def test_check_subscription_contents_no_matches(pg_base_config):
     # Fill up the DB with subscriptions
     async with generate_async_session(pg_base_config) as session:
         agg1 = (await session.execute(select(Aggregator).where(Aggregator.aggregator_id == agg_id))).scalar_one()
-        agg2 = Aggregator(aggregator_id=2, name="test2", changed_time=datetime(2022, 11, 22, tzinfo=timezone.utc))
+        agg2 = Aggregator(aggregator_id=2, name="test2", changed_time=datetime(2022, 11, 22, tzinfo=UTC))
         session.add(agg2)
 
         site1 = generate_class_instance(Site, seed=1001, site_id=1, aggregator_id=agg_id)  # Active Site
@@ -2552,7 +2553,7 @@ async def test_check_subscription_contents_success(pg_base_config):
     # Fill up the DB with subscriptions
     async with generate_async_session(pg_base_config) as session:
         agg1 = (await session.execute(select(Aggregator).where(Aggregator.aggregator_id == agg_id))).scalar_one()
-        agg2 = Aggregator(aggregator_id=2, name="test2", changed_time=datetime(2022, 11, 22, tzinfo=timezone.utc))
+        agg2 = Aggregator(aggregator_id=2, name="test2", changed_time=datetime(2022, 11, 22, tzinfo=UTC))
         session.add(agg2)
 
         site1 = generate_class_instance(Site, seed=1001, site_id=1, aggregator_id=agg_id)  # Active Site
@@ -2659,7 +2660,7 @@ async def test_check_subscription_contents_success_unscoped(pg_base_config):
     # Fill up the DB with subscriptions
     async with generate_async_session(pg_base_config) as session:
         agg1 = (await session.execute(select(Aggregator).where(Aggregator.aggregator_id == 1))).scalar_one()
-        agg2 = Aggregator(aggregator_id=2, name="test2", changed_time=datetime(2022, 11, 22, tzinfo=timezone.utc))
+        agg2 = Aggregator(aggregator_id=2, name="test2", changed_time=datetime(2022, 11, 22, tzinfo=UTC))
         session.add(agg2)
 
         site1 = generate_class_instance(Site, seed=1001, site_id=1, aggregator_id=agg_id)  # Active Site
@@ -2738,7 +2739,6 @@ async def test_check_response_contents_latest(pg_base_config):
     active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
     # Fill up the DB with responses
     async with generate_async_session(pg_base_config) as session:
-
         site_control_group = generate_class_instance(SiteControlGroup, seed=101)
         session.add(site_control_group)
 
@@ -2759,7 +2759,7 @@ async def test_check_response_contents_latest(pg_base_config):
                 DynamicOperatingEnvelopeResponse,
                 seed=505,
                 response_type=ResponseType.EVENT_CANCELLED,
-                created_time=datetime(2024, 11, 10, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 10, tzinfo=UTC),
                 site=site1,
                 dynamic_operating_envelope_id_snapshot=der_control_1.dynamic_operating_envelope_id,
             )
@@ -2771,7 +2771,7 @@ async def test_check_response_contents_latest(pg_base_config):
                 DynamicOperatingEnvelopeResponse,
                 seed=606,
                 response_type=ResponseType.EVENT_COMPLETED,
-                created_time=datetime(2024, 11, 11, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 11, tzinfo=UTC),
                 site=site1,
                 dynamic_operating_envelope_id_snapshot=der_control_1.dynamic_operating_envelope_id,
             )
@@ -2782,7 +2782,7 @@ async def test_check_response_contents_latest(pg_base_config):
                 DynamicOperatingEnvelopeResponse,
                 seed=707,
                 response_type=ResponseType.EVENT_RECEIVED,
-                created_time=datetime(2024, 11, 9, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 9, tzinfo=UTC),
                 site=site1,
                 dynamic_operating_envelope_id_snapshot=der_control_1.dynamic_operating_envelope_id,
             )
@@ -2848,7 +2848,6 @@ async def test_check_response_contents_all(
     active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
     # Fill up the DB with responses
     async with generate_async_session(pg_base_config) as session:
-
         site_control_group = generate_class_instance(SiteControlGroup, seed=101)
         session.add(site_control_group)
 
@@ -2871,7 +2870,7 @@ async def test_check_response_contents_all(
                 ArchiveDynamicOperatingEnvelope,
                 seed=idx * 1001,
                 site_id=site1.site_id,
-                deleted_time=datetime(2022, 11, 14, tzinfo=timezone.utc),
+                deleted_time=datetime(2022, 11, 14, tzinfo=UTC),
                 site_control_group_id=site_control_group.site_control_group_id,
                 calculation_log_id=None,
                 dynamic_operating_envelope_id=control_id,
@@ -2892,7 +2891,7 @@ async def test_check_response_contents_all(
         await session.commit()
 
     async with generate_async_session(pg_base_config) as session:
-        params: dict[str, Any] = {"all": True}
+        params: dict = {"all": True}
         if status is not None:
             params["status"] = status
 
@@ -2908,7 +2907,6 @@ async def test_check_response_contents_any(pg_base_config):
     active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
     # Fill up the DB with responses
     async with generate_async_session(pg_base_config) as session:
-
         site_control_group = generate_class_instance(SiteControlGroup, seed=101)
         session.add(site_control_group)
 
@@ -2929,7 +2927,7 @@ async def test_check_response_contents_any(pg_base_config):
                 DynamicOperatingEnvelopeResponse,
                 seed=505,
                 response_type=ResponseType.EVENT_CANCELLED,
-                created_time=datetime(2024, 11, 10, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 10, tzinfo=UTC),
                 site=site1,
                 dynamic_operating_envelope_id_snapshot=der_control_1.dynamic_operating_envelope_id,
             )
@@ -2940,7 +2938,7 @@ async def test_check_response_contents_any(pg_base_config):
                 DynamicOperatingEnvelopeResponse,
                 seed=606,
                 response_type=ResponseType.EVENT_COMPLETED,
-                created_time=datetime(2024, 11, 11, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 11, tzinfo=UTC),
                 site=site1,
                 dynamic_operating_envelope_id_snapshot=der_control_1.dynamic_operating_envelope_id,
             )
@@ -2951,7 +2949,7 @@ async def test_check_response_contents_any(pg_base_config):
                 DynamicOperatingEnvelopeResponse,
                 seed=707,
                 response_type=ResponseType.EVENT_RECEIVED,
-                created_time=datetime(2024, 11, 9, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 9, tzinfo=UTC),
                 site=site1,
                 dynamic_operating_envelope_id_snapshot=der_control_1.dynamic_operating_envelope_id,
             )
@@ -3051,7 +3049,6 @@ async def test_check_response_contents_tag_DERC1(pg_base_config):
 
     # Fill up the DB with responses
     async with generate_async_session(pg_base_config) as session:
-
         site_control_group = generate_class_instance(SiteControlGroup, seed=101)
         session.add(site_control_group)
 
@@ -3086,7 +3083,7 @@ async def test_check_response_contents_tag_DERC1(pg_base_config):
                 DynamicOperatingEnvelopeResponse,
                 seed=505,
                 response_type=ResponseType.EVENT_RECEIVED,
-                created_time=datetime(2024, 11, 9, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 9, tzinfo=UTC),
                 site=site1,
                 dynamic_operating_envelope_id_snapshot=100,
             )
@@ -3097,7 +3094,7 @@ async def test_check_response_contents_tag_DERC1(pg_base_config):
                 DynamicOperatingEnvelopeResponse,
                 seed=606,
                 response_type=ResponseType.EVENT_COMPLETED,
-                created_time=datetime(2024, 11, 11, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 11, tzinfo=UTC),
                 site=site1,
                 dynamic_operating_envelope_id_snapshot=100,
             )
@@ -3109,7 +3106,7 @@ async def test_check_response_contents_tag_DERC1(pg_base_config):
                 DynamicOperatingEnvelopeResponse,
                 seed=707,
                 response_type=ResponseType.EVENT_CANCELLED,
-                created_time=datetime(2024, 11, 10, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 10, tzinfo=UTC),
                 site=site1,
                 dynamic_operating_envelope_id_snapshot=200,
             )
@@ -3560,9 +3557,9 @@ async def test_check_der_settings_contents_error_messages_meaningful(
         result = await check_der_settings_contents(session, resolved_params)
         assert_check_result(result, expected)
         assert result.description is not None
-        assert (
-            re.search(msg_regex, result.description) is not None
-        ), f"'{msg_regex}' not found in '{result.description}'"
+        assert re.search(msg_regex, result.description) is not None, (
+            f"'{msg_regex}' not found in '{result.description}'"
+        )
 
 
 @pytest.mark.parametrize(
@@ -3747,9 +3744,9 @@ async def test_check_der_capability_contents_error_messages_meaningful(
         result = await check_der_capability_contents(session, resolved_params)
         assert_check_result(result, expected)
         assert result.description is not None
-        assert (
-            re.search(msg_regex, result.description) is not None
-        ), f"'{msg_regex}' not found in '{result.description}'"
+        assert re.search(msg_regex, result.description) is not None, (
+            f"'{msg_regex}' not found in '{result.description}'"
+        )
 
 
 @pytest.mark.parametrize(
@@ -3814,7 +3811,7 @@ async def test_do_check_readings_for_duration(pg_base_config, srt_ids: list[int]
     ],
 )
 def test_check_all_polls_at_correct_time_path_matching(request_path: str, expected: bool):
-    base_time = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    base_time = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
     poll_interval = 60
 
     active_test_procedure = generate_class_instance(
@@ -3849,7 +3846,7 @@ def test_check_all_polls_at_correct_time_path_matching(request_path: str, expect
     ],
 )
 def test_check_all_polls_at_correct_time_poll_count(offsets_seconds: list[int], description_contains: str):
-    base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
     poll_interval = 60
 
     active_test_procedure = generate_class_instance(
@@ -3874,12 +3871,13 @@ def test_check_all_polls_at_correct_time_poll_count(offsets_seconds: list[int], 
     )
 
     assert_check_result(result, False)
+    assert result.description is not None
     assert description_contains in result.description
 
 
 def test_check_all_polls_at_correct_time_filters_by_request_type():
     """Only requests matching request_type_str are counted - other methods are ignored."""
-    base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
     poll_interval = 60
 
     active_test_procedure = generate_class_instance(
@@ -3917,7 +3915,7 @@ def test_check_all_polls_at_correct_time_filters_by_request_type():
 )
 def test_check_all_polls_at_correct_time_request_type_variants(request_type_str: str, request_method: http.HTTPMethod):
     """Each supported request_type_str correctly matches the corresponding HTTP method."""
-    base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
     poll_interval = 60
 
     active_test_procedure = generate_class_instance(
@@ -3950,7 +3948,7 @@ def test_check_all_polls_at_correct_time_wildcard_checks_each_path_independently
     Two MUPs (/mup/2 and /mup/3) both posting at 60s are each valid individually even
     though their combined count per window would exceed the maximum.
     """
-    base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
     poll_interval = 60
 
     active_test_procedure = generate_class_instance(
@@ -3981,7 +3979,7 @@ def test_check_all_polls_at_correct_time_wildcard_checks_each_path_independently
 
 def test_check_all_polls_at_correct_time_wildcard_fails_when_one_path_misses_polls():
     """With a wildcard endpoint, a single path missing polls causes an overall failure."""
-    base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
     poll_interval = 60
 
     active_test_procedure = generate_class_instance(
@@ -4023,6 +4021,7 @@ def test_check_all_polls_at_correct_time_wildcard_fails_when_one_path_misses_pol
     )
 
     assert_check_result(result, False)
+    assert result.description is not None
     assert "/mup/3" in result.description
 
 
@@ -4037,7 +4036,7 @@ def test_check_all_polls_at_correct_time_wildcard_fails_when_one_path_misses_pol
 def test_check_all_polls_at_correct_time_missing_params(params: dict, description_contains: str):
     active_test_procedure = generate_class_instance(
         ActiveTestProcedure,
-        started_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        started_at=datetime(2024, 1, 1, tzinfo=UTC),
         step_status={},
         finished_zip_path=None,
     )
@@ -4045,6 +4044,7 @@ def test_check_all_polls_at_correct_time_missing_params(params: dict, descriptio
     result = check_all_polls_at_correct_time(active_test_procedure, [], params)
 
     assert_check_result(result, False)
+    assert result.description is not None
     assert description_contains in result.description
 
 
@@ -4060,6 +4060,7 @@ def test_check_all_polls_at_correct_time_test_not_started_fails():
     )
 
     assert_check_result(result, False)
+    assert result.description is not None
     assert "Test has not started" in result.description
 
 
@@ -4069,7 +4070,6 @@ async def test_check_price_response_contents_latest(pg_base_config):
     active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
     # Fill up the DB with responses
     async with generate_async_session(pg_base_config) as session:
-
         tariff = generate_class_instance(Tariff, seed=1, tariff_id=1)
         session.add(tariff)
 
@@ -4095,7 +4095,7 @@ async def test_check_price_response_contents_latest(pg_base_config):
                 TariffGeneratedRateResponse,
                 seed=505,
                 response_type=ResponseType.EVENT_CANCELLED,
-                created_time=datetime(2024, 11, 10, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 10, tzinfo=UTC),
                 site=site1,
                 tariff_generated_rate_id_snapshot=rate_1.tariff_generated_rate_id,
             )
@@ -4107,7 +4107,7 @@ async def test_check_price_response_contents_latest(pg_base_config):
                 TariffGeneratedRateResponse,
                 seed=606,
                 response_type=ResponseType.EVENT_COMPLETED,
-                created_time=datetime(2024, 11, 11, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 11, tzinfo=UTC),
                 site=site1,
                 tariff_generated_rate_id_snapshot=rate_1.tariff_generated_rate_id,
             )
@@ -4118,7 +4118,7 @@ async def test_check_price_response_contents_latest(pg_base_config):
                 TariffGeneratedRateResponse,
                 seed=707,
                 response_type=ResponseType.EVENT_RECEIVED,
-                created_time=datetime(2024, 11, 9, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 9, tzinfo=UTC),
                 site=site1,
                 tariff_generated_rate_id_snapshot=rate_1.tariff_generated_rate_id,
             )
@@ -4184,7 +4184,6 @@ async def test_check_price_response_contents_all(
     active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
     # Fill up the DB with responses
     async with generate_async_session(pg_base_config) as session:
-
         tariff = generate_class_instance(Tariff, seed=1, tariff_id=1)
         session.add(tariff)
 
@@ -4211,7 +4210,7 @@ async def test_check_price_response_contents_all(
                 ArchiveTariffGeneratedRate,
                 seed=idx * 1001,
                 site_id=site1.site_id,
-                deleted_time=datetime(2022, 11, 14, tzinfo=timezone.utc),
+                deleted_time=datetime(2022, 11, 14, tzinfo=UTC),
                 tariff_component_id=tariff_component.tariff_component_id,
                 calculation_log_id=None,
                 tariff_generated_rate_id=control_id,
@@ -4248,7 +4247,6 @@ async def test_check_price_response_contents_any(pg_base_config):
     active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
     # Fill up the DB with responses
     async with generate_async_session(pg_base_config) as session:
-
         tariff = generate_class_instance(Tariff, seed=1, tariff_id=1)
         session.add(tariff)
 
@@ -4273,7 +4271,7 @@ async def test_check_price_response_contents_any(pg_base_config):
                 TariffGeneratedRateResponse,
                 seed=505,
                 response_type=ResponseType.EVENT_CANCELLED,
-                created_time=datetime(2024, 11, 10, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 10, tzinfo=UTC),
                 site=site1,
                 tariff_generated_rate_id_snapshot=rate_1.tariff_generated_rate_id,
             )
@@ -4284,7 +4282,7 @@ async def test_check_price_response_contents_any(pg_base_config):
                 TariffGeneratedRateResponse,
                 seed=606,
                 response_type=ResponseType.EVENT_COMPLETED,
-                created_time=datetime(2024, 11, 11, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 11, tzinfo=UTC),
                 site=site1,
                 tariff_generated_rate_id_snapshot=rate_1.tariff_generated_rate_id,
             )
@@ -4295,7 +4293,7 @@ async def test_check_price_response_contents_any(pg_base_config):
                 TariffGeneratedRateResponse,
                 seed=707,
                 response_type=ResponseType.EVENT_RECEIVED,
-                created_time=datetime(2024, 11, 9, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 9, tzinfo=UTC),
                 site=site1,
                 tariff_generated_rate_id_snapshot=rate_1.tariff_generated_rate_id,
             )
@@ -4403,7 +4401,6 @@ async def test_check_price_response_contents_tag_RATE1(pg_base_config):
 
     # Fill up the DB with responses
     async with generate_async_session(pg_base_config) as session:
-
         tariff = generate_class_instance(Tariff, seed=1, tariff_id=1)
         session.add(tariff)
 
@@ -4443,7 +4440,7 @@ async def test_check_price_response_contents_tag_RATE1(pg_base_config):
                 TariffGeneratedRateResponse,
                 seed=505,
                 response_type=ResponseType.EVENT_RECEIVED,
-                created_time=datetime(2024, 11, 9, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 9, tzinfo=UTC),
                 site=site1,
                 tariff_generated_rate_id_snapshot=100,
             )
@@ -4454,7 +4451,7 @@ async def test_check_price_response_contents_tag_RATE1(pg_base_config):
                 TariffGeneratedRateResponse,
                 seed=606,
                 response_type=ResponseType.EVENT_COMPLETED,
-                created_time=datetime(2024, 11, 11, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 11, tzinfo=UTC),
                 site=site1,
                 tariff_generated_rate_id_snapshot=100,
             )
@@ -4466,7 +4463,7 @@ async def test_check_price_response_contents_tag_RATE1(pg_base_config):
                 TariffGeneratedRateResponse,
                 seed=707,
                 response_type=ResponseType.EVENT_CANCELLED,
-                created_time=datetime(2024, 11, 10, tzinfo=timezone.utc),
+                created_time=datetime(2024, 11, 10, tzinfo=UTC),
                 site=site1,
                 tariff_generated_rate_id_snapshot=200,
             )
@@ -4628,7 +4625,7 @@ def test_check_resource_requests(
     expected: bool,
 ):
     request_history = [generate_class_instance(RequestEntry, seed=idx, path=p) for idx, p in enumerate(request_paths)]
-    params = {"resources": resources}
+    params: dict = {"resources": resources}
     if minimum_count is not None:
         params["minimum_count"] = minimum_count
     if maximum_count is not None:

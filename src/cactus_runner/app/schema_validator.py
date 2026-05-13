@@ -1,6 +1,7 @@
 import logging
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from lxml import etree
 
@@ -15,13 +16,13 @@ CSIP_AUS_13_DIR = Path(csipaus13.__file__).parent
 class LocalXsdResolver(etree.Resolver):
     """Finds specific XSD files in our local schema directory"""
 
-    def resolve(self, url, _, context):
-        if url == "sep.xsd":
-            return self.resolve_filename(str(CSIP_AUS_13_DIR / "sep.xsd"), context)
-        elif url == "csipaus-core.xsd":
-            return self.resolve_filename(str(CSIP_AUS_13_DIR / "csipaus-core.xsd"), context)
-        elif url == "csipaus-ext.xsd":
-            return self.resolve_filename(str(CSIP_AUS_13_DIR / "csipaus-ext.xsd"), context)
+    def resolve(self, system_url: str, public_id: str, context: Any = None) -> Any:  # noqa: ANN401
+        if system_url == "sep.xsd":
+            return self.resolve_filename(str(CSIP_AUS_13_DIR / "sep.xsd"), context)  # ty:ignore[unresolved-attribute]
+        elif system_url == "csipaus-core.xsd":
+            return self.resolve_filename(str(CSIP_AUS_13_DIR / "csipaus-core.xsd"), context)  # ty:ignore[unresolved-attribute]
+        elif system_url == "csipaus-ext.xsd":
+            return self.resolve_filename(str(CSIP_AUS_13_DIR / "csipaus-ext.xsd"), context)  # ty:ignore[unresolved-attribute]
         return None
 
 
@@ -34,7 +35,7 @@ def csip_aus_schema() -> etree.XMLSchema:
     parser.resolvers.add(LocalXsdResolver())
 
     # Load schema
-    with open(CSIP_AUS_13_DIR / "csipaus-core.xsd", "r") as fp:
+    with open(CSIP_AUS_13_DIR / "csipaus-core.xsd") as fp:
         xsd_content = fp.read()
     schema_root = etree.XML(xsd_content, parser)
     return etree.XMLSchema(schema_root)
@@ -59,4 +60,4 @@ def validate_proxy_request_schema(proxy_result: ProxyResult) -> list[str]:
     if schema.validate(xml_doc):
         return []
 
-    return [f"{e.line}: {e.message}" for e in schema.error_log]  # type: ignore
+    return [f"{e.line}: {e.message}" for e in schema.error_log]

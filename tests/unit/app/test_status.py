@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 
 import pytest
@@ -9,6 +9,7 @@ from cactus_schema.runner import (
     ClientInteraction,
     CriteriaEntry,
     DataStreamPoint,
+    EndDeviceMetadata,
     RunnerStatus,
     StepEventStatus,
     TimelineDataStreamEntry,
@@ -29,7 +30,7 @@ from cactus_runner.app.timeline import Timeline, TimelineDataStream, duration_to
 from cactus_runner.models import ActiveTestProcedure, CheckResult, StepInfo
 
 PENDING_STEP = StepInfo()
-RESOLVED_STEP = StepInfo(started_at=datetime.now(tz=timezone.utc), completed_at=datetime.now(tz=timezone.utc))
+RESOLVED_STEP = StepInfo(started_at=datetime.now(tz=UTC), completed_at=datetime.now(tz=UTC))
 
 
 @pytest.mark.parametrize(
@@ -48,7 +49,7 @@ def test_get_runner_status_summary(step_status, expected):
     assert status.get_runner_status_summary(step_status=step_status) == expected
 
 
-BASIS = datetime(2023, 5, 7, tzinfo=timezone.utc)
+BASIS = datetime(2023, 5, 7, tzinfo=UTC)
 
 
 @pytest.mark.parametrize(
@@ -86,7 +87,7 @@ async def test_get_active_runner_status(
 
     expected_test_name = "TEST_NAME"
     expected_step_status = {
-        "step_name": StepEventStatus(started_at=datetime.now(tz=timezone.utc), completed_at=None, event_status=None)
+        "step_name": StepEventStatus(started_at=datetime.now(tz=UTC), completed_at=None, event_status=None)
     }
     expected_status_summary = "0/1 steps complete."
     expected_csip_aus_version = CSIPAusVersion.RELEASE_1_2
@@ -102,7 +103,7 @@ async def test_get_active_runner_status(
     active_test_procedure = generate_class_instance(
         ActiveTestProcedure,
         name=expected_test_name,
-        step_status={"step_name": StepInfo(started_at=datetime.now(tz=timezone.utc))},
+        step_status={"step_name": StepInfo(started_at=datetime.now(tz=UTC))},
         csip_aus_version=expected_csip_aus_version,
         definition=mock_definition,
         listeners=[],
@@ -134,6 +135,7 @@ async def test_get_active_runner_status(
     if expected_max_w is None:
         assert runner_status.timeline is None or runner_status.timeline.set_max_w is None
     else:
+        assert runner_status.timeline is not None
         assert runner_status.timeline.set_max_w == expected_max_w
     assert runner_status.end_device_metadata is None
 
@@ -148,6 +150,7 @@ async def test_get_active_runner_status(
 
     # If we have timeline data - ensure it's set as expected. Otherwise it should not be there at all
     if not isinstance(timeline_streams_result, type):
+        assert runner_status.timeline is not None
         assert runner_status.timeline.now_offset == expected_now_offset
         assert runner_status.timeline.data_streams is timeline_streams_result
     else:
@@ -240,7 +243,8 @@ async def test_get_active_runner_status_with_end_device_metadata(mocker):
     runner_status = await status.get_active_runner_status(mock_session, active_test_procedure, Mock(), Mock(), None)
 
     # Assert - EndDeviceMetadata
-    metadata = runner_status.end_device_metadata
+    metadata: EndDeviceMetadata | None = runner_status.end_device_metadata
+    assert metadata is not None
     assert metadata.edevid == 42
     assert metadata.lfdi == site.lfdi
     assert metadata.sfdi == site.sfdi
@@ -365,8 +369,8 @@ def test_get_runner_status(example_client_interaction: ClientInteraction):
 async def test_get_timeline_data_streams(mocker, interval_seconds, data_streams, expected_data_streams):
     """Tests whether converting to the status timeline model raises any issues"""
     mock_session = create_mock_session()
-    start = datetime(2024, 11, 5, tzinfo=timezone.utc)
-    end = datetime(2024, 11, 6, tzinfo=timezone.utc)
+    start = datetime(2024, 11, 5, tzinfo=UTC)
+    end = datetime(2024, 11, 6, tzinfo=UTC)
 
     mock_generate_timeline = mocker.patch("cactus_runner.app.status.generate_timeline")
     mock_generate_timeline.return_value = generate_class_instance(Timeline, data_streams=data_streams)

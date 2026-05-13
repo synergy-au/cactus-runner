@@ -2,6 +2,7 @@ import unittest.mock as mock
 
 import pytest
 from assertical.asserts.type import assert_list_type
+from multidict import CIMultiDict
 
 from cactus_runner.app.proxy import ProxyResult
 from cactus_runner.app.schema_validator import validate_proxy_request_schema
@@ -9,7 +10,7 @@ from cactus_runner.app.schema_validator import validate_proxy_request_schema
 
 def make_proxy_result(body: bytes) -> ProxyResult:
     """Helper to create a ProxyResult with just the body we care about for validation"""
-    return ProxyResult("", "", body, None, {}, mock.MagicMock())
+    return ProxyResult("", "", body, None, CIMultiDict({}), mock.MagicMock())
 
 
 @pytest.mark.parametrize(
@@ -146,7 +147,7 @@ def test_validate_proxy_request_schema_schema_invalid(xml: str):
 
 def test_validate_proxy_request_schema_empty_body():
     """Tests that an empty body returns no errors"""
-    result = validate_proxy_request_schema(make_proxy_result(bytes()))
+    result = validate_proxy_request_schema(make_proxy_result(b""))
     assert_list_type(str, result, count=0)
 
 

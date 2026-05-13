@@ -1,5 +1,5 @@
 import unittest.mock as mock
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from itertools import product
 from typing import Any
@@ -92,14 +92,14 @@ def test_ACTION_TYPE_TO_HANDLER_in_sync():
 
     # Make sure we don't have any extra definitions not found in cactus-test-definitions
     for action_type in ACTION_TYPE_TO_HANDLER.keys():
-        assert (
-            action_type in ACTION_PARAMETER_SCHEMA
-        ), f"The action type {action_type} isn't defined in the test definitions (has it been removed/renamed)"
+        assert action_type in ACTION_PARAMETER_SCHEMA, (
+            f"The action type {action_type} isn't defined in the test definitions (has it been removed/renamed)"
+        )
 
     supported_actions = dict(((k, v) for k, v in ACTION_TYPE_TO_HANDLER.items() if v is not None))
-    assert len(set(supported_actions.values())) == len(
-        supported_actions
-    ), "At least 1 action type have listed the same action handler. This is likely a bug"
+    assert len(set(supported_actions.values())) == len(supported_actions), (
+        "At least 1 action type have listed the same action handler. This is likely a bug"
+    )
 
 
 def create_testing_runner_state(listeners: list[Listener]) -> RunnerState:
@@ -111,7 +111,7 @@ def create_testing_runner_state(listeners: list[Listener]) -> RunnerState:
             listeners=listeners,
         ),
         [],
-        None,
+        [],
     )
 
 
@@ -126,18 +126,20 @@ async def test_action_enable_steps():
     ]  # listener defaults to disabled but should be enabled during this test
     runner_state = create_testing_runner_state(listeners)
     resolved_parameters = {"steps": steps_to_enable}
+    assert runner_state.active_test_procedure is not None
 
     # Act
     await action_enable_steps(runner_state.active_test_procedure, resolved_parameters)
 
     # Assert
+    assert listeners[0].enabled_time is not None
     assert_nowish(listeners[0].enabled_time)
     assert listeners[0].enabled_time.tzinfo, "Need timezone aware datetime"
     assert steps_to_enable == original_steps_to_enable  # Ensure we are not mutating step_to_enable
     for step in steps_to_enable:
-        assert (
-            runner_state.active_test_procedure.step_status[step].get_step_status() == StepStatus.ACTIVE
-        ), "Check we update step_status"
+        assert runner_state.active_test_procedure.step_status[step].get_step_status() == StepStatus.ACTIVE, (
+            "Check we update step_status"
+        )
 
 
 @pytest.mark.parametrize(
@@ -150,7 +152,7 @@ async def test_action_enable_steps():
                     step="step1",
                     event=Event(type="", parameters={}),
                     actions=[],
-                    enabled_time=datetime(2000, 1, 1, tzinfo=timezone.utc),
+                    enabled_time=datetime(2000, 1, 1, tzinfo=UTC),
                 ),
             ],
         ),
@@ -167,13 +169,13 @@ async def test_action_enable_steps():
                     step="step1",
                     event=Event(type="", parameters={}),
                     actions=[],
-                    enabled_time=datetime(2000, 1, 1, tzinfo=timezone.utc),
+                    enabled_time=datetime(2000, 1, 1, tzinfo=UTC),
                 ),
                 Listener(
                     step="step2",
                     event=Event(type="", parameters={}),
                     actions=[],
-                    enabled_time=datetime(2000, 1, 1, tzinfo=timezone.utc),
+                    enabled_time=datetime(2000, 1, 1, tzinfo=UTC),
                 ),
             ],
         ),
@@ -185,6 +187,7 @@ async def test_action_remove_steps(steps_to_disable: list[str], listeners: list[
     original_steps_to_disable = steps_to_disable.copy()
     runner_state = create_testing_runner_state(listeners)
     resolved_parameters = {"steps": steps_to_disable}
+    assert runner_state.active_test_procedure is not None
 
     # Act
     await action_remove_steps(runner_state.active_test_procedure, resolved_parameters)
@@ -193,9 +196,9 @@ async def test_action_remove_steps(steps_to_disable: list[str], listeners: list[
     assert len(listeners) == 0  # all steps removed from list of listeners
     assert steps_to_disable == original_steps_to_disable  # check we are mutating 'steps_to_diable'
     for step in steps_to_disable:
-        assert (
-            runner_state.active_test_procedure.step_status[step].get_step_status() == StepStatus.RESOLVED
-        ), "Check we update step_status"
+        assert runner_state.active_test_procedure.step_status[step].get_step_status() == StepStatus.RESOLVED, (
+            "Check we update step_status"
+        )
 
 
 @pytest.mark.parametrize(
@@ -247,13 +250,13 @@ async def test__apply_action_raise_exception_for_unknown_action_type():
             step="step",
             event=Event(type="GET-request-received", parameters={"endpoint": "/dcap"}),
             actions=[],
-            enabled_time=datetime(2000, 1, 1, tzinfo=timezone.utc),
+            enabled_time=datetime(2000, 1, 1, tzinfo=UTC),
         ),  # no actions for listener
         Listener(
             step="step",
             event=Event(type="GET-request-received", parameters={"endpoint": "/dcap"}),
             actions=[Action(type="enable-steps", parameters={})],
-            enabled_time=datetime(2000, 1, 1, tzinfo=timezone.utc),
+            enabled_time=datetime(2000, 1, 1, tzinfo=UTC),
         ),  # 1 action for listener
         Listener(
             step="step",
@@ -262,7 +265,7 @@ async def test__apply_action_raise_exception_for_unknown_action_type():
                 Action(type="enable-steps", parameters={}),
                 Action(type="remove-steps", parameters={}),
             ],
-            enabled_time=datetime(2000, 1, 1, tzinfo=timezone.utc),
+            enabled_time=datetime(2000, 1, 1, tzinfo=UTC),
         ),  # 2 actions for listener
     ],
 )
@@ -451,7 +454,7 @@ async def test_action_create_der_control_no_group(pg_base_config, envoy_admin_cl
         session.add(generate_class_instance(Site, aggregator_id=1))
         await session.commit()
     resolved_params = {
-        "start": datetime.now(timezone.utc),
+        "start": datetime.now(UTC),
         "duration_seconds": 300,
         "pow_10_multipliers": -1,
         "primacy": 2,
@@ -550,7 +553,7 @@ async def test_action_create_der_control_existing_group(pg_base_config, envoy_ad
         session.add(generate_class_instance(SiteControlGroup, primacy=2, fsa_id=existing_fsa_id))
         await session.commit()
     resolved_params = {
-        "start": datetime.now(timezone.utc),
+        "start": datetime.now(UTC),
         "duration_seconds": 300,
         "pow_10_multipliers": -1,
         "primacy": 2,
@@ -601,7 +604,7 @@ async def test_action_create_der_control_existing_group_with_tag(pg_base_config,
         session.add(generate_class_instance(SiteControlGroup, primacy=2, site_control_group_id=existing_scg_id))
         await session.commit()
     resolved_params = {
-        "start": datetime.now(timezone.utc),
+        "start": datetime.now(UTC),
         "duration_seconds": 300,
         "pow_10_multipliers": -1,
         "randomizeStart_seconds": 0,
@@ -649,7 +652,7 @@ async def test_action_create_der_control_derp_tag_missing(pg_base_config, envoy_
         session.add(generate_class_instance(SiteControlGroup, primacy=2))
         await session.commit()
     resolved_params = {
-        "start": datetime.now(timezone.utc),
+        "start": datetime.now(UTC),
         "duration_seconds": 300,
         "pow_10_multipliers": -1,
         "randomizeStart_seconds": 0,
@@ -666,7 +669,7 @@ async def test_action_create_der_control_derp_tag_missing(pg_base_config, envoy_
 
     # Act
     async with generate_async_session(pg_base_config) as session:
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             await action_create_der_control(resolved_params, session, envoy_admin_client, active_test_procedure)
 
     # Assert
@@ -700,7 +703,7 @@ async def test_action_create_der_control_control_values(pg_base_config, envoy_ad
         return float(s + offset)
 
     resolved_params = {
-        "start": datetime.now(timezone.utc),
+        "start": datetime.now(UTC),
         "duration_seconds": 300,
         "pow_10_multipliers": -1,
         "primacy": 2,
@@ -750,7 +753,7 @@ async def test_action_create_der_control_with_tag(pg_base_config, envoy_admin_cl
         await session.commit()
     tag = "DERC1"
     resolved_params = {
-        "start": datetime.now(timezone.utc),
+        "start": datetime.now(UTC),
         "duration_seconds": 300,
         "pow_10_multipliers": -1,
         "primacy": 2,
@@ -794,7 +797,7 @@ async def test_action_create_der_control_with_tag_that_supersedes(pg_base_config
         site_ctrl_grp = generate_class_instance(SiteControlGroup, primacy=2, site_control_group_id=1)
         session.add(site_ctrl_grp)
 
-        existing_creation_time = datetime.now(timezone.utc) - timedelta(seconds=20)
+        existing_creation_time = datetime.now(UTC) - timedelta(seconds=20)
 
         existing_derc = generate_class_instance(
             DynamicOperatingEnvelope,
@@ -827,7 +830,7 @@ async def test_action_create_der_control_with_tag_that_supersedes(pg_base_config
 
     inserted_tag = "DERC-NEW"
     resolved_params = {
-        "start": datetime.now(timezone.utc),
+        "start": datetime.now(UTC),
         "duration_seconds": 300,
         "pow_10_multipliers": -1,
         "primacy": 2,
@@ -881,7 +884,7 @@ async def test_action_create_der_control_with_tag_and_edev_indexes(pg_base_confi
         await session.commit()
     tag = "DERC1"
     resolved_params = {
-        "start": datetime.now(timezone.utc),
+        "start": datetime.now(UTC),
         "duration_seconds": 300,
         "pow_10_multipliers": -1,
         "primacy": 2,
@@ -900,7 +903,7 @@ async def test_action_create_der_control_with_tag_and_edev_indexes(pg_base_confi
 
     # Act
     async with generate_async_session(pg_base_config) as session:
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017
             await action_create_der_control(resolved_params, session, envoy_admin_client, active_test_procedure)
 
     # Assert nothing in the DB
@@ -925,7 +928,7 @@ async def test_action_create_der_control_with_end_device_indexes(pg_base_config,
     active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
 
     resolved_params_1 = {
-        "start": datetime.now(timezone.utc),
+        "start": datetime.now(UTC),
         "duration_seconds": 300,
         "pow_10_multipliers": -1,
         "primacy": 2,
@@ -933,7 +936,7 @@ async def test_action_create_der_control_with_end_device_indexes(pg_base_config,
         "end_device_indexes": [0, 2],  # These will correspond to site_id 11 and 33
     }
     resolved_params_2 = {
-        "start": datetime.now(timezone.utc),
+        "start": datetime.now(UTC),
         "duration_seconds": 300,
         "pow_10_multipliers": -1,
         "primacy": 2,
@@ -949,7 +952,6 @@ async def test_action_create_der_control_with_end_device_indexes(pg_base_config,
 
     # Verify the tagged control ID matches the created control
     async with generate_async_session(pg_base_config) as session:
-
         all_does = (await session.execute(select(DynamicOperatingEnvelope))).scalars().all()
         assert len(all_does) == 4
         assert len(set([d.export_limit_watts for d in all_does])) == 2, "Two sets of opModExpLimW"
@@ -985,7 +987,7 @@ async def test_action_cancel_active_controls(pg_base_config, envoy_admin_client)
                 calculation_log_id=None,
                 site_control_group=site_ctrl_grp,
                 site=site,
-                start_time=datetime.now(timezone.utc),
+                start_time=datetime.now(UTC),
             )
         )
         await session.commit()
@@ -1078,7 +1080,7 @@ async def test_action_register_aggregator_end_device_device_cert(
         finished_zip_path=None,
         client_aggregator_id=agg_id,
     )
-    resolved_params = {
+    resolved_params: dict = {
         "nmi": "1234567890",
     }
     if agg_lfdi is not None:
@@ -1233,7 +1235,8 @@ async def test_action_reregister_existing_device(pg_base_config):
 def test_action_communications_status(resolved_params: dict[str, Any], expected: bool | type[Exception]):
     """NOTE: The expected value is the expected value for comms DISABLED"""
     for initial_comms_disabled_value in [True, False]:
-        active_test_procedure = create_testing_runner_state([])
+        active_test_procedure = create_testing_runner_state([]).active_test_procedure
+        assert active_test_procedure is not None
         active_test_procedure.communications_disabled = initial_comms_disabled_value
 
         if isinstance(expected, type):
@@ -1307,7 +1310,7 @@ async def test_action_remove_function_set_assignment(
         scgs = await get_all_site_control_groups(session)
         assert len(scgs) == len(scg_fsa_ids)
         for idx, original_fsa_id, original_primacy, original_description, site_control_group in zip(
-            range(len(scg_fsa_ids)), scg_fsa_ids, primacies, descriptions, scgs
+            range(len(scg_fsa_ids)), scg_fsa_ids, primacies, descriptions, scgs, strict=True
         ):
             assert site_control_group.primacy == original_primacy
             assert site_control_group.description == original_description
@@ -1506,7 +1509,7 @@ async def test_action_create_time_tariff_interval(
     tag = "TTI-1"
     resolved_params = {
         "rate_component_tag": rate_component_tag,
-        "start": datetime(2023, 4, 5, tzinfo=timezone.utc),
+        "start": datetime(2023, 4, 5, tzinfo=UTC),
         "duration_seconds": 123,
         "price_pow10_encoded_block0": 1,
         "price_pow10_encoded_block1": 2,
@@ -1552,7 +1555,7 @@ async def test_action_create_time_tariff_interval(
                 assert tagged_tc_id == rate.tariff_component_id
 
             # Sanity check some fields match what we suplied
-            assert rate.start_time == datetime(2023, 4, 5, tzinfo=timezone.utc)
+            assert rate.start_time == datetime(2023, 4, 5, tzinfo=UTC)
             assert rate.duration_seconds == 123
             assert rate.price_pow10_encoded == 1
             assert rate.price_pow10_encoded_block_1 == 2
@@ -1609,7 +1612,7 @@ async def test_action_cancel_time_tariff_intervals(
         for idx, tag in enumerate(tti_tags):
             await action_create_time_tariff_interval(
                 {
-                    "start": datetime(2023, 4, 5, tzinfo=timezone.utc) + timedelta(hours=idx),
+                    "start": datetime(2023, 4, 5, tzinfo=UTC) + timedelta(hours=idx),
                     "duration_seconds": 123,
                     "price_pow10_encoded_block0": idx,
                     "price_pow10_encoded_block1": 2,
@@ -1717,7 +1720,7 @@ async def test_action_delete_rate_component(
                 await action_create_time_tariff_interval(
                     {
                         "rate_component_tag": tag,
-                        "start": datetime(2023, 4, 5, tzinfo=timezone.utc) + timedelta(hours=idx),
+                        "start": datetime(2023, 4, 5, tzinfo=UTC) + timedelta(hours=idx),
                         "duration_seconds": 123,
                         "price_pow10_encoded_block0": idx,
                         "price_pow10_encoded_block1": 2,

@@ -1,6 +1,7 @@
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Sequence
+from typing import Any
 
 import pandas as pd
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
@@ -217,7 +218,7 @@ def scale_readings(reading_type: SiteReadingType, readings: Sequence[SiteReading
     if not readings:
         raise ValueError("Expected at least 1 entry in readings. Got 0/None")
 
-    def filter_attributes(attributes: dict[str, Any]):
+    def filter_attributes(attributes: dict[str, Any]) -> dict[str, Any]:
         """Removes attributes that start with _.
 
         This is mainly about targeting and removing sqlalchemy attributes
@@ -230,6 +231,6 @@ def scale_readings(reading_type: SiteReadingType, readings: Sequence[SiteReading
 
     # Calculate value with proper scaling applied (power_10)
     scale_factor = Decimal(10**reading_type.power_of_ten_multiplier)
-    df["scaled_value"] = df["value"] * scale_factor  # type: ignore
+    df["scaled_value"] = df["value"] * scale_factor
 
     return df

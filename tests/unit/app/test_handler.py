@@ -1,6 +1,6 @@
 import asyncio
 import http
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, call
 
@@ -27,6 +27,7 @@ from cactus_schema.runner import (
 from cactus_test_definitions import CSIPAusVersion
 from cactus_test_definitions.client import TestProcedureId
 from cactus_test_definitions.client.test_procedures import get_yaml_contents
+from multidict import CIMultiDict
 
 from cactus_runner.app import action, env, handler
 from cactus_runner.app.proxy import ProxyResult
@@ -49,7 +50,7 @@ from tests.integration.certificate2 import (
 
 
 def mocked_ProxyResult(status: int) -> ProxyResult:
-    return ProxyResult("", "", bytes(), None, {}, Response(status=status))
+    return ProxyResult("", "", b"", None, CIMultiDict({}), Response(status=status))
 
 
 def run_request(test_procedure_id: TestProcedureId, use_device_cert: bool = False) -> RunRequest:
@@ -273,6 +274,7 @@ async def test_initialise_handler_playlist_with_invalid_start_index(start_index_
     # Assert - 400 Bad Request
     assert isinstance(raw_response, Response)
     assert raw_response.status == http.HTTPStatus.BAD_REQUEST
+    assert raw_response.text is not None
     assert "start_index" in raw_response.text
 
 
@@ -287,7 +289,7 @@ async def test_new_init_handler_bad_request_invalid_json(request_body: str | Non
     if request_body:
         mock_request.text = AsyncMock(return_value=request_body)
     else:
-        mock_request.text = AsyncMock(side_effect=ContentTypeError(None, None))
+        mock_request.text = AsyncMock(side_effect=ContentTypeError(None, None))  # type: ignore
 
     mock_request.raise_for_status = MagicMock()
 
@@ -769,7 +771,7 @@ async def test_proxied_request_handler_replaces_existing_proxied_request_interac
     # Seed a prior PROXIED_REQUEST so the replace branch is exercised
     prior_interaction = ClientInteraction(
         interaction_type=ClientInteractionType.PROXIED_REQUEST,
-        timestamp=datetime.now(tz=timezone.utc) - timedelta(seconds=10),
+        timestamp=datetime.now(tz=UTC) - timedelta(seconds=10),
     )
     request.app[APPKEY_RUNNER_STATE].client_interactions.append(prior_interaction)
     interactions_before = len(request.app[APPKEY_RUNNER_STATE].client_interactions)

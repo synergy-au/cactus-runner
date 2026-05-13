@@ -3,7 +3,7 @@ import random
 import string
 import tempfile
 import zipfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pandas as pd
@@ -20,11 +20,12 @@ from cactus_runner.models import (
     CheckResult,
     ReadingType,
     ReportingData,
+    ReportingData_v1,
     RunnerState,
     Site,
 )
 
-DT_NOW = datetime.now(timezone.utc)
+DT_NOW = datetime.now(UTC)
 
 
 @pytest.mark.parametrize(
@@ -262,7 +263,8 @@ async def test_generate_json_reporting_data(version):
         errors=errors,
         version=version,
     )
-    reporting_data: ReportingData = ReportingData.from_json(version, reporting_data_str)
+    assert reporting_data_str is not None
+    reporting_data: ReportingData_v1 = ReportingData.from_json(version, reporting_data_str)
 
     # Assert
     assert_nowish(reporting_data.created_at)
@@ -272,7 +274,7 @@ async def test_generate_json_reporting_data(version):
     assert len(readings) == len(reporting_data.readings)
     assert_list_type(Site, sites, count=site_count)
     assert_list_type(Site, reporting_data.sites, count=site_count)
-    for expected, actual in zip(sites, reporting_data.sites):
+    for expected, actual in zip(sites, reporting_data.sites, strict=True):
         assert_class_instance_equality(Site, expected, actual)
 
     assert_class_instance_equality(Timeline, timeline, reporting_data.timeline)

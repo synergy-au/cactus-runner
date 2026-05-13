@@ -12,8 +12,8 @@ from envoy_schema.server.schema.sep2.der import ConnectStatusTypeValue, DERStatu
 from envoy_schema.server.schema.sep2.end_device import EndDeviceRequest
 from pytest_aiohttp.plugin import TestClient
 
-from cactus_runner.client import RunnerClient
 from cactus_runner.app import env
+from cactus_runner.client import RunnerClient
 from tests.integration.certificate1 import TEST_CERTIFICATE_PEM
 
 URI_ENCODED_CERT = quote(TEST_CERTIFICATE_PEM.decode())
@@ -22,7 +22,7 @@ URI_ENCODED_CERT = quote(TEST_CERTIFICATE_PEM.decode())
 async def assert_success_response(response: ClientResponse):
     if response.status < 200 or response.status >= 300:
         body = await response.read()
-        assert False, f"{response.status}: {body}"
+        raise AssertionError(f"{response.status}: {body}")
 
 
 @pytest.mark.slow

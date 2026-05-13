@@ -5,8 +5,8 @@ import pytest
 from aiohttp import ClientSession, ClientTimeout
 from cactus_schema.runner import (
     RunGroup,
-    RunRequest,
     RunnerStatus,
+    RunRequest,
     TestCertificates,
     TestConfig,
     TestDefinition,
@@ -27,7 +27,8 @@ def _make_concurrent_yaml(n: int) -> str:
     """Generates a test YAML with an ENABLE-LISTENERS step triggered by GET /edev, and n listeners on GET /dcap."""
     listener_names = [f"LISTENER-{i}" for i in range(n)]
     enable_steps_block = "\n".join(f"            - {name}" for name in listener_names)
-    listener_steps = "".join(f"""
+    listener_steps = "".join(
+        f"""
   {name}:
     event:
       type: GET-request-received
@@ -38,7 +39,9 @@ def _make_concurrent_yaml(n: int) -> str:
         parameters:
           steps:
             - {name}
-""" for name in listener_names)
+"""
+        for name in listener_names
+    )
     return f"""\
 Description: Proxy lock stress test ({n} concurrent requests)
 Category: Test
@@ -120,5 +123,6 @@ async def test_twenty_concurrent_gets_all_listeners_triggered(cactus_runner_clie
     async with ClientSession(base_url=cactus_runner_client.make_url("/"), timeout=ClientTimeout(60)) as session:
         status: RunnerStatus = await RunnerClient.status(session)
 
+    assert status.step_status is not None
     for i in range(N):
         assert status.step_status[f"LISTENER-{i}"].completed_at is not None
