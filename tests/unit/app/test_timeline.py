@@ -783,6 +783,7 @@ def def_ctrl(
     exp_watts: int | None = None,
     load_watts: int | None = None,
     gen_watts: int | None = None,
+    stor_watts: int | None = None,
 ) -> SiteControlGroupDefault | ArchiveSiteControlGroupDefault:
     """Utility function for reducing boilerplate"""
 
@@ -800,6 +801,7 @@ def def_ctrl(
         export_limit_active_watts=Decimal(exp_watts) if exp_watts is not None else None,
         load_limit_active_watts=Decimal(load_watts) if load_watts is not None else None,
         generation_limit_active_watts=Decimal(gen_watts) if gen_watts is not None else None,
+        storage_target_active_watts=Decimal(stor_watts) if stor_watts is not None else None,
         changed_time=changed_time,
         **extra_kwargs,
     )
@@ -810,15 +812,23 @@ def def_ctrl(
     [
         ([], BASIS, 5, BASIS + timedelta(seconds=10), []),
         (
-            [def_ctrl(101, BASIS, imp_watts=1, exp_watts=2, load_watts=3, gen_watts=4)],
+            [def_ctrl(101, BASIS, imp_watts=1, exp_watts=2, load_watts=3, gen_watts=4, stor_watts=5)],
             BASIS - timedelta(seconds=5),
             5,
             BASIS + timedelta(seconds=10),
-            [[None, 1, 1], [None, -2, -2], [None, 3, 3], [None, -4, -4], [None, None, None]],
+            [[None, 1, 1], [None, -2, -2], [None, 3, 3], [None, -4, -4], [None, -5, -5]],
         ),
         (
             [
-                def_ctrl(101, BASIS + timedelta(seconds=10), imp_watts=11, exp_watts=12, load_watts=13, gen_watts=14),
+                def_ctrl(
+                    101,
+                    BASIS + timedelta(seconds=10),
+                    imp_watts=11,
+                    exp_watts=12,
+                    load_watts=13,
+                    gen_watts=14,
+                    stor_watts=15,
+                ),
                 def_ctrl(
                     202,
                     BASIS + timedelta(seconds=5),
@@ -827,6 +837,7 @@ def def_ctrl(
                     exp_watts=None,
                     load_watts=23,
                     gen_watts=None,
+                    stor_watts=25,
                 ),
                 def_ctrl(
                     303,
@@ -836,12 +847,13 @@ def def_ctrl(
                     exp_watts=32,
                     load_watts=None,
                     gen_watts=34,
+                    stor_watts=None,
                 ),
             ],
             BASIS,
             5,
             BASIS + timedelta(seconds=15),
-            [[None, 21, 11], [-32, None, -12], [None, 23, 13], [-34, None, -14], [None, None, None]],
+            [[None, 21, 11], [-32, None, -12], [None, 23, 13], [-34, None, -14], [None, -25, -15]],
         ),
     ],
 )
