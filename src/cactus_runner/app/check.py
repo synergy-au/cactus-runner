@@ -6,6 +6,7 @@ from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
 from itertools import chain
 from typing import Annotated, Any
+from urllib.parse import parse_qs, urlparse
 
 import pydantic
 import pydantic.alias_generators

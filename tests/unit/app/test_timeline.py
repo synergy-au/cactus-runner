@@ -543,6 +543,7 @@ def doe(
     exp_watts: int | None = None,
     load_watts: int | None = None,
     gen_watts: int | None = None,
+    stor_watts: int | None = None,
     superseded: bool = False,
 ) -> DynamicOperatingEnvelope | ArchiveDynamicOperatingEnvelope:
     """Utility function for reducing boilerplate"""
@@ -567,6 +568,7 @@ def doe(
         export_limit_watts=Decimal(exp_watts) if exp_watts is not None else None,
         load_limit_active_watts=Decimal(load_watts) if load_watts is not None else None,
         generation_limit_active_watts=Decimal(gen_watts) if gen_watts is not None else None,
+        storage_target_active_watts=Decimal(stor_watts) if stor_watts is not None else None,
         start_time=start,
         end_time=start + timedelta(seconds=duration),
         duration_seconds=duration,
@@ -606,14 +608,32 @@ def doe(
         ),  # Control was active for only the first 5 seconds before being deleted
         (
             [
-                doe(101, BASIS, 5, imp_watts=11, exp_watts=None, load_watts=33, gen_watts=None),
-                doe(202, BASIS + timedelta(seconds=5), 5, imp_watts=None, exp_watts=22, load_watts=None, gen_watts=44),
-                doe(303, BASIS + timedelta(seconds=10), 5, imp_watts=99, exp_watts=99, load_watts=99, gen_watts=99),
+                doe(101, BASIS, 5, imp_watts=11, exp_watts=None, load_watts=33, gen_watts=None, stor_watts=None),
+                doe(
+                    202,
+                    BASIS + timedelta(seconds=5),
+                    5,
+                    imp_watts=None,
+                    exp_watts=22,
+                    load_watts=None,
+                    gen_watts=44,
+                    stor_watts=55,
+                ),
+                doe(
+                    303,
+                    BASIS + timedelta(seconds=10),
+                    5,
+                    imp_watts=99,
+                    exp_watts=99,
+                    load_watts=99,
+                    gen_watts=99,
+                    stor_watts=99,
+                ),
             ],
             BASIS,
             5,
             BASIS + timedelta(seconds=10),
-            [[11, None], [None, -22], [33, None], [None, -44], [None, None]],
+            [[11, None], [None, -22], [33, None], [None, -44], [None, -55]],
         ),  # Multiple Controls, some out of range of the interval period - no overlaps - with None values in controls
         (
             [
@@ -734,7 +754,7 @@ async def test_generate_control_data_streams(
         [opModExpLimW vals]
         [opModLoadLimW vals]
         [opModGenLimW vals]
-        [opModStorageTargetW vals]  # all None when envoy schema lacks the column
+        [opModStorageTargetW vals]
     ]
     """
     # Arrange
