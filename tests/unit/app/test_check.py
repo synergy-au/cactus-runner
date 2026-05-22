@@ -4627,7 +4627,7 @@ def test_csip_aus_resource_to_match_uri():
         uri = csip_aus_resource_to_match_uri(r)
         assert isinstance(uri, str)
 
-        assert uri == csip_aus_resource_to_match_uri(r.value), "Using a string equivalent gets the same result"
+        assert uri == csip_aus_resource_to_match_uri(r.value), "Using a string equivalent gets the same result"  # ty:ignore[invalid-argument-type]
 
         # The resulting uri should look like an envoy URI with some wildcards
         assert re.match("[^a-z/\\*]", uri) is None, uri
