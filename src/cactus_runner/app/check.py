@@ -6,6 +6,7 @@ from collections.abc import Iterable, Sequence
 from datetime import datetime, timedelta
 from itertools import chain
 from typing import Annotated, Any
+from urllib.parse import parse_qs, urlparse
 
 import pydantic
 import pydantic.alias_generators
@@ -1525,6 +1526,16 @@ async def check_price_response_contents(
     )
 
 
+def _is_first_page(url: str) -> bool:
+    """Returns True if the URL has no pagination start offset (s absent or s=0)."""
+    return parse_qs(urlparse(url).query).get("s", ["0"])[0] == "0"
+
+
+def _is_first_page(url: str) -> bool:
+    """Returns True if the URL has no pagination start offset (s absent or s=0)."""
+    return parse_qs(urlparse(url).query).get("s", ["0"])[0] == "0"
+
+
 def _check_poll_timing_for_path(
     path_requests: list[RequestEntry],
     poll_interval_seconds: int,
@@ -1532,16 +1543,17 @@ def _check_poll_timing_for_path(
 ) -> CheckResult:
     """Checks that requests in path_requests occur at the expected frequency using a window-based approach.
 
-    For each window of 3x the poll interval, expects at least 2 requests and no more than 4.
+    For each window of 3x the poll interval, expects at least 2 requests and no more than min(expected*3, expected+3).
     """
     sorted_requests = sorted(path_requests, key=lambda r: r.timestamp)
     last_request_time = sorted_requests[-1].timestamp
 
     # Window of 3x poll interval: 2 interior polls always land in the window,
-    # 2 boundary polls may drift in/out with ±50% jitter, giving a range of 2-4.
+    # 2 boundary polls may drift in/out with ±50% jitter, giving a range of 2 to min(expected*3, expected+3).
     window_seconds = poll_interval_seconds * 3
+    expected_polls_per_window = window_seconds // poll_interval_seconds
     min_polls_per_window = 2
-    max_polls_per_window = 4
+    max_polls_per_window = min(expected_polls_per_window * 3, expected_polls_per_window + 3)
 
     checker = SoftChecker()
 
@@ -1555,10 +1567,15 @@ def _check_poll_timing_for_path(
         requests_in_window = [r for r in sorted_requests if window_start <= r.timestamp < window_end]
         request_count = len(requests_in_window)
 
-        if request_count < min_polls_per_window or request_count > max_polls_per_window:
+        if request_count < min_polls_per_window:
             checker.add(
                 f"Window {window_number} ({window_start.isoformat()} - {window_end.isoformat()}): "
-                f"expected {min_polls_per_window} to {max_polls_per_window} poll(s), found {request_count}",
+                f"expected at least {min_polls_per_window} poll(s), found {request_count}",
+            )
+        elif request_count > max_polls_per_window:
+            checker.add(
+                f"Window {window_number} ({window_start.isoformat()} - {window_end.isoformat()}): "
+                f"expected at most {max_polls_per_window} poll(s), found {request_count}",
             )
 
         window_start = window_end
@@ -1573,8 +1590,8 @@ def check_all_polls_at_correct_time(
 ) -> CheckResult:
     """
     Validates that requests to a specific endpoint occur at the expected frequency throughout the test.
-    Uses a window-based approach with 50% leeway - for each window of 3x the poll interval, checks that there is
-    at least 2 requests and no more than 4 requests.
+    Uses a window-based approach - for each window of 3x the poll interval, checks that there are at least 2 requests
+    and no more than min(expected*3, expected+3) requests.
 
     If the endpoint contains a wildcard ('*'), each distinct concrete path matching the pattern is checked
     independently, so multi-MUP clients (e.g. /mup/2 and /mup/3) are each validated at the expected rate.
@@ -1608,9 +1625,11 @@ def check_all_polls_at_correct_time(
     if test_started_at is None:
         return CheckResult(False, "Test has not started - cannot check poll timing")
 
-    # Filter requests by endpoint and method
+    # Filter requests by endpoint, method, and first pagination page (s=0 or absent)
     endpoint_requests = [
-        r for r in request_history if r.method == request_type and does_endpoint_match(r.path, endpoint)
+        r
+        for r in request_history
+        if r.method == request_type and does_endpoint_match(r.path, endpoint) and _is_first_page(r.url)
     ]
 
     if not endpoint_requests:

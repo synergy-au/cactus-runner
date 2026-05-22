@@ -350,7 +350,7 @@ async def test_generate_readings_data_stream(
             value=333,
             time_period_start=BASIS,
             time_period_seconds=5,
-        ),  # This will be highest priority due to having the highest changed_time
+        ),
     ]
     mock_get_site_readings.side_effect = lambda _, srt: srt1_readings if srt is srt1 else srt2_readings
 
@@ -364,7 +364,7 @@ async def test_generate_readings_data_stream(
     assert result.label == "bar"
     assert isinstance(result.offset_watt_values, list)
     assert len(result.offset_watt_values) == 2, "10 seconds of 5 second intervals"
-    assert result.offset_watt_values == [3330, 22], "Values adjusted for pow10 in SiteReadingType"
+    assert result.offset_watt_values == [3341, 22], "Values summed across both SRTs, adjusted for pow10"
 
     assert_mock_session(mock_session)
     mock_get_csip_aus_site_reading_types.assert_called_once()
@@ -437,6 +437,101 @@ async def test_generate_readings_data_stream_filters_null_and_zero_durations(
     mock_get_site_readings.assert_called_once_with(mock_session, srt)
 
 
+@mock.patch("cactus_runner.app.timeline.get_csip_aus_site_reading_types")
+@mock.patch("cactus_runner.app.timeline.get_site_readings")
+@pytest.mark.asyncio
+async def test_generate_readings_data_stream_three_phase(
+    mock_get_site_readings: mock.MagicMock, mock_get_csip_aus_site_reading_types: mock.MagicMock
+):
+    """Three concurrent single-phase SRTs covering the same interval should be summed, not winner-takes-all."""
+    interval_seconds = 5
+    mock_session = create_mock_session()
+    srt_a = generate_class_instance(SiteReadingType, seed=1, power_of_ten_multiplier=0, site_reading_type_id=1)
+    srt_b = generate_class_instance(SiteReadingType, seed=2, power_of_ten_multiplier=0, site_reading_type_id=2)
+    srt_c = generate_class_instance(SiteReadingType, seed=3, power_of_ten_multiplier=0, site_reading_type_id=3)
+    mock_get_csip_aus_site_reading_types.return_value = [srt_a, srt_b, srt_c]
+
+    phase_values = {srt_a: 100, srt_b: 200, srt_c: 300}
+
+    def readings_for(_, srt):
+        return [
+            generate_class_instance(
+                SiteReading,
+                seed=phase_values[srt],
+                site_reading_type_id=srt.site_reading_type_id,
+                value=phase_values[srt],
+                time_period_start=BASIS,
+                time_period_seconds=5,
+            )
+        ]
+
+    mock_get_site_readings.side_effect = readings_for
+
+    result = await generate_readings_data_stream(
+        mock_session,
+        "Three Phase",
+        ReadingLocation.SITE_READING,
+        BASIS,
+        BASIS + timedelta(seconds=10),
+        interval_seconds,
+    )
+
+    assert isinstance(result, TimelineDataStream)
+    assert len(result.offset_watt_values) == 2, "10 seconds of 5 second intervals"
+    assert result.offset_watt_values == [600, None], "Phase A+B+C summed at interval 1; no readings at interval 2"
+
+    assert_mock_session(mock_session)
+    mock_get_csip_aus_site_reading_types.assert_called_once()
+    mock_get_site_readings.assert_has_calls(
+        [mock.call(mock_session, srt_a), mock.call(mock_session, srt_b), mock.call(mock_session, srt_c)],
+        any_order=True,
+    )
+
+
+@mock.patch("cactus_runner.app.timeline.get_csip_aus_site_reading_types")
+@mock.patch("cactus_runner.app.timeline.get_site_readings")
+@pytest.mark.asyncio
+async def test_generate_readings_data_stream_partial_phase(
+    mock_get_site_readings: mock.MagicMock, mock_get_csip_aus_site_reading_types: mock.MagicMock
+):
+    """When only one phase has a reading in an interval the result equals that phase's value.
+    None appears only when NO phase has a reading — not when just some are absent."""
+    interval_seconds = 5
+    mock_session = create_mock_session()
+    srt_a = generate_class_instance(SiteReadingType, seed=1, power_of_ten_multiplier=0, site_reading_type_id=1)
+    srt_b = generate_class_instance(SiteReadingType, seed=2, power_of_ten_multiplier=0, site_reading_type_id=2)
+    srt_c = generate_class_instance(SiteReadingType, seed=3, power_of_ten_multiplier=0, site_reading_type_id=3)
+    mock_get_csip_aus_site_reading_types.return_value = [srt_a, srt_b, srt_c]
+
+    # Only srt_b reports in interval 1; no phase reports in interval 2
+    readings_b = [
+        generate_class_instance(
+            SiteReading,
+            seed=10,
+            site_reading_type_id=srt_b.site_reading_type_id,
+            value=750,
+            time_period_start=BASIS,
+            time_period_seconds=5,
+        )
+    ]
+    mock_get_site_readings.side_effect = lambda _, srt: readings_b if srt is srt_b else []
+
+    result = await generate_readings_data_stream(
+        mock_session, "Partial", ReadingLocation.SITE_READING, BASIS, BASIS + timedelta(seconds=10), interval_seconds
+    )
+
+    assert isinstance(result, TimelineDataStream)
+    assert len(result.offset_watt_values) == 2
+    assert result.offset_watt_values == [750, None], "Interval 1: only phase B reported; interval 2: no phases"
+
+    assert_mock_session(mock_session)
+    mock_get_csip_aus_site_reading_types.assert_called_once()
+    mock_get_site_readings.assert_has_calls(
+        [mock.call(mock_session, srt_a), mock.call(mock_session, srt_b), mock.call(mock_session, srt_c)],
+        any_order=True,
+    )
+
+
 def doe(
     seed: int,
     start: datetime,
@@ -448,6 +543,7 @@ def doe(
     exp_watts: int | None = None,
     load_watts: int | None = None,
     gen_watts: int | None = None,
+    stor_watts: int | None = None,
     superseded: bool = False,
 ) -> DynamicOperatingEnvelope | ArchiveDynamicOperatingEnvelope:
     """Utility function for reducing boilerplate"""
@@ -472,6 +568,7 @@ def doe(
         export_limit_watts=Decimal(exp_watts) if exp_watts is not None else None,
         load_limit_active_watts=Decimal(load_watts) if load_watts is not None else None,
         generation_limit_active_watts=Decimal(gen_watts) if gen_watts is not None else None,
+        storage_target_active_watts=Decimal(stor_watts) if stor_watts is not None else None,
         start_time=start,
         end_time=start + timedelta(seconds=duration),
         duration_seconds=duration,
@@ -489,7 +586,7 @@ def doe(
             BASIS,
             5,
             BASIS + timedelta(seconds=10),
-            [[1, None], [-2, None], [3, None], [-4, None]],
+            [[1, None], [-2, None], [3, None], [-4, None], [None, None]],
         ),
         (
             [
@@ -507,18 +604,36 @@ def doe(
             BASIS,
             5,
             BASIS + timedelta(seconds=10),
-            [[1, None], [-2, None], [3, None], [-4, None]],
+            [[1, None], [-2, None], [3, None], [-4, None], [None, None]],
         ),  # Control was active for only the first 5 seconds before being deleted
         (
             [
-                doe(101, BASIS, 5, imp_watts=11, exp_watts=None, load_watts=33, gen_watts=None),
-                doe(202, BASIS + timedelta(seconds=5), 5, imp_watts=None, exp_watts=22, load_watts=None, gen_watts=44),
-                doe(303, BASIS + timedelta(seconds=10), 5, imp_watts=99, exp_watts=99, load_watts=99, gen_watts=99),
+                doe(101, BASIS, 5, imp_watts=11, exp_watts=None, load_watts=33, gen_watts=None, stor_watts=None),
+                doe(
+                    202,
+                    BASIS + timedelta(seconds=5),
+                    5,
+                    imp_watts=None,
+                    exp_watts=22,
+                    load_watts=None,
+                    gen_watts=44,
+                    stor_watts=55,
+                ),
+                doe(
+                    303,
+                    BASIS + timedelta(seconds=10),
+                    5,
+                    imp_watts=99,
+                    exp_watts=99,
+                    load_watts=99,
+                    gen_watts=99,
+                    stor_watts=99,
+                ),
             ],
             BASIS,
             5,
             BASIS + timedelta(seconds=10),
-            [[11, None], [None, -22], [33, None], [None, -44]],
+            [[11, None], [None, -22], [33, None], [None, -44], [None, -55]],
         ),  # Multiple Controls, some out of range of the interval period - no overlaps - with None values in controls
         (
             [
@@ -539,7 +654,13 @@ def doe(
             BASIS,
             5,
             BASIS + timedelta(seconds=20),
-            [[21, 31, 41, 31], [-22, -32, -42, -32], [23, 33, 43, 33], [-24, -34, -44, -34]],
+            [
+                [21, 31, 41, 31],
+                [-22, -32, -42, -32],
+                [23, 33, 43, 33],
+                [-24, -34, -44, -34],
+                [None, None, None, None],
+            ],
         ),  # Multiple Controls with overlaps
         (
             [
@@ -557,15 +678,18 @@ def doe(
                 [21, 11],
                 [-22, -12],
                 [23, 13],
-                [-24, -14],  # SCG 1
+                [-24, -14],
+                [None, None],  # SCG 1
                 [None, 31],
                 [None, -32],
                 [None, 33],
-                [None, -34],  # SCG 2
+                [None, -34],
+                [None, None],  # SCG 2
                 [41, 41],
                 [-42, -42],
                 [43, 43],
-                [-44, -44],  # SCG 3
+                [-44, -44],
+                [None, None],  # SCG 3
             ],
         ),  # Multiple control groups - mix of overlapping
         (
@@ -606,7 +730,13 @@ def doe(
             BASIS,
             10,
             BASIS + timedelta(seconds=40),
-            [[21, 31, None, None], [-22, -32, None, None], [23, 33, None, None], [-24, -34, None, None]],
+            [
+                [21, 31, None, None],
+                [-22, -32, None, None],
+                [23, 33, None, None],
+                [-24, -34, None, None],
+                [None, None, None, None],
+            ],
         ),  # Long control that gets superseded by a short control that is cancelled partway through.
     ],
 )
@@ -619,11 +749,12 @@ async def test_generate_control_data_streams(
 
     expected has the form:
     [
-        # These 4 lists will be repeated for EACH distinct SiteControlGroup
+        # These 5 lists will be repeated for EACH distinct SiteControlGroup
         [opModImpLimW vals]
         [opModExpLimW vals]
         [opModLoadLimW vals]
         [opModGenLimW vals]
+        [opModStorageTargetW vals]
     ]
     """
     # Arrange
@@ -652,6 +783,7 @@ def def_ctrl(
     exp_watts: int | None = None,
     load_watts: int | None = None,
     gen_watts: int | None = None,
+    stor_watts: int | None = None,
 ) -> SiteControlGroupDefault | ArchiveSiteControlGroupDefault:
     """Utility function for reducing boilerplate"""
 
@@ -669,6 +801,7 @@ def def_ctrl(
         export_limit_active_watts=Decimal(exp_watts) if exp_watts is not None else None,
         load_limit_active_watts=Decimal(load_watts) if load_watts is not None else None,
         generation_limit_active_watts=Decimal(gen_watts) if gen_watts is not None else None,
+        storage_target_active_watts=Decimal(stor_watts) if stor_watts is not None else None,
         changed_time=changed_time,
         **extra_kwargs,
     )
@@ -679,15 +812,23 @@ def def_ctrl(
     [
         ([], BASIS, 5, BASIS + timedelta(seconds=10), []),
         (
-            [def_ctrl(101, BASIS, imp_watts=1, exp_watts=2, load_watts=3, gen_watts=4)],
+            [def_ctrl(101, BASIS, imp_watts=1, exp_watts=2, load_watts=3, gen_watts=4, stor_watts=5)],
             BASIS - timedelta(seconds=5),
             5,
             BASIS + timedelta(seconds=10),
-            [[None, 1, 1], [None, -2, -2], [None, 3, 3], [None, -4, -4]],
+            [[None, 1, 1], [None, -2, -2], [None, 3, 3], [None, -4, -4], [None, -5, -5]],
         ),
         (
             [
-                def_ctrl(101, BASIS + timedelta(seconds=10), imp_watts=11, exp_watts=12, load_watts=13, gen_watts=14),
+                def_ctrl(
+                    101,
+                    BASIS + timedelta(seconds=10),
+                    imp_watts=11,
+                    exp_watts=12,
+                    load_watts=13,
+                    gen_watts=14,
+                    stor_watts=15,
+                ),
                 def_ctrl(
                     202,
                     BASIS + timedelta(seconds=5),
@@ -696,6 +837,7 @@ def def_ctrl(
                     exp_watts=None,
                     load_watts=23,
                     gen_watts=None,
+                    stor_watts=25,
                 ),
                 def_ctrl(
                     303,
@@ -705,12 +847,13 @@ def def_ctrl(
                     exp_watts=32,
                     load_watts=None,
                     gen_watts=34,
+                    stor_watts=None,
                 ),
             ],
             BASIS,
             5,
             BASIS + timedelta(seconds=15),
-            [[None, 21, 11], [-32, None, -12], [None, 23, 13], [-34, None, -14]],
+            [[None, 21, 11], [-32, None, -12], [None, 23, 13], [-34, None, -14], [None, -25, -15]],
         ),
     ],
 )
