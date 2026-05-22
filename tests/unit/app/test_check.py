@@ -3839,13 +3839,56 @@ def test_check_all_polls_at_correct_time_path_matching(request_path: str, expect
 
 
 @pytest.mark.parametrize(
-    "offsets_seconds, description_contains",
+    "url, expected",
     [
-        ([0, 540], "found 0"),  # Too few: 2 requests spread over 9 minutes, empty windows
-        ([0, 30, 60, 90, 120], "found 5"),  # Too many: 5 requests in first 3-minute window
+        ("http://envoy/mup/1", True),  # No s param — first page
+        ("http://envoy/mup/1?s=0", True),  # Explicit s=0 — first page
+        ("http://envoy/mup/1?s=0&l=10", True),  # s=0 with limit — first page
+        ("http://envoy/mup/1?s=10", False),  # s=10 — not first page
+        ("http://envoy/mup/1?s=1", False),  # s=1 — not first page
     ],
 )
-def test_check_all_polls_at_correct_time_poll_count(offsets_seconds: list[int], description_contains: str):
+def test_check_all_polls_at_correct_time_pagination_filtering(url: str, expected: bool):
+    """Requests with s>0 (subsequent pages) are excluded from poll timing counts."""
+    base_time = datetime(2026, 1, 1, 12, 0, 0, tzinfo=UTC)
+    poll_interval = 60
+
+    active_test_procedure = generate_class_instance(
+        ActiveTestProcedure, started_at=base_time, step_status={}, finished_zip_path=None
+    )
+
+    request_history = [
+        generate_class_instance(
+            RequestEntry,
+            seed=i,
+            url=url,
+            path="/mup/1",
+            method=http.HTTPMethod.GET,
+            timestamp=base_time + timedelta(seconds=i * poll_interval),
+        )
+        for i in range(10)
+    ]
+
+    result = check_all_polls_at_correct_time(
+        active_test_procedure,
+        request_history,
+        {"endpoint": "/mup/1", "poll_interval_seconds": poll_interval, "request_type_str": "GET"},
+    )
+
+    assert_check_result(result, expected)
+
+
+@pytest.mark.parametrize(
+    "offsets_seconds, expected_passed, description_contains",
+    [
+        ([0, 540], False, "found 0"),  # Too few: 2 requests spread over 9 minutes, empty windows
+        ([0, 30, 60, 90, 120], True, None),  # 5 requests in 3-minute window: within upper bound of 6
+        ([0, 15, 30, 45, 60, 75, 90], False, "found 7"),  # Too many: 7 requests in first 3-minute window exceeds 6
+    ],
+)
+def test_check_all_polls_at_correct_time_poll_count(
+    offsets_seconds: list[int], expected_passed: bool, description_contains: str | None
+):
     base_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
     poll_interval = 60
 
@@ -3870,9 +3913,10 @@ def test_check_all_polls_at_correct_time_poll_count(offsets_seconds: list[int], 
         {"endpoint": "/mup/1", "poll_interval_seconds": poll_interval, "request_type_str": "GET"},
     )
 
-    assert_check_result(result, False)
-    assert result.description is not None
-    assert description_contains in result.description
+    assert_check_result(result, expected_passed)
+    if description_contains is not None:
+        assert result.description is not None
+        assert description_contains in result.description
 
 
 def test_check_all_polls_at_correct_time_filters_by_request_type():
