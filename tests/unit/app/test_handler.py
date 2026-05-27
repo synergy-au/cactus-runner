@@ -1043,55 +1043,55 @@ async def test_incorrect_accept_header_not_accepted(mocker, assertical_extension
     "accept_header,ct_header,req_method,expected",
     [
         (
-            'application/sep+xml; CSIPAUS="1.3"',
-            "application/sep+xml;csipaus=1.3",
+            'application/sep+xml; CSIPAUS="1.3-beta_storage"',
+            "application/sep+xml;csipaus=1.3-beta_storage",
             http.HTTPMethod.GET,
             [],
         ),
         (
-            "application/sep+xml; csipaus=1.3",
+            "application/sep+xml; csipaus=1.3-beta_storage",
             "",
             http.HTTPMethod.GET,
             [],
         ),
         (
-            'application/sep+xml;csipaus="1.3"',
-            "application/sep+xml; Csipaus=1.3",
+            'application/sep+xml;csipaus="1.3-beta_storage"',
+            "application/sep+xml; Csipaus=1.3-beta_storage",
             http.HTTPMethod.PUT,
             [],
         ),
         (
             None,
-            "application/sep+xml;csipaus=1.3",
+            "application/sep+xml;csipaus=1.3-beta_storage",
             http.HTTPMethod.PUT,
             [],
         ),
         (
-            "application/sep+xml; csipaus=1.3",
-            'application/sep+xml;csipaus="1.3"',
+            "application/sep+xml; csipaus=1.3-beta_storage",
+            'application/sep+xml;csipaus="1.3-beta_storage"',
             http.HTTPMethod.POST,
             [],
         ),
         (
             None,
-            "application/sep+xml; csipaus=1.3",
+            "application/sep+xml; csipaus=1.3-beta_storage",
             http.HTTPMethod.POST,
             [],
         ),
         (
-            "application/sep+xml;csipaus=1.3",
-            "application/sep+xml; csipaus=1.3",
+            "application/sep+xml;csipaus=1.3-beta_storage",
+            "application/sep+xml; csipaus=1.3-beta_storage",
             http.HTTPMethod.DELETE,
             [],
         ),
         (
             "",
-            "application/sep+xml; csipaus=1.3",
+            "application/sep+xml; csipaus=1.3-beta_storage",
             http.HTTPMethod.DELETE,
             [],
         ),
         (
-            "application/sep+xml;csipaus=1.3",
+            "application/sep+xml;csipaus=1.3-beta_storage",
             None,
             http.HTTPMethod.DELETE,
             [],
@@ -1104,7 +1104,7 @@ async def test_incorrect_accept_header_not_accepted(mocker, assertical_extension
         ),
         # Even if there is no body for the request, reject it
         (
-            "application/sep+xml; csipaus=1.3",
+            "application/sep+xml; csipaus=1.3-beta_storage",
             "application/sep+xml",
             http.HTTPMethod.GET,
             [
@@ -1119,7 +1119,7 @@ async def test_incorrect_accept_header_not_accepted(mocker, assertical_extension
         ),
         # Even if there is no body for the request, reject it, bad content-type
         (
-            "application/sep+xml;csipaus=1.3",
+            "application/sep+xml;csipaus=1.3-beta_storage",
             "application/sep+xml",
             http.HTTPMethod.DELETE,
             [
@@ -1135,7 +1135,7 @@ async def test_incorrect_accept_header_not_accepted(mocker, assertical_extension
         # Bad Accept
         (
             "application/sep+xml",
-            "application/sep+xml; csipaus=1.3",
+            "application/sep+xml; csipaus=1.3-beta_storage",
             http.HTTPMethod.GET,
             [
                 (
