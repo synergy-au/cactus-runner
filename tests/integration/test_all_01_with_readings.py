@@ -38,7 +38,6 @@ async def test_all_01_with_readings(
 
     # Load XML data from files
     xml_data_dir = Path(__file__).parent.parent / "data" / "xml"
-    edev_xml = (xml_data_dir / "edev.xml").read_text().strip()
     edev_agg_xml = (xml_data_dir / "edev_agg.xml").read_text().strip()
     mup_xml = (xml_data_dir / "mup.xml").read_text().strip()
     mup_agg_xml = (xml_data_dir / "mup_agg.xml").read_text().strip()
