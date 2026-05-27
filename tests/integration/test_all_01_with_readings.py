@@ -13,6 +13,7 @@ from envoy.server.model.site_reading import SiteReading, SiteReadingType
 from pytest_aiohttp.plugin import TestClient
 from sqlalchemy import func, select
 
+from cactus_runner.app import env
 from cactus_runner.client import RunnerClient
 from tests.integration.certificate1 import TEST_CERTIFICATE_PEM
 from tests.integration.test_all_01 import assert_success_response
@@ -37,8 +38,9 @@ async def test_all_01_with_readings(
 
     # Load XML data from files
     xml_data_dir = Path(__file__).parent.parent / "data" / "xml"
-    edev_xml = (xml_data_dir / "edev.xml").read_text().strip()
+    edev_xml = (xml_data_dir / "edev_agg.xml").read_text().strip()
     mup_xml = (xml_data_dir / "mup.xml").read_text().strip()
+    mup_agg_xml = (xml_data_dir / "mup_agg.xml").read_text().strip()
     mmr_xml = (xml_data_dir / "mmr.xml").read_text().strip()
 
     # SETUP: The real ALL_01 (from test_all_01.py)
@@ -67,13 +69,14 @@ async def test_all_01_with_readings(
     # Register the device (required for aggregator certificate)
     if certificate_type == "aggregator_certificate":
         result = await cactus_runner_client.post(
-            "/edev", data=edev_xml, headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": "application/sep+xml"}
+            "/edev", data=edev_xml, headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.HEADER_MEDIA_ALL}
         )
         await assert_success_response(result)
 
     # Post Mirror Usage Point
+    mup_data = mup_agg_xml if certificate_type == "aggregator_certificate" else mup_xml
     result = await cactus_runner_client.post(
-        "/mup", data=mup_xml, headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": "application/sep+xml"}
+        "/mup", data=mup_data, headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.HEADER_MEDIA_ALL}
     )
     location = result.headers.get("Location")
     assert location is not None
@@ -84,7 +87,7 @@ async def test_all_01_with_readings(
     result: ClientResponse = await cactus_runner_client.post(
         f"/mup/{mup_id}",
         data=mmr_xml,
-        headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": "application/sep+xml"},
+        headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.HEADER_MEDIA_ALL},
     )
     await assert_success_response(result)
 

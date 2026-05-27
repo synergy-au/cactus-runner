@@ -34,6 +34,7 @@ from envoy_schema.server.schema.sep2.der import (
     NormalCategoryType,
     OperationalModeStatusType,
     StorageModeStatusType,
+    VPPControlType,
 )
 from envoy_schema.server.schema.sep2.types import (
     AccumulationBehaviourType,
@@ -324,6 +325,7 @@ class SiteDERRating(JSONWizard):
     v_nom_multiplier: int | None
     der_type: DERType
     doe_modes_supported: DOESupportedMode | None
+    vpp_modes_supported: VPPControlType | None
 
     @classmethod
     def from_site_der_rating(cls, rating: EnvoySiteDERRating | None) -> Self | None:
@@ -381,6 +383,7 @@ class SiteDERRating(JSONWizard):
             v_nom_multiplier=rating.v_nom_multiplier,
             der_type=rating.der_type,
             doe_modes_supported=rating.doe_modes_supported,
+            vpp_modes_supported=rating.vpp_modes_supported,
         )
 
 
@@ -437,6 +440,9 @@ class SiteDERSetting(JSONWizard):
     v_ref_ofs_value: int | None
     v_ref_ofs_multiplier: int | None
     doe_modes_enabled: DOESupportedMode | None
+    vpp_modes_enabled: VPPControlType | None
+    min_wh_value: int | None
+    min_wh_multiplier: int | None
 
     @classmethod
     def from_site_der_setting(cls, setting: EnvoySiteDERSetting | None) -> Self | None:
@@ -495,6 +501,9 @@ class SiteDERSetting(JSONWizard):
             v_ref_ofs_value=setting.v_ref_ofs_value,
             v_ref_ofs_multiplier=setting.v_ref_ofs_multiplier,
             doe_modes_enabled=setting.doe_modes_enabled,
+            vpp_modes_enabled=setting.vpp_modes_enabled,
+            min_wh_value=setting.min_wh_value,
+            min_wh_multiplier=setting.min_wh_multiplier,
         )
 
 
