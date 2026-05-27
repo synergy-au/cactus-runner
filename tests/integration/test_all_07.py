@@ -48,7 +48,7 @@ async def test_all_07_full(cactus_runner_client: TestClient, run_request_generat
         "/edev",
         headers={"ssl-client-cert": URI_ENCODED_CERT},
         data=EndDeviceRequest(
-            lFDI="854d10a201ca99e5e90d3c3e1f9bc1c3bd075f3b", sFDI=357827241281, changedTime=1766110684
+            lFDI="854d10a201ca99e5e90d3c3e1f9bc1c300000666", sFDI=357827241281, changedTime=1766110684
         ).to_xml(skip_empty=True, exclude_none=True),
     )
     await assert_success_response(result)
