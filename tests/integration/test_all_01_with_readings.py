@@ -38,8 +38,9 @@ async def test_all_01_with_readings(
 
     # Load XML data from files
     xml_data_dir = Path(__file__).parent.parent / "data" / "xml"
-    edev_xml = (xml_data_dir / "edev.xml").read_text().strip()
+    edev_xml = (xml_data_dir / "edev_agg.xml").read_text().strip()
     mup_xml = (xml_data_dir / "mup.xml").read_text().strip()
+    mup_agg_xml = (xml_data_dir / "mup_agg.xml").read_text().strip()
     mmr_xml = (xml_data_dir / "mmr.xml").read_text().strip()
 
     # SETUP: The real ALL_01 (from test_all_01.py)
@@ -73,8 +74,9 @@ async def test_all_01_with_readings(
         await assert_success_response(result)
 
     # Post Mirror Usage Point
+    mup_data = mup_agg_xml if certificate_type == "aggregator_certificate" else mup_xml
     result = await cactus_runner_client.post(
-        "/mup", data=mup_xml, headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.HEADER_MEDIA_ALL}
+        "/mup", data=mup_data, headers={"ssl-client-cert": URI_ENCODED_CERT, "Content-Type": env.HEADER_MEDIA_ALL}
     )
     location = result.headers.get("Location")
     assert location is not None
