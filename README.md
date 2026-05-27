@@ -1,3 +1,9 @@
+# Cactus Runner Synergy Storage Extension
+
+This branch is forked from ANU's `csipaus.org/ns/v1.3` branch. The idea is that this now tightly follows to allow for minimal disruption to 
+testing and better capture their improvements in the lead up to the v1.3 release.
+
+
 # Cactus Runner
 
 Cactus Runner is a component of the Client CSIP-AUS Test Harness.
