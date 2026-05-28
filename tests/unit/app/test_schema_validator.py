@@ -19,7 +19,7 @@ def make_proxy_result(body: bytes) -> ProxyResult:
         """
 <DERControlList
     xmlns="urn:ieee:std:2030.5:ns"
-    xmlns:csipaus="https://csipaus.org/ns/v1.3" all="2" href="/derp/0/derc" results="1">
+    xmlns:csipaus="https://csipaus.org/ns/v1.3-beta/storage" all="2" href="/derp/0/derc" results="1">
     <DERControl replyTo="/rsp" responseRequired="03">
         <mRID>ABCDEF0123456789</mRID>
         <description>Example DERControl 1</description>
@@ -58,11 +58,11 @@ def make_proxy_result(body: bytes) -> ProxyResult:
     </DERControl>
 </DERControlList>""",
         """
-<ConnectionPoint xmlns="https://csipaus.org/ns/v1.3">
+<ConnectionPoint xmlns="https://csipaus.org/ns/v1.3-beta/storage">
     <connectionPointId>1234567890</connectionPointId>
 </ConnectionPoint>""",
         """
-<DERControlBase xmlns="urn:ieee:std:2030.5:ns" xmlns:csipaus="https://csipaus.org/ns/v1.3">
+<DERControlBase xmlns="urn:ieee:std:2030.5:ns" xmlns:csipaus="https://csipaus.org/ns/v1.3-beta/storage">
     <csipaus:opModImpLimW>
         <multiplier>0</multiplier>
         <value>20000</value>
@@ -70,7 +70,7 @@ def make_proxy_result(body: bytes) -> ProxyResult:
 </DERControlBase>""",
         """
 <DERSettings xsi:schemaLocation="urn:ieee:std:2030.5:ns sep.xsd"
-  xmlns="urn:ieee:std:2030.5:ns" xmlns:csipaus="https://csipaus.org/ns/v1.3"
+  xmlns="urn:ieee:std:2030.5:ns" xmlns:csipaus="https://csipaus.org/ns/v1.3-beta/storage"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <setGradW>27</setGradW>
   <setMaxVA>
@@ -111,7 +111,7 @@ def test_validate_proxy_request_schema_valid_xml(xml: str):
     [
         "123451",
         '{"foo": 123}',
-        '<ConnectionPoint xmlns="https://csipaus.org/ns/v1.3"><c',
+        '<ConnectionPoint xmlns="https://csipaus.org/ns/v1.3-beta/storage"><c',
     ],
 )
 def test_validate_proxy_request_schema_not_xml(xml: str):
@@ -124,13 +124,13 @@ def test_validate_proxy_request_schema_not_xml(xml: str):
     "xml",
     [
         """
-<ConnectionPoint xmlns="https://csipaus.org/ns/v1.3">
+<ConnectionPoint xmlns="https://csipaus.org/ns/v1.3-beta/storage">
     <connectionPointId>1234567890</connectionPointId>
     <extraElement/>
 </ConnectionPoint>
 """,  # Extra elements
         """
-<DERControlBase xmlns="urn:ieee:std:2030.5:ns" xmlns:csipaus="https://csipaus.org/ns/v1.3">
+<DERControlBase xmlns="urn:ieee:std:2030.5:ns" xmlns:csipaus="https://csipaus.org/ns/v1.3-beta/storage">
     <csipaus:opModImpLimW>
         <value>20000</value>
         <multiplier>0</multiplier>
@@ -166,7 +166,7 @@ def test_validate_proxy_request_schema_empty_body():
 def test_validate_proxy_request_schema_encoding(encoding: str, xml_declaration: str | None, should_pass: bool):
     """Tests that various encodings are handled correctly by lxml's encoding detection"""
 
-    valid_cp_xml = """<ConnectionPoint xmlns="https://csipaus.org/ns/v1.3">
+    valid_cp_xml = """<ConnectionPoint xmlns="https://csipaus.org/ns/v1.3-beta/storage">
         <connectionPointId>1234567890</connectionPointId>
     </ConnectionPoint>"""
 
