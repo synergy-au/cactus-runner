@@ -333,7 +333,7 @@ class SiteDERRating(JSONWizard):
     v_nom_multiplier: int | None
     der_type: DERType
     doe_modes_supported: DOESupportedMode | None
-    vpp_modes_supported: VPPControlType | None
+    vpp_modes_supported: VPPControlType | None = None
 
     @classmethod
     def from_site_der_rating(cls, rating: EnvoySiteDERRating | None) -> Self | None:
@@ -448,9 +448,9 @@ class SiteDERSetting(JSONWizard):
     v_ref_ofs_value: int | None
     v_ref_ofs_multiplier: int | None
     doe_modes_enabled: DOESupportedMode | None
-    vpp_modes_enabled: VPPControlType | None
-    min_wh_value: int | None
-    min_wh_multiplier: int | None
+    vpp_modes_enabled: VPPControlType | None = None
+    min_wh_value: int | None = None
+    min_wh_multiplier: int | None = None
 
     @classmethod
     def from_site_der_setting(cls, setting: EnvoySiteDERSetting | None) -> Self | None:
