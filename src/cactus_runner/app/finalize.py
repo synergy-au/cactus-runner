@@ -29,7 +29,6 @@ from cactus_runner.app.envoy_common import (
 from cactus_runner.app.log import (
     LOG_FILE_CACTUS_RUNNER,
     LOG_FILE_ENVOY_ADMIN,
-    LOG_FILE_ENVOY_NOTIFICATION,
     LOG_FILE_ENVOY_SERVER,
 )
 from cactus_runner.app.readings import (
@@ -325,13 +324,13 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
         reading_counts = await get_reading_counts_grouped_by_reading_type(session)
 
         # Check if setMaxW was varied during the test - any archive entry with a different max_w_value
-        # than the current SiteDERSetting for the same site_der_id means it changed
+        # than the current SiteDERSetting for the same site means it changed
         set_max_w_varied = (
             await session.execute(
-                select(ArchiveSiteDERSetting.site_der_id)
+                select(ArchiveSiteDERSetting.site_id)
                 .join(
                     SiteDERSetting,
-                    (SiteDERSetting.site_der_id == ArchiveSiteDERSetting.site_der_id)  # Same DER
+                    (SiteDERSetting.site_id == ArchiveSiteDERSetting.site_id)  # Same DER (one per site)
                     & (SiteDERSetting.max_w_value != ArchiveSiteDERSetting.max_w_value),  # Same setmaxw
                 )
                 .limit(1)
@@ -378,7 +377,6 @@ async def finish_active_test(runner_state: RunnerState, session: AsyncSession) -
         log_file_paths=[
             LOG_FILE_ENVOY_SERVER,
             LOG_FILE_ENVOY_ADMIN,
-            LOG_FILE_ENVOY_NOTIFICATION,
             LOG_FILE_CACTUS_RUNNER,
         ],
         filename_infix=f"_{int(generation_timestamp.timestamp())}_{active_test_procedure.name}",
