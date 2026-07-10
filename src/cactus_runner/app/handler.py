@@ -28,6 +28,7 @@ from cactus_runner.app.check import first_failing_check
 from cactus_runner.app.database import begin_session
 from cactus_runner.app.env import (
     DEV_SKIP_AUTHORIZATION_CHECK,
+    ENVOY_PROXY_PREFIX,
     HEADER_MEDIA_ALL,
     HEADER_MEDIA_PARAM_NAME,
     HEADER_MEDIA_PARAM_VALUE,
@@ -51,6 +52,7 @@ from cactus_runner.app.shared import (
     APPKEY_PROXY_LOCK,
     APPKEY_RUNNER_STATE,
 )
+from cactus_runner.app.uri import uri_proxy_path_extract
 from cactus_runner.models import (
     ActiveTestProcedure,
     ClientCertificateType,
@@ -462,7 +464,7 @@ async def initialise_handler(request: web.Request) -> web.Response:  # noqa: C90
 
     body = InitResponseBody(
         status="Test procedure initialised.",
-        test_procedure=run_request.test_definition.test_procedure_id.value,
+        test_procedure=run_request.test_definition.test_procedure_id,
         timestamp=datetime.now(UTC),
         is_started=is_started,
     )
@@ -582,9 +584,7 @@ async def finalize_handler(request: web.Request) -> web.FileResponse | web.Respo
                             if not start_result.success:
                                 logger.error(f"Unable to trigger immediate start: {start_result.content}")
 
-                    logger.info(
-                        f"Initialized next playlist test: {next_run_request.test_definition.test_procedure_id.value}"
-                    )
+                    logger.info(f"Initialized next playlist test: {next_run_request.test_definition.test_procedure_id}")
                 except Exception as exc:
                     logger.error(f"Failed to initialize next playlist test: {exc}", exc_info=exc)
                     # Clear playlist on error to prevent further issues
@@ -855,8 +855,9 @@ async def proxied_request_handler(request: web.Request) -> web.Response:
         runner_state.client_interactions.append(new_interaction)
 
     # Determine paths, url and HTTP method
-    relative_url = request.path
-    remote_url = SERVER_URL + request.path_qs
+    proxy_parts = uri_proxy_path_extract(MOUNT_POINT, ENVOY_PROXY_PREFIX, request)
+    relative_url = proxy_parts.path
+    remote_url = SERVER_URL + proxy_parts.path_qs
     method = request.method
     logger.debug(f"{relative_url=} {remote_url=} {method=}")
 
@@ -866,7 +867,9 @@ async def proxied_request_handler(request: web.Request) -> web.Response:
     async with request.app[APPKEY_PROXY_LOCK]:
         async with begin_session() as session:
             trigger_handled = await event.handle_event_trigger(
-                trigger=event.generate_client_request_trigger(request, mount_point=MOUNT_POINT, before_serving=True),
+                trigger=event.generate_client_request_trigger(
+                    proxy_parts, mount_point=MOUNT_POINT, before_serving=True
+                ),
                 runner_state=runner_state,
                 session=session,
                 envoy_client=envoy_client,
@@ -883,7 +886,7 @@ async def proxied_request_handler(request: web.Request) -> web.Response:
             async with begin_session() as session:
                 trigger_handled = await event.handle_event_trigger(
                     trigger=event.generate_client_request_trigger(
-                        request, mount_point=MOUNT_POINT, before_serving=False
+                        proxy_parts, mount_point=MOUNT_POINT, before_serving=False
                     ),
                     runner_state=runner_state,
                     session=session,
