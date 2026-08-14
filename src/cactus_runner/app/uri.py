@@ -1,7 +1,14 @@
+import logging
 from dataclasses import dataclass
 
 from aiohttp.web import Request
+from cactus_test_definitions import CSIPAusVersion
+from envoy_schema.server.schema import uri
 from multidict import MultiMapping
+
+from cactus_runner.models import ProxyRouteOverride, WellKnownEntry
+
+logger = logging.getLogger(__name__)
 
 WILDCARD = "*"
 
@@ -59,6 +66,7 @@ class MountedProxyPathParts:
     path: str  # The path of the request (sans mount point / proxy prefix) - NO query string. eg: /edev/123/derp
     path_qs: str  # Similar to path but also includes the query string. eg: /edev/123/derp?l=100&s=0
     query: MultiMapping[str]
+    query_string: str
     method: str
 
 
@@ -87,5 +95,51 @@ def uri_proxy_path_extract(mount_point: str, proxy_prefix: str, request: Request
         path=path,
         path_qs=path_qs,
         query=request.query,
+        query_string=request.query_string,
         method=request.method,
     )
+
+
+def calculate_proxy_uri(server_url: str, proxy: MountedProxyPathParts, overrides: list[ProxyRouteOverride]) -> str:
+    """Given a server_url (just base URL) and an incoming proxy request - calculate the resulting URI that a client
+    request should be proxied to."""
+
+    # Check for any overrides first
+    for override in overrides:
+        if override.route == proxy.path:
+            logger.info(f"ProxyOverride - Request to {proxy.path} will instead route to {override.proxy_to}")
+            if proxy.query_string:
+                return uri_path_join(server_url, override.proxy_to) + f"?{proxy.query_string}"
+            else:
+                return uri_path_join(server_url, override.proxy_to)
+
+    # No override
+    return uri_path_join(server_url, proxy.path_qs)
+
+
+def generate_default_well_known_file(version: CSIPAusVersion, mount_point: str, envoy_prefix: str) -> dict:
+    """Generates a basic csip-aus well-known file that will redirect the specified version to a utility server
+    mounted behind a specific path prefix.
+
+    return value as per generate_well_known_file"""
+
+    default_entries: list[WellKnownEntry] = [
+        WellKnownEntry(
+            version=f"https://csipaus.org/ns/{version}",
+            dcap_paths=[uri_path_join(mount_point, envoy_prefix, uri.DeviceCapabilityUri)],
+        )
+    ]
+    return generate_well_known_file(default_entries, mount_point, envoy_prefix)
+
+
+def generate_well_known_file(entries: list[WellKnownEntry], mount_point: str, envoy_prefix: str) -> dict:
+    """Generates a csip-aus well-known file as a dictionary suitable for JSON encoding. Will render all paths
+    relative to the specified mount_point and utility server prefix"""
+    supported_schema_versions = {}
+
+    for entry in entries:
+        supported_schema_versions[entry.version] = {
+            "dcap": [uri_path_join(mount_point, envoy_prefix, path) for path in entry.dcap_paths]
+        }
+
+    return {"supportedSchemaVersions": supported_schema_versions}

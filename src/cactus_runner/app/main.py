@@ -145,6 +145,7 @@ def create_app() -> web.Application:
     app.router.add_route("POST", uri_path_join(MOUNT_POINT, uri.Initialise), handler.initialise_handler)
     app.router.add_route("POST", uri_path_join(MOUNT_POINT, uri.Start), handler.start_handler)
     app.router.add_route("POST", uri_path_join(MOUNT_POINT, uri.Finalize), handler.finalize_handler)
+    app.router.add_route("POST", uri_path_join(MOUNT_POINT, uri.NextTest), handler.next_test_handler)
 
     # For retrieving request logs
     app.router.add_route("GET", uri_path_join(MOUNT_POINT, uri.Request), handler.get_request_raw_data_handler)
@@ -152,6 +153,9 @@ def create_app() -> web.Application:
 
     # For manual 'proceed' signal sent from UI
     app.router.add_route("GET", uri_path_join(MOUNT_POINT, uri.Proceed), handler.proceed_handler)
+
+    # For the well-known file route - must ALWAYS be accessible via root path
+    app.router.add_route("GET", uri.CSIPAusWellKnown, handler.csipaus_wellknown_handler)
 
     # Add catch-all route for proxying all other requests to CSIP-AUS reference server
     app.router.add_route(

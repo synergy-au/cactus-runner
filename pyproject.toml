@@ -27,9 +27,9 @@ classifiers = [
 ]
 dependencies = [
   "aiohttp>=3.11.12,<4",
-  "cactus-test-definitions>=1.14.7,<2",
-  "cactus-schema>=0.0.24,<2",
-  "envoy @ git+https://github.com/synergy-au/envoy.git@v2.2.0-storage.0.9.0",
+  "cactus-schema>=1.3.3,<2",
+  "cactus-test-definitions>=1.15.0,<2",
+  "envoy @ git+https://github.com/synergy-au/envoy.git@v2.3.0-storage.0.9.0",
   "psycopg[binary]>=3.2.5,<4",
   "asyncpg>=0.30.0,<1",
   "pandas>=2.2.3,<3",
@@ -67,6 +67,7 @@ test = [
   "freezegun",
   "pytest-env",
   "asgi_lifespan",
+  "jsonschema",
 ]
 docs = ["sphinx"]
 
