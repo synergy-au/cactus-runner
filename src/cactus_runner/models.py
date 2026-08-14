@@ -9,8 +9,8 @@ from cactus_schema.runner import (
     ClientInteraction,
     ClientInteractionType,
     RequestEntry,
-    RunRequest,
     StepStatus,
+    WarningEntry,
 )
 from cactus_test_definitions import CSIPAusVersion
 from cactus_test_definitions.client import Event, TestProcedure
@@ -60,10 +60,10 @@ class InitialisedCertificates:
     """Certificates shared with the runner during initialisation. These certs should be the ONLY certificates that can
     interact with the runner/underlying envoy instance"""
 
-    client_certificate_type: str | None = None  # Will read as either "aggregator" or "device"
+    client_certificate_type: ClientCertificateType | None = None
     client_certificate: str | None = None
     client_lfdi: str | None = None
-    client_aggregator_id: int | None = None  # Stored for reuse in playlist tests
+    client_aggregator_id: int | None = None  # Stored for reuse when advancing to the next playlist test
 
 
 @dataclass
@@ -98,6 +98,33 @@ class ResourceAnnotations:
 
 
 @dataclass
+class RandomValues:
+    """Random values as used within a test"""
+
+    # All values will be distinct - there will be NO collisions in values
+    random_uri_by_key: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class ProxyRouteOverride:
+    """Overrides a specific client proxy to the underlying utility server"""
+
+    route: str  # The route to be matched - sans any MOUNT_PREFIX
+    proxy_to: str  # The route on the utility server that the matched request should be redirected to
+
+
+@dataclass
+class WellKnownEntry:
+    """Represents an entry in the csip-aus .well-known file"""
+
+    version: str  # The "version" label associated with the entry - normally references the CSIP-Aus version label
+
+    dcap_paths: list[
+        str
+    ]  # The list of DeviceCapability path URIs (eg /dcap). Exclusive of mount points/server prefixes
+
+
+@dataclass
 class ActiveTestProcedure:
     name: str
     definition: TestProcedure
@@ -123,6 +150,10 @@ class ActiveTestProcedure:
         None  # Path to finalised ZIP file on disk. If not None this test is "done" and shouldn't update events/state
     )
     resource_annotations: ResourceAnnotations = field(default_factory=ResourceAnnotations)
+    random_values: RandomValues = field(default_factory=RandomValues)
+    proxy_route_overrides: list[ProxyRouteOverride] = field(default_factory=list)
+    warnings: dict[str, WarningEntry] = field(default_factory=dict)
+    well_known_entries: list[WellKnownEntry] = field(default_factory=list)
 
     def is_finished(self) -> bool:
         """True if the active test procedure has been marked as finished. That is, there is no more test data to
@@ -132,16 +163,6 @@ class ActiveTestProcedure:
     def is_started(self) -> bool:
         """True if any listener has been enabled"""
         return any([True for listener in self.listeners if listener.enabled_time is not None])
-
-
-@dataclass
-class PlaylistItem:
-    """A completed test in the playlist"""
-
-    test_name: str
-    zip_file_path: Path | None
-    completed_at: datetime
-    success: bool
 
 
 @dataclass
@@ -183,11 +204,6 @@ class RunnerState:
             ClientInteraction(interaction_type=ClientInteractionType.RUNNER_START, timestamp=datetime.now(UTC))
         ]
     )
-
-    # Playlist support
-    playlist: list[RunRequest] | None = None  # All tests in the playlist (full array)
-    playlist_index: int = 0  # Current position (0-based index into playlist)
-    completed_playlist_items: list[PlaylistItem] = field(default_factory=list)  # Completed tests with ZIP paths
 
     # Only set if this test has been explicitly failed by an action
     # a non empty value here implies that the test is FAILED despite what anything else says
@@ -720,4 +736,4 @@ class ReportingData_v1(ReportingData_Base):  # noqa: N801
     readings: list[PackedReadings]
     sites: list[Site]
     timeline: Timeline | None
-    set_max_w_varied: bool = False
+    warnings: list[WarningEntry] = field(default_factory=list)
