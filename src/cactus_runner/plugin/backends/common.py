@@ -312,12 +312,15 @@ class RunnerBackend(Protocol):
         *,
         site_control_group_id: str,
         control: dtos.SiteControlWrite,
-    ) -> None:
+    ) -> str:
         """Creates a DERControl under the specified DERProgram.
 
         Args:
             control: The DERControl definition, including site, timing, and limit fields.
             site_control_group_id: The string-encoded ID of the parent DERProgram.
+
+        Returns:
+            The ID of the created SiteControl (site_control_id)
 
         Raises:
             Exception: If the control cannot be created or the parent group does not exist.
@@ -513,6 +516,66 @@ class RunnerBackend(Protocol):
         Raises:
             Exception: If the site does not exist or cannot be deleted.
         """
+        ...
+
+    # ------------------------------------------------------------------
+    # Pricing
+    # ------------------------------------------------------------------
+
+    async def get_tariffs(self) -> Sequence[dtos.Tariff]:
+        """Returns the current Tariffs from the backend.
+
+        Returns:
+            Every configured Tariff in the backend - ordered by tariff_id ASC.
+        """
+        ...
+
+    async def create_tariff(self, tariff: dtos.TariffWrite) -> str:
+        """Creates a new tariff with the specified values
+
+        Returns:
+            The tariff_id of the new entry.
+        """
+        ...
+
+    async def get_tariff_components(self) -> Sequence[dtos.TariffComponent]:
+        """Returns the current TariffComponents from the backend.
+
+        Returns:
+            Every configured TariffComponent in the backend - ordered by tariff_component_id ASC.
+        """
+        ...
+
+    async def create_tariff_component(self, tariff_component: dtos.TariffComponentWrite) -> str:
+        """Creates a new tariff component with the specified values
+
+        Returns:
+            The tariff_component_id of the new entry.
+        """
+        ...
+
+    async def delete_tariff_component(self, tariff_component_id: str) -> None:
+        """Deletes a new tariff component with the specified ID - no effect if it DNE"""
+        ...
+
+    async def get_tariff_generated_rates(self) -> Sequence[dtos.TariffGeneratedRate]:
+        """Returns the current TariffGeneratedRates from the backend.
+
+        Returns:
+            Every configured TariffGeneratedRate in the backend - ordered by tariff_generated_rate_id ASC.
+        """
+        ...
+
+    async def create_tariff_generated_rate(self, tariff_generated_rate: dtos.TariffGeneratedRateWrite) -> str:
+        """Creates a new tariff generated rate with the specified values
+
+        Returns:
+            The tariff_generated_rate_id of the new entry.
+        """
+        ...
+
+    async def delete_tariff_generated_rate(self, tariff_generated_rate_id: str) -> None:
+        """Deletes a new tariff generated rate with the specified ID - no effect if it DNE"""
         ...
 
     # ---------------------------------------------------------------

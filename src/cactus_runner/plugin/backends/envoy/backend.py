@@ -464,20 +464,24 @@ class EnvoyBackend(RunnerBackend):
         control: dtos.SiteControlWrite,
         *,
         site_control_group_id: str,
-    ) -> None:
+    ) -> str:
         """Creates a DERControl under the specified DERProgram via the admin API.
 
         Args:
             control: The DERControl definition to create, including site, timing, and limit fields.
             site_control_group_id: The string-encoded ID of the parent DERProgram.
 
+        Returns:
+            The created site_control_id of the new SiteControl
+
         Raises:
             aiohttp.ClientResponseError: If the admin API returns a non-2xx response.
         """
-        await self._admin_client.create_site_controls(
+        ids = await self._admin_client.create_site_controls(
             int(site_control_group_id),
             [mappers.map_dto_site_control_create_to_request(control)],
         )
+        return str(ids[0])
 
     async def update_site_post_rate(self, site_id: str, post_rate_seconds: int) -> None:
         """Updates the postRate for a site via the admin API.

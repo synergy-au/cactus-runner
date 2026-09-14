@@ -13,7 +13,12 @@ from cactus_test_definitions.variable_expressions import (
 
 from cactus_runner.app.resolvers import resolve_random_uri
 from cactus_runner.models import ActiveTestProcedure
-from cactus_runner.plugin.backends.resolver import ExpressionResolver, resolve_named_variable_now
+from cactus_runner.plugin.backends.resolver import (
+    ExpressionResolver,
+    resolve_named_variable_now,
+    resolve_named_variable_now_day,
+    resolve_named_variable_now_hour,
+)
 
 
 @dataclasses.dataclass
@@ -43,11 +48,11 @@ async def resolve_variable(  # noqa: C901
     elif isinstance(v, NamedVariable):
         match v.variable:
             case NamedVariableType.NOW:
-                return resolvers.resolve_named_variable_now()
+                return resolve_named_variable_now()
             case NamedVariableType.NOW_DAY:
-                return resolvers.resolve_named_variable_now_day()
+                return resolve_named_variable_now_day()
             case NamedVariableType.NOW_HOUR:
-                return resolvers.resolve_named_variable_now_hour()
+                return resolve_named_variable_now_hour()
             case NamedVariableType.DERSETTING_SET_MAX_W:
                 return await resolver.resolve_named_variable_der_setting_max_w()
             case NamedVariableType.DERSETTING_SET_MAX_VA:
@@ -89,16 +94,16 @@ async def resolve_variable(  # noqa: C901
             case NamedVariableType.DERCAPABILITY_RTG_MAX_WH:
                 return await resolver.resolve_named_variable_der_rating_max_wh()
             case NamedVariableType.RANDURI_1:
-                return resolvers.resolve_random_uri(active_test_procedure, "1")
+                return resolve_random_uri(active_test_procedure, "1")
             case NamedVariableType.RANDURI_2:
-                return resolvers.resolve_random_uri(active_test_procedure, "2")
+                return resolve_random_uri(active_test_procedure, "2")
             case NamedVariableType.RANDURI_3:
-                return resolvers.resolve_random_uri(active_test_procedure, "3")
+                return resolve_random_uri(active_test_procedure, "3")
             # Storage extension
             case NamedVariableType.DERSETTING_SET_MIN_WH:
-                return await resolvers.resolve_named_variable_der_setting_min_wh(session)
+                return await resolver.resolve_named_variable_der_setting_min_wh()
             case NamedVariableType.DERCAPABILITY_NEG_RTG_MAX_CHARGE_RATE_W:
-                return await resolvers.resolve_named_variable_neg_der_rating_max_charge_rate_w(session)
+                return await resolver.resolve_named_variable_neg_der_rating_max_charge_rate_w()
         raise UnresolvableVariableError(f"Unable to resolve NamedVariable of type {v.variable} ({int(v.variable)})")
     elif isinstance(v, Expression):
         lhs = await resolve_variable(resolver, active_test_procedure, v.lhs_operand)

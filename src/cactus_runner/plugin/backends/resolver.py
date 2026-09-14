@@ -2,13 +2,26 @@ import datetime as dt
 import logging
 from typing import Protocol, runtime_checkable
 
+from cactus_test_definitions import NamedVariableType
+
 from cactus_runner.plugin.backends.uri import ParsedUri
 
 logger = logging.getLogger(__name__)
 
 
+AEST = dt.timezone(dt.timedelta(hours=10))  # Australian Eastern Standard Time (or NEM time)
+
+
 def resolve_named_variable_now() -> dt.datetime:
     return dt.datetime.now(tz=dt.UTC)
+
+
+def resolve_named_variable_now_hour() -> dt.datetime:
+    return dt.datetime.now(tz=AEST).replace(minute=0, second=0, microsecond=0)
+
+
+def resolve_named_variable_now_day() -> dt.datetime:
+    return dt.datetime.now(tz=AEST).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 @runtime_checkable
@@ -113,6 +126,14 @@ class ExpressionResolver(Protocol):
         """
         ...
 
+    async def resolve_named_variable_der_setting_min_wh(self) -> float:
+        """Resolve the $setMinWh in a test definition.
+
+        Raises:
+            raise UnresolvableVariableError when unable to resolve
+        """
+        ...
+
     # ---------------------------------------------------------------
     # DER Capability
     # ---------------------------------------------------------------
@@ -183,6 +204,14 @@ class ExpressionResolver(Protocol):
 
     async def resolve_named_variable_der_rating_max_wh(self) -> float:
         """Resolve the $rtgMaxWh in a test definition.
+
+        Raises:
+            raise UnresolvableVariableError when unable to resolve
+        """
+        ...
+
+    async def resolve_named_variable_neg_der_rating_max_charge_rate_w(self) -> float:
+        """Resolve the $negRtgMaxChargeRateW in a test definition.
 
         Raises:
             raise UnresolvableVariableError when unable to resolve

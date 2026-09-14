@@ -41,6 +41,7 @@ class SiteControl:
     export_limit_active_watts: Decimal | None
     generation_limit_active_watts: Decimal | None
     load_limit_active_watts: Decimal | None
+    storage_target_watts: Decimal | None
     superseded: bool
     start_time: datetime
     duration: timedelta
@@ -59,6 +60,7 @@ class SiteControlGroupDefault:
     generation_limit_active_watts: Decimal | None
     load_limit_active_watts: Decimal | None
     ramp_rate_percent_per_second: int | None
+    storage_target_watts: Decimal | None
     changed_time: datetime
     created_time: datetime
     archive_time: datetime | None
@@ -79,6 +81,7 @@ class SiteControlGroupDefaultWrite:
     load_limit_watts: Decimal | None
     ramp_rate_percent_per_second: Decimal | None
     cancelled: bool = False
+    storage_target_watts: Decimal | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -99,3 +102,4 @@ class SiteControlWrite:
     load_limit_watts: Decimal | None = None
     set_point_percentage: Decimal | None = None
     ramp_time_seconds: Decimal | None = None
+    storage_target_watts: Decimal | None = None

@@ -34,8 +34,8 @@ def get_runner_status_summary(step_status: dict[str, StepInfo]) -> str:
 
 async def get_criteria_summary(
     active_test_procedure: ActiveTestProcedure,
-    fail_message: str | None,
     backend: RunnerBackend,
+    fail_message: str | None,
 ) -> list[CriteriaEntry]:
 
     criteria: list[CriteriaEntry] = []

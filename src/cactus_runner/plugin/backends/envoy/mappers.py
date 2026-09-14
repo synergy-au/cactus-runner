@@ -24,6 +24,14 @@ from envoy.server.model.archive import (
     ArchiveSiteReading,
 )
 from envoy_schema.admin.schema.config import RuntimeServerConfigRequest
+from envoy_schema.admin.schema.pricing import (
+    TariffComponentRequest,
+    TariffComponentResponse,
+    TariffGeneratedRateRequest,
+    TariffGeneratedRateResponse,
+    TariffRequest,
+    TariffResponse,
+)
 from envoy_schema.admin.schema.site import SiteUpdateRequest
 from envoy_schema.admin.schema.site_control import (
     SiteControlGroupDefaultRequest,
@@ -146,6 +154,7 @@ def map_envoy_site_control_to_dto(
         created_time=site_control.created_time,
         superseded=site_control.superseded,
         changed_time=site_control.changed_time,
+        storage_target_watts=site_control.storage_target_active_watts,
     )
 
 
@@ -212,6 +221,7 @@ def map_envoy_site_control_group_default_to_dto(
         generation_limit_active_watts=site_control_group_default.generation_limit_active_watts,
         load_limit_active_watts=site_control_group_default.load_limit_active_watts,
         ramp_rate_percent_per_second=site_control_group_default.ramp_rate_percent_per_second,
+        storage_target_watts=site_control_group_default.storage_target_active_watts,
         changed_time=site_control_group_default.changed_time,
         created_time=site_control_group_default.created_time,
         archive_time=site_control_group_default.archive_time
@@ -267,6 +277,7 @@ def map_dto_site_control_group_default_to_request(
         generation_limit_watts=_wrap(default.generation_limit_watts),
         load_limit_watts=_wrap(default.load_limit_watts),
         ramp_rate_percent_per_second=_wrap(default.ramp_rate_percent_per_second),
+        storage_target_watts=_wrap(default.storage_target_watts),
     )
 
 
@@ -287,6 +298,7 @@ def map_dto_site_control_create_to_request(control: dtos.SiteControlWrite) -> Si
         load_limit_watts=control.load_limit_watts,
         set_point_percentage=control.set_point_percentage,
         ramp_time_seconds=control.ramp_time_seconds,
+        storage_target_watts=control.storage_target_watts,
     )
 
 
@@ -631,4 +643,104 @@ def map_envoy_site_group_response_to_dto(site_group_response: SiteGroupResponse)
     """Create a SiteGroup DTO from an Envoy admin client response."""
     return dtos.SiteGroup(
         site_group_id=f"{site_group_response.site_group_id}", total_sites=site_group_response.total_sites
+    )
+
+
+def map_envoy_tariff_to_dto(tariff_response: TariffResponse) -> dtos.Tariff:
+    return dtos.Tariff(
+        tariff_id=str(tariff_response.tariff_id),
+        name=tariff_response.name,
+        dnsp_code=tariff_response.dnsp_code,
+        currency_code=tariff_response.currency_code,
+        price_power_of_ten_multiplier=tariff_response.price_power_of_ten_multiplier,
+        primacy=tariff_response.primacy,
+        fsa_id=str(tariff_response.fsa_id),
+        required_site_group_id=tariff_response.required_site_group_id,
+        created_time=tariff_response.created_time,
+        changed_time=tariff_response.changed_time,
+    )
+
+
+def map_dto_tariff_to_request(tariff: dtos.TariffWrite) -> TariffRequest:
+    return TariffRequest(
+        name=tariff.name,
+        dnsp_code=tariff.dnsp_code,
+        currency_code=tariff.currency_code,
+        price_power_of_ten_multiplier=tariff.price_power_of_ten_multiplier,
+        primacy=tariff.primacy,
+        fsa_id=int(tariff.fsa_id),
+        required_site_group_id=tariff.required_site_group_id,
+    )
+
+
+def map_envoy_tariff_component_to_dto(tariff_component_response: TariffComponentResponse) -> dtos.TariffComponent:
+    return dtos.TariffComponent(
+        tariff_component_id=str(tariff_component_response.tariff_component_id),
+        tariff_id=str(tariff_component_response.tariff_id),
+        role_flags=tariff_component_response.role_flags,
+        description=tariff_component_response.description,
+        created_time=tariff_component_response.created_time,
+        changed_time=tariff_component_response.changed_time,
+        # ReadingType fields
+        accumulation_behaviour=tariff_component_response.accumulation_behaviour,
+        commodity=tariff_component_response.commodity,
+        data_qualifier=tariff_component_response.data_qualifier,
+        flow_direction=tariff_component_response.flow_direction,
+        kind=tariff_component_response.kind,
+        phase=tariff_component_response.phase,
+        power_of_ten_multiplier=tariff_component_response.power_of_ten_multiplier,
+        uom=tariff_component_response.uom,
+    )
+
+
+def map_dto_tariff_component_to_request(tariff_component: dtos.TariffComponentWrite) -> TariffComponentRequest:
+    return TariffComponentRequest(
+        tariff_id=int(tariff_component.tariff_id),
+        role_flags=tariff_component.role_flags,
+        description=tariff_component.description,
+        # ReadingType fields
+        accumulation_behaviour=tariff_component.accumulation_behaviour,
+        commodity=tariff_component.commodity,
+        data_qualifier=tariff_component.data_qualifier,
+        flow_direction=tariff_component.flow_direction,
+        kind=tariff_component.kind,
+        phase=tariff_component.phase,
+        power_of_ten_multiplier=tariff_component.power_of_ten_multiplier,
+        uom=tariff_component.uom,
+    )
+
+
+def map_envoy_tariff_generated_rate_to_dto(
+    tariff_generated_rate: TariffGeneratedRateResponse,
+) -> dtos.TariffGeneratedRate:
+    return dtos.TariffGeneratedRate(
+        tariff_generated_rate_id=str(tariff_generated_rate.tariff_generated_rate_id),
+        tariff_id=str(tariff_generated_rate.tariff_id),
+        tariff_component_id=str(tariff_generated_rate.tariff_component_id),
+        site_group_id=str(tariff_generated_rate.site_group_id),
+        calculation_log_id=str(tariff_generated_rate.calculation_log_id),
+        start_time=tariff_generated_rate.start_time,
+        duration_seconds=tariff_generated_rate.duration_seconds,
+        price_pow10_encoded=tariff_generated_rate.price_pow10_encoded,
+        block_1_start_pow10_encoded=tariff_generated_rate.block_1_start_pow10_encoded,
+        price_pow10_encoded_block_1=tariff_generated_rate.price_pow10_encoded_block_1,
+        created_time=tariff_generated_rate.created_time,
+        changed_time=tariff_generated_rate.changed_time,
+    )
+
+
+def map_dto_tariff_generated_rate_to_request(
+    tariff_generated_rate: dtos.TariffGeneratedRateWrite,
+) -> TariffGeneratedRateRequest:
+    return TariffGeneratedRateRequest(
+        tariff_component_id=int(tariff_generated_rate.tariff_component_id),
+        site_group_id=int(tariff_generated_rate.site_group_id),
+        calculation_log_id=int(tariff_generated_rate.calculation_log_id)
+        if tariff_generated_rate.calculation_log_id is not None
+        else None,
+        start_time=tariff_generated_rate.start_time,
+        duration_seconds=tariff_generated_rate.duration_seconds,
+        price_pow10_encoded=tariff_generated_rate.price_pow10_encoded,
+        block_1_start_pow10_encoded=tariff_generated_rate.block_1_start_pow10_encoded,
+        price_pow10_encoded_block_1=tariff_generated_rate.price_pow10_encoded_block_1,
     )

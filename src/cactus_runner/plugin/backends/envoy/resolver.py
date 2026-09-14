@@ -179,6 +179,15 @@ class EnvoyResolver(ExpressionResolver):
 
         return float(set_max_wh)
 
+    async def resolve_named_variable_der_setting_min_wh(self) -> float:
+        async with self._session_factory() as session:
+            site_der_setting = await _select_single_site_der_setting(session, "setMinWh")
+        set_min_wh = common.pow10_to_decimal_value(site_der_setting.min_wh_value, site_der_setting.min_wh_multiplier)
+        if set_min_wh is None:
+            raise errors.UnresolvableVariableError("Unable to extract setMinWh from DERSetting")
+
+        return float(set_min_wh)
+
     # ==================================================================================================
     # DER Capabilities
     # ==================================================================================================
@@ -273,6 +282,9 @@ class EnvoyResolver(ExpressionResolver):
             raise errors.UnresolvableVariableError("Unable to extract rtgMaxWh from DERCapability")
 
         return float(rtg_max_wh)
+
+    async def resolve_named_variable_neg_der_rating_max_charge_rate_w(self) -> float:
+        return -1.0 * await self.resolve_named_variable_der_rating_max_charge_rate_w()
 
     async def resolve_uri(self, uri: ParsedUri) -> str:
         return uri.original_uri
