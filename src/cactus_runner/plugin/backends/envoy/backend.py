@@ -17,14 +17,20 @@ from envoy.server.model import (
     SiteReading,
     SiteReadingType,
     Subscription,
+    Tariff,
+    TariffComponent,
+    TariffGeneratedRate,
+    TariffGeneratedRateResponse,
     TransmitNotificationLog,
 )
 from envoy.server.model.archive import (
     ArchiveDynamicOperatingEnvelope,
     ArchiveSiteControlGroupDefault,
     ArchiveSiteDERSetting,
+    ArchiveTariffGeneratedRate,
 )
 from envoy_schema.admin.schema.site_control import SiteControlGroupRequest
+from envoy_schema.server.schema.sep2.response import ResponseType
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -275,24 +281,143 @@ class EnvoyBackend(RunnerBackend):
         """
         async with self._session_factory() as session:
             controls = (await session.execute(select(DynamicOperatingEnvelope))).scalars().all()
-            deleted_controls = (await session.execute(select(ArchiveDynamicOperatingEnvelope))).scalars().all()
+            deleted_controls = (
+                (
+                    await session.execute(
+                        select(ArchiveDynamicOperatingEnvelope).where(
+                            ArchiveDynamicOperatingEnvelope.deleted_time.is_not(None)
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
 
         all_controls = itertools.chain(controls, deleted_controls)
 
         all_controls = [mappers.map_envoy_site_control_to_dto(c) for c in all_controls]
         return all_controls
 
-    async def get_site_control_responses(self) -> Sequence[dtos.SiteControlResponse]:
-        """Returns all DERControl responses recorded in the database.
+    async def get_site_control_responses(
+        self, status_filter: ResponseType | int | None = None
+    ) -> Sequence[dtos.SiteControlResponse]:
+        """Returns all DERControl responses recorded in the database, optionally filtered by type.
 
         Returns:
             All DynamicOperatingEnvelopeResponse entries, in no guaranteed order.
         """
         async with self._session_factory() as session:
-            response_result = await session.execute(select(DynamicOperatingEnvelopeResponse))
+            stmt = select(DynamicOperatingEnvelopeResponse)
+            if status_filter is not None:
+                stmt = stmt.where(DynamicOperatingEnvelopeResponse.response_type == status_filter)
+            response_result = await session.execute(stmt)
         responses = response_result.scalars().all()
 
         return [mappers.map_envoy_site_control_response_to_dto(r) for r in responses]
+
+    async def get_tariff_generated_rate_responses(
+        self,
+        status_filter: ResponseType | int | None = None,
+    ) -> Sequence[dtos.TariffGeneratedRateResponse]:
+        """Returns all TariffGeneratedRate responses submitted by devices during the test, optionally filtered by type.
+
+        Returns:
+            All TariffGeneratedRate entries, in no guaranteed order.
+        """
+        async with self._session_factory() as session:
+            stmt = select(TariffGeneratedRateResponse)
+            if status_filter is not None:
+                stmt = stmt.where(TariffGeneratedRateResponse.response_type == status_filter)
+            response_result = await session.execute(stmt)
+        responses = response_result.scalars().all()
+
+        return [mappers.map_envoy_tariff_generated_rate_response_to_dto(r) for r in responses]
+
+    async def get_tariffs(self) -> list[dtos.Tariff]:
+        """Returns the current Tariffs from the backend.
+
+        Returns:
+            Every configured Tariff in the backend - ordered by tariff_id ASC.
+        """
+        async with self._session_factory() as session:
+            response_result = await session.execute(select(Tariff).order_by(Tariff.tariff_id.asc()))
+            responses = response_result.scalars().all()
+            return [mappers.map_envoy_db_tariff_to_dto(db_model) for db_model in responses]
+
+    async def create_tariff(self, tariff: dtos.TariffWrite) -> str:
+        """Creates a new tariff with the specified values
+
+        Returns:
+            The tariff_id of the new entry.
+        """
+        tariff_id = await self._admin_client.create_tariff(mappers.map_dto_tariff_to_request(tariff))
+        return str(tariff_id)
+
+    async def get_tariff_components(self) -> list[dtos.TariffComponent]:
+        """Returns the current TariffComponents from the backend.
+
+        Returns:
+            Every configured TariffComponent in the backend - ordered by tariff_component_id ASC.
+        """
+        async with self._session_factory() as session:
+            response_result = await session.execute(
+                select(TariffComponent).order_by(TariffComponent.tariff_component_id.asc())
+            )
+            responses = response_result.scalars().all()
+            return [mappers.map_envoy_db_tariff_component_to_dto(db_model) for db_model in responses]
+
+    async def create_tariff_component(self, tariff_component: dtos.TariffComponentWrite) -> str:
+        """Creates a new tariff component with the specified values
+
+        Returns:
+            The tariff_component_id of the new entry.
+        """
+        tariff_component_id = await self._admin_client.create_tariff_component(
+            mappers.map_dto_tariff_component_to_request(tariff_component)
+        )
+        return str(tariff_component_id)
+
+    async def delete_tariff_component(self, tariff_component_id: str) -> None:
+        """Deletes a new tariff component with the specified ID - no effect if it DNE"""
+        await self._admin_client.delete_tariff_component(int(tariff_component_id))
+
+    async def get_tariff_generated_rates(self) -> list[dtos.TariffGeneratedRate]:
+        """Returns the current/deleted TariffGeneratedRates from the backend.
+
+        Returns:
+            Every configured TariffGeneratedRate in the backend - ordered by tariff_generated_rate_id ASC.
+        """
+        async with self._session_factory() as session:
+            active_rates = (await session.execute(select(TariffGeneratedRate))).scalars().all()
+            deleted_rates = (
+                (
+                    await session.execute(
+                        select(ArchiveTariffGeneratedRate).where(ArchiveTariffGeneratedRate.deleted_time.is_not(None))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+            return [
+                mappers.map_envoy_db_tariff_generated_rate_to_dto(db_model)
+                for db_model in itertools.chain(active_rates, deleted_rates)
+            ]
+
+    async def create_tariff_generated_rate(self, tariff_generated_rate: dtos.TariffGeneratedRateWrite) -> str:
+        """Creates a new tariff generated rate with the specified values
+
+        Returns:
+            The tariff_generated_rate_id of the new entry.
+        """
+        tariff_generated_rate_id = await self._admin_client.create_tariff_generated_rate(
+            mappers.map_dto_tariff_generated_rate_to_request(tariff_generated_rate)
+        )
+        return str(tariff_generated_rate_id)
+
+    async def delete_tariff_generated_rate(self, tariff_generated_rate_id: str) -> None:
+        """Deletes a new tariff generated rate with the specified ID - no effect if it DNE"""
+        await self._admin_client.delete_tariff_generated_rate(int(tariff_generated_rate_id))
 
     async def parse_subscription_href(self, href: str) -> dtos.SubscriptionHref:
         """Parses a subscription resource href into its component parts.
@@ -309,11 +434,12 @@ class EnvoyBackend(RunnerBackend):
         Raises:
             InvalidMappingError: If the href cannot be parsed into a valid subscription resource reference.
         """
-        resource_type, scoped_site_id, resource_id = SubscriptionMapper.parse_resource_href(href)
+        resource_type, scoped_site_id, resource_id, resource_parent_id = SubscriptionMapper.parse_resource_href(href)
         return dtos.SubscriptionHref(
             resource_type=resource_type,
             scoped_site_id=f"{scoped_site_id}" if scoped_site_id is not None else None,
             resource_id=f"{resource_id}" if resource_id is not None else None,
+            resource_parent_id=f"{resource_parent_id}" if resource_parent_id is not None else None,
         )
 
     async def get_site_reading_types(self, site_ids: Sequence[str] | None = None) -> Sequence[dtos.SiteReadingType]:

@@ -641,7 +641,7 @@ async def status_handler(request: web.Request) -> web.Response:
 
     if runner_state.active_test_procedure is not None:
         provider = request.app[APPKEY_BACKEND_PROVIDER]
-        backend = await provider.create_backend(context=generate_plugin_context(active_test_procedure))
+        backend = await provider.create_backend(context=generate_plugin_context(runner_state.active_test_procedure))
         runner_status = await status.get_active_runner_status(
             active_test_procedure=runner_state.active_test_procedure,
             request_history=runner_state.request_history,

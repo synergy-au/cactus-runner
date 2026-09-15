@@ -8,6 +8,7 @@ import pytest
 from assertical.asserts.time import assert_nowish
 from assertical.asserts.type import assert_list_type
 from assertical.fake.generator import generate_class_instance
+from assertical.fake.sqlalchemy import create_mock_session
 from assertical.fixtures.postgres import generate_async_session
 from cactus_test_definitions.client import ACTION_PARAMETER_SCHEMA, Action, Event
 from envoy.server.model import SiteGroup, SiteGroupAssignment
@@ -1493,9 +1494,10 @@ async def test_action_create_tariff_profile(pg_base_config, envoy_admin_client):
         "price_pow_10_multiplier": -1,
         "tag": tag,
     }
+    backend = EnvoyBackend(session_factory=lambda: create_mock_session(), admin_client=envoy_admin_client)
 
     # Act
-    await action_create_tariff_profile(resolved_params, envoy_admin_client, active_test_procedure)
+    await action_create_tariff_profile(resolved_params, active_test_procedure, backend)
 
     # Assert
     assert pg_base_config.execute("select count(*) from tariff;").fetchone()[0] == 1
@@ -1507,7 +1509,7 @@ async def test_action_create_tariff_profile(pg_base_config, envoy_admin_client):
     async with generate_async_session(pg_base_config) as session:
         tariff = (await session.execute(select(Tariff).limit(1))).scalar_one()
         tagged_tariff_id = active_test_procedure.resource_annotations.tariff_profile_ids_by_alias[tag]
-        assert tagged_tariff_id == tariff.tariff_id
+        assert tagged_tariff_id == str(tariff.tariff_id)
 
 
 @pytest.mark.parametrize(
@@ -1532,6 +1534,7 @@ async def test_action_create_rate_component(
     active_test_procedure = generate_class_instance(
         ActiveTestProcedure, step_status={}, finished_zip_path=None, resource_annotations=ResourceAnnotations()
     )
+    backend = EnvoyBackend(session_factory=lambda: create_mock_session(), admin_client=envoy_admin_client)
 
     # For each parent TariffProfile - create a Tariff to reference
     for idx, tp_tag in enumerate(tp_tags):
@@ -1542,8 +1545,8 @@ async def test_action_create_rate_component(
                 "price_pow_10_multiplier": 0,
                 "tag": tp_tag,
             },
-            envoy_admin_client,
             active_test_procedure,
+            backend,
         )
 
     tag = "RC-1"
@@ -1562,12 +1565,13 @@ async def test_action_create_rate_component(
 
     # Act
     async with generate_async_session(pg_base_config) as session:
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=envoy_admin_client)
         if expect_success:
-            await action_create_rate_component(resolved_params, envoy_admin_client, active_test_procedure, session)
+            await action_create_rate_component(resolved_params, active_test_procedure, backend)
             expected_tariff_component_count = 1
         else:
             with pytest.raises(Exception):
-                await action_create_rate_component(resolved_params, envoy_admin_client, active_test_procedure, session)
+                await action_create_rate_component(resolved_params, active_test_procedure, backend)
             expected_tariff_component_count = 0
 
     # Assert
@@ -1584,7 +1588,7 @@ async def test_action_create_rate_component(
         async with generate_async_session(pg_base_config) as session:
             tc = (await session.execute(select(TariffComponent).limit(1))).scalar_one()
             tagged_tc_id = active_test_procedure.resource_annotations.rate_component_ids_by_alias[tag]
-            assert tagged_tc_id == tc.tariff_component_id
+            assert tagged_tc_id == str(tc.tariff_component_id)
 
             # Check our TariffComponent is under the correct Tariff
             #
@@ -1594,7 +1598,7 @@ async def test_action_create_rate_component(
                 tagged_tariff_id = active_test_procedure.resource_annotations.tariff_profile_ids_by_alias[
                     tariff_profile_tag
                 ]
-                assert tagged_tariff_id == tc.tariff_id
+                assert tagged_tariff_id == str(tc.tariff_id)
 
             # Sanity check some fields match what we suplied
             assert tc.commodity == 2
@@ -1637,15 +1641,15 @@ async def test_action_create_time_tariff_interval(
         session.add(generate_class_instance(Site, aggregator_id=1))
         await session.commit()
 
-    # Create a top level TariffProfile
-    await action_create_tariff_profile(
-        {"primacy": 0, "fsa_id": 1, "price_pow_10_multiplier": 1},
-        envoy_admin_client,
-        active_test_procedure,
-    )
-
     # Create each parent RateComponent
     async with generate_async_session(pg_base_config) as session:
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=envoy_admin_client)
+
+        # Create a top level TariffProfile
+        await action_create_tariff_profile(
+            {"primacy": 0, "fsa_id": 1, "price_pow_10_multiplier": 1}, active_test_procedure, backend
+        )
+
         for idx, rc_tag in enumerate(rc_tags):
             await action_create_rate_component(
                 {
@@ -1659,9 +1663,8 @@ async def test_action_create_time_tariff_interval(
                     "uom": 134,
                     "tag": rc_tag,
                 },
-                envoy_admin_client,
                 active_test_procedure,
-                session,
+                backend,
             )
 
     tag = "TTI-1"
@@ -1677,16 +1680,13 @@ async def test_action_create_time_tariff_interval(
 
     # Act
     async with generate_async_session(pg_base_config) as session:
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=envoy_admin_client)
         if expect_success:
-            await action_create_time_tariff_interval(
-                resolved_params, envoy_admin_client, active_test_procedure, session
-            )
+            await action_create_time_tariff_interval(resolved_params, active_test_procedure, backend)
             expected_tti_count = 1
         else:
             with pytest.raises(Exception):
-                await action_create_time_tariff_interval(
-                    resolved_params, envoy_admin_client, active_test_procedure, session
-                )
+                await action_create_time_tariff_interval(resolved_params, active_test_procedure, backend)
             expected_tti_count = 0
 
     # Assert
@@ -1700,7 +1700,7 @@ async def test_action_create_time_tariff_interval(
         async with generate_async_session(pg_base_config) as session:
             rate = (await session.execute(select(TariffGeneratedRate).limit(1))).scalar_one()
             tagged_rate_id = active_test_procedure.resource_annotations.time_tariff_interval_ids_by_alias[tag]
-            assert tagged_rate_id == rate.tariff_generated_rate_id
+            assert tagged_rate_id == str(rate.tariff_generated_rate_id)
 
             # Check our TariffGenerateRate is under the correct TariffComponent
             #
@@ -1710,7 +1710,7 @@ async def test_action_create_time_tariff_interval(
                 tagged_tc_id = active_test_procedure.resource_annotations.rate_component_ids_by_alias[
                     rate_component_tag
                 ]
-                assert tagged_tc_id == rate.tariff_component_id
+                assert tagged_tc_id == str(rate.tariff_component_id)
 
             # Sanity check some fields match what we suplied
             assert rate.start_time == datetime(2023, 4, 5, tzinfo=UTC)
@@ -1741,15 +1741,17 @@ async def test_action_cancel_time_tariff_intervals(
         ActiveTestProcedure, step_status={}, finished_zip_path=None, resource_annotations=ResourceAnnotations()
     )
 
-    # Create a top level TariffProfile
-    await action_create_tariff_profile(
-        {"primacy": 0, "fsa_id": 1, "price_pow_10_multiplier": 1}, envoy_admin_client, active_test_procedure
-    )
-
     # Create an EndDevice, RateComponent and the TTIs
     async with generate_async_session(pg_base_config) as session:
         session.add(generate_class_instance(Site, aggregator_id=1))
         await session.commit()
+
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=envoy_admin_client)
+
+        # Create a top level TariffProfile
+        await action_create_tariff_profile(
+            {"primacy": 0, "fsa_id": 1, "price_pow_10_multiplier": 1}, active_test_procedure, backend
+        )
 
         await action_create_rate_component(
             {
@@ -1762,9 +1764,8 @@ async def test_action_cancel_time_tariff_intervals(
                 "power_of_ten_multiplier": 0,
                 "uom": 134,
             },
-            envoy_admin_client,
             active_test_procedure,
-            session,
+            backend,
         )
 
         for idx, tag in enumerate(tti_tags):
@@ -1777,9 +1778,8 @@ async def test_action_cancel_time_tariff_intervals(
                     "price_start_pow10_block1": 3,
                     "tag": tag,
                 },
-                envoy_admin_client,
                 active_test_procedure,
-                session,
+                backend,
             )
 
         # Map our created tti_id_by_index - we use idx as price so we can track what rates came from where
@@ -1788,19 +1788,17 @@ async def test_action_cancel_time_tariff_intervals(
 
     # Act
     async with generate_async_session(pg_base_config) as session:
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=envoy_admin_client)
+
         if expected_cancel_tti_indexes is None:
             expected_tti_count = len(tti_tags)
             expected_tti_archive_count = 0
             with pytest.raises(Exception):
-                await action_cancel_time_tariff_intervals(
-                    {"tag": cancel_tag}, envoy_admin_client, active_test_procedure, session
-                )
+                await action_cancel_time_tariff_intervals({"tag": cancel_tag}, active_test_procedure, backend)
         else:
             expected_tti_count = len(tti_tags) - len(expected_cancel_tti_indexes)
             expected_tti_archive_count = len(expected_cancel_tti_indexes)
-            await action_cancel_time_tariff_intervals(
-                {"tag": cancel_tag}, envoy_admin_client, active_test_procedure, session
-            )
+            await action_cancel_time_tariff_intervals({"tag": cancel_tag}, active_test_procedure, backend)
 
     # Assert DB counts
     assert pg_base_config.execute("select count(*) from tariff_generated_rate;").fetchone()[0] == expected_tti_count
@@ -1846,15 +1844,17 @@ async def test_action_delete_rate_component(
         ActiveTestProcedure, step_status={}, finished_zip_path=None, resource_annotations=ResourceAnnotations()
     )
 
-    # Create a top level TariffProfile
-    await action_create_tariff_profile(
-        {"primacy": 0, "fsa_id": 1, "price_pow_10_multiplier": 1}, envoy_admin_client, active_test_procedure
-    )
-
     # Create an EndDevice, RateComponents (with rates if appropriate)
     async with generate_async_session(pg_base_config) as session:
         session.add(generate_class_instance(Site, aggregator_id=1))
         await session.commit()
+
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=envoy_admin_client)
+
+        # Create a top level TariffProfile
+        await action_create_tariff_profile(
+            {"primacy": 0, "fsa_id": 1, "price_pow_10_multiplier": 1}, active_test_procedure, backend
+        )
 
         for idx, tag in enumerate(rate_component_tags):
             await action_create_rate_component(
@@ -1869,9 +1869,8 @@ async def test_action_delete_rate_component(
                     "uom": 134,
                     "tag": tag,
                 },
-                envoy_admin_client,
                 active_test_procedure,
-                session,
+                backend,
             )
 
             if tag is not None:
@@ -1884,9 +1883,8 @@ async def test_action_delete_rate_component(
                         "price_pow10_encoded_block1": 2,
                         "price_start_pow10_block1": 3,
                     },
-                    envoy_admin_client,
                     active_test_procedure,
-                    session,
+                    backend,
                 )
 
         # Map our created rc_id_by_index - we use idx as pow10 mult so we can track what rates came from where
@@ -1894,17 +1892,19 @@ async def test_action_delete_rate_component(
         tc_id_by_index = dict([(r.power_of_ten_multiplier, r.tariff_component_id) for r in tcs])
 
     # Act
+    backend = EnvoyBackend(session_factory=lambda: create_mock_session(), admin_client=envoy_admin_client)
     if expected_delete_index is None:
         expected_tc_count = len(rate_component_tags)
         expected_tc_archive_count = 0
         expected_tti_archive_count = 0
+
         with pytest.raises(Exception):
-            await action_delete_rate_component({"tag": delete_tag}, envoy_admin_client, active_test_procedure)
+            await action_delete_rate_component({"tag": delete_tag}, active_test_procedure, backend)
     else:
         expected_tc_count = len(rate_component_tags) - 1
         expected_tc_archive_count = 1
         expected_tti_archive_count = 1
-        await action_delete_rate_component({"tag": delete_tag}, envoy_admin_client, active_test_procedure)
+        await action_delete_rate_component({"tag": delete_tag}, active_test_procedure, backend)
 
     # Assert DB counts
     assert pg_base_config.execute("select count(*) from tariff_component;").fetchone()[0] == expected_tc_count

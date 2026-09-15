@@ -4,6 +4,7 @@ from operator import attrgetter
 from typing import Protocol, runtime_checkable
 
 from cactus_schema.runner import EndDeviceMetadata, WarningEntry
+from envoy_schema.server.schema.sep2.response import ResponseType
 from envoy_schema.server.schema.sep2.types import DataQualifierType, KindType, UomType
 
 from cactus_runner.app.envoy_common import ReadingLocation
@@ -410,11 +411,23 @@ class RunnerBackend(Protocol):
 
     async def get_site_control_responses(
         self,
+        status_filter: ResponseType | int | None = None,
     ) -> Sequence[dtos.SiteControlResponse]:
-        """Returns all DERControl responses submitted by devices during the test.
+        """Returns all DERControl responses submitted by devices during the test, optionally filtered by type.
 
         Returns:
             All SiteControlResponse entries, in no guaranteed order.
+        """
+        ...
+
+    async def get_tariff_generated_rate_responses(
+        self,
+        status_filter: ResponseType | int | None = None,
+    ) -> Sequence[dtos.TariffGeneratedRateResponse]:
+        """Returns all TariffGeneratedRate responses submitted by devices during the test, optionally filtered by type.
+
+        Returns:
+            All TariffGeneratedRate entries, in no guaranteed order.
         """
         ...
 
@@ -522,11 +535,11 @@ class RunnerBackend(Protocol):
     # Pricing
     # ------------------------------------------------------------------
 
-    async def get_tariffs(self) -> Sequence[dtos.Tariff]:
+    async def get_tariffs(self) -> list[dtos.Tariff]:
         """Returns the current Tariffs from the backend.
 
         Returns:
-            Every configured Tariff in the backend - ordered by tariff_id ASC.
+            Every configured Tariff in the backend
         """
         ...
 
@@ -538,11 +551,11 @@ class RunnerBackend(Protocol):
         """
         ...
 
-    async def get_tariff_components(self) -> Sequence[dtos.TariffComponent]:
+    async def get_tariff_components(self) -> list[dtos.TariffComponent]:
         """Returns the current TariffComponents from the backend.
 
         Returns:
-            Every configured TariffComponent in the backend - ordered by tariff_component_id ASC.
+            Every configured TariffComponent in the backend
         """
         ...
 
@@ -558,11 +571,11 @@ class RunnerBackend(Protocol):
         """Deletes a new tariff component with the specified ID - no effect if it DNE"""
         ...
 
-    async def get_tariff_generated_rates(self) -> Sequence[dtos.TariffGeneratedRate]:
+    async def get_tariff_generated_rates(self) -> list[dtos.TariffGeneratedRate]:
         """Returns the current TariffGeneratedRates from the backend.
 
         Returns:
-            Every configured TariffGeneratedRate in the backend - ordered by tariff_generated_rate_id ASC.
+            Every configured TariffGeneratedRate in the backend - (including deleted records)
         """
         ...
 

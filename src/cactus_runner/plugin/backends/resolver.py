@@ -2,8 +2,6 @@ import datetime as dt
 import logging
 from typing import Protocol, runtime_checkable
 
-from cactus_test_definitions import NamedVariableType
-
 from cactus_runner.plugin.backends.uri import ParsedUri
 
 logger = logging.getLogger(__name__)

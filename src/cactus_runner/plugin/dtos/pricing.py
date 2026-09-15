@@ -99,7 +99,7 @@ class TariffGeneratedRateWrite:
     by the parent TariffComponent."""
 
     tariff_component_id: str  # The TariffComponent ID that this price entry sits underneath
-    site_group_id: int  # The SiteGroup id whose members will have this price available to them
+    site_group_id: str  # The SiteGroup id whose members will have this price available to them
     calculation_log_id: str | None  # The ID of the CalculationLog that created this rate (or NULL if no link)
     start_time: datetime
     duration_seconds: int
@@ -126,3 +126,6 @@ class TariffGeneratedRate:
 
     created_time: datetime
     changed_time: datetime
+
+    deleted_time: datetime | None
+    archive_time: datetime | None

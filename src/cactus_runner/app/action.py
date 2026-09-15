@@ -1,29 +1,10 @@
 import logging
 import math
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
-from operator import attrgetter
 from typing import Any, cast
 
 from cactus_test_definitions.client import Action
-from envoy.server.crud.doe import select_site_control_groups
-from envoy.server.model.site import Site
-from envoy_schema.admin.schema.config import (
-    RuntimeServerConfigRequest,
-)
-from envoy_schema.admin.schema.pricing import (
-    TariffComponentRequest,
-    TariffGeneratedRateRequest,
-    TariffRequest,
-)
-from envoy_schema.admin.schema.site import SiteUpdateRequest
-from envoy_schema.admin.schema.site_control import (
-    SiteControlGroupDefaultRequest,
-    SiteControlGroupRequest,
-    SiteControlRequest,
-    UpdateDefaultValue,
-)
 from envoy_schema.server.schema.sep2.types import (
     CommodityType,
     CurrencyCode,
@@ -35,19 +16,7 @@ from envoy_schema.server.schema.sep2.types import (
     RoleFlagsType,
     UomType,
 )
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from cactus_runner.app.envoy_common import (
-    count_all_site_controls_with_cancelled,
-    get_active_site,
-    get_all_site_control_groups,
-    get_all_sites,
-    get_exclusive_site_group,
-    get_tariff_components,
-    get_tariff_generated_rates,
-    get_tariffs,
-)
 from cactus_runner.app.evaluator import (
     resolve_variable_expressions_from_parameters,
 )
@@ -489,16 +458,16 @@ async def action_remove_function_set_assignment(resolved_parameters: dict[str, A
 
 async def action_create_tariff_profile(
     resolved_parameters: dict[str, Any],
-    envoy_client: EnvoyAdminClient,
     active_test_procedure: ActiveTestProcedure,
+    backend: RunnerBackend,
 ) -> None:
     primacy: int = resolved_parameters["primacy"]
     fsa_id: int = resolved_parameters.get("fsa_id", 1)
     price_pow_10_multiplier: int = resolved_parameters.get("price_pow_10_multiplier", 0)
     tag: str | None = resolved_parameters.get("tag", None)
 
-    tariff_id = await envoy_client.create_tariff(
-        TariffRequest(
+    tariff_id = await backend.create_tariff(
+        dtos.TariffWrite(
             name=f"Tariff {primacy}",
             dnsp_code="CACTUS",
             currency_code=CurrencyCode.AUSTRALIAN_DOLLAR,
@@ -514,9 +483,8 @@ async def action_create_tariff_profile(
 
 async def action_create_rate_component(
     resolved_parameters: dict[str, Any],
-    envoy_client: EnvoyAdminClient,
     active_test_procedure: ActiveTestProcedure,
-    session: AsyncSession,
+    backend: RunnerBackend,
 ) -> None:
     tariff_profile_tag: str | None = resolved_parameters.get("tariff_profile_tag", None)
     role_flags: RoleFlagsType = resolved_parameters.get("role_flags", RoleFlagsType.NONE)
@@ -532,13 +500,13 @@ async def action_create_rate_component(
     parent_tariff_id: str | None = None
     if tariff_profile_tag is None:
         # If we have no parent tag - we assume there must be a single TariffProfile and we'll use that ID
-        existing_tariffs = await get_tariffs(session)
+        existing_tariffs = await backend.get_tariffs()
         if len(existing_tariffs) != 1:
             raise Exception(
                 f"Can't find an unambiguous TariffProfile to use as a parent. Discovered {len(existing_tariffs)}."
                 + " This is a test definition error."
             )
-        parent_tariff_id = str(existing_tariffs[0].tariff_id)
+        parent_tariff_id = existing_tariffs[0].tariff_id
     else:
         parent_tariff_id = active_test_procedure.resource_annotations.tariff_profile_ids_by_alias.get(
             tariff_profile_tag, None
@@ -548,8 +516,8 @@ async def action_create_rate_component(
                 f"No TariffProfile with tag '{tariff_profile_tag}' exists. This is a test definition error."
             )
 
-    tariff_component_id = await envoy_client.create_tariff_component(
-        TariffComponentRequest(
+    tariff_component_id = await backend.create_tariff_component(
+        dtos.TariffComponentWrite(
             tariff_id=parent_tariff_id,
             accumulation_behaviour=None,
             commodity=commodity,
@@ -570,9 +538,8 @@ async def action_create_rate_component(
 
 async def action_create_time_tariff_interval(
     resolved_parameters: dict[str, Any],
-    envoy_client: EnvoyAdminClient,
     active_test_procedure: ActiveTestProcedure,
-    session: AsyncSession,
+    backend: RunnerBackend,
 ) -> None:
     start: datetime = resolved_parameters["start"]
     duration_seconds: int = resolved_parameters["duration_seconds"]
@@ -582,22 +549,22 @@ async def action_create_time_tariff_interval(
     price_start_pow10_block1: int | None = resolved_parameters.get("price_start_pow10_block1", None)
     tag: str | None = resolved_parameters.get("tag", None)
 
-    active_site = await get_active_site(session)
+    active_site = await backend.get_active_site()
     if active_site is None:
         raise Exception("Can't create TimeTariffInterval if there is no EndDevice. This is a test definition error.")
 
-    active_site_group = await get_exclusive_site_group(envoy_client, active_site)
+    active_site_group = await backend.get_exclusive_site_group(active_site.site_id)
 
     parent_tc_id: str | None = None
     if rate_component_tag is None:
         # If we have no parent tag - we assume there must be a single TariffComponent and we'll use that ID
-        existing_tcs = await get_tariff_components(session)
+        existing_tcs = await backend.get_tariff_components()
         if len(existing_tcs) != 1:
             raise Exception(
                 f"Can't find an unambiguous RateComponent to use as a parent. Discovered {len(existing_tcs)}."
                 + " This is a test definition error."
             )
-        parent_tc_id = str(existing_tcs[0].tariff_component_id)
+        parent_tc_id = existing_tcs[0].tariff_component_id
     else:
         parent_tc_id = active_test_procedure.resource_annotations.rate_component_ids_by_alias.get(
             rate_component_tag, None
@@ -607,8 +574,8 @@ async def action_create_time_tariff_interval(
                 f"No RateComponent with tag '{rate_component_tag}' exists. This is a test definition error."
             )
 
-    rate_id = await envoy_client.create_tariff_generated_rate(
-        TariffGeneratedRateRequest(
+    rate_id = await backend.create_tariff_generated_rate(
+        dtos.TariffGeneratedRateWrite(
             tariff_component_id=parent_tc_id,
             site_group_id=active_site_group.site_group_id,
             start_time=start,
@@ -626,9 +593,8 @@ async def action_create_time_tariff_interval(
 
 async def action_cancel_time_tariff_intervals(
     resolved_parameters: dict[str, Any],
-    envoy_client: EnvoyAdminClient,
     active_test_procedure: ActiveTestProcedure,
-    session: AsyncSession,
+    backend: RunnerBackend,
 ) -> None:
 
     tag: str | None = resolved_parameters.get("tag", None)
@@ -639,15 +605,15 @@ async def action_cancel_time_tariff_intervals(
         if tagged_id is None:
             raise Exception(f"No TimeTariffInterval with tag '{tag}' exists. This is a test definition error.")
 
-        await envoy_client.delete_tariff_generated_rate(tagged_id)
+        await backend.delete_tariff_generated_rate(tagged_id)
     else:
-        all_rates = await get_tariff_generated_rates(session)
+        all_rates = await backend.get_tariff_generated_rates()
         for r in all_rates:
-            await envoy_client.delete_tariff_generated_rate(r.tariff_generated_rate_id)
+            await backend.delete_tariff_generated_rate(r.tariff_generated_rate_id)
 
 
 async def action_delete_rate_component(
-    resolved_parameters: dict[str, Any], envoy_client: EnvoyAdminClient, active_test_procedure: ActiveTestProcedure
+    resolved_parameters: dict[str, Any], active_test_procedure: ActiveTestProcedure, backend: RunnerBackend
 ) -> None:
 
     tag: str = resolved_parameters["tag"]
@@ -656,7 +622,7 @@ async def action_delete_rate_component(
     if tagged_id is None:
         raise Exception(f"No RateComponent with tag '{tag}' exists. This is a test definition error.")
 
-    await envoy_client.delete_tariff_component(tagged_id)
+    await backend.delete_tariff_component(tagged_id)
 
 
 def action_add_proxy_route(resolved_parameters: dict[str, Any], active_test_procedure: ActiveTestProcedure) -> None:

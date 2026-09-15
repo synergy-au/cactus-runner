@@ -16,12 +16,17 @@ from envoy.server.model import (
     SiteReading,
     SiteReadingType,
     Subscription,
+    Tariff,
+    TariffComponent,
+    TariffGeneratedRate,
     TransmitNotificationLog,
 )
+from envoy.server.model import TariffGeneratedRateResponse as DbTariffGeneratedRateResponse
 from envoy.server.model.archive import (
     ArchiveDynamicOperatingEnvelope,
     ArchiveSiteControlGroupDefault,
     ArchiveSiteReading,
+    ArchiveTariffGeneratedRate,
 )
 from envoy_schema.admin.schema.config import RuntimeServerConfigRequest
 from envoy_schema.admin.schema.pricing import (
@@ -132,6 +137,9 @@ def map_envoy_subscription_to_dto(subscription: Subscription) -> dtos.Subscripti
         client_aggregator_id=f"{subscription.aggregator_id}",
         resource_type=subscription.resource_type,
         resource_id=f"{subscription.resource_id}" if subscription.resource_id is not None else None,
+        resource_parent_id=f"{subscription.resource_parent_id}"
+        if subscription.resource_parent_id is not None
+        else None,
         notification_uri=subscription.notification_uri,
     )
 
@@ -162,6 +170,17 @@ def map_envoy_site_control_response_to_dto(response: DynamicOperatingEnvelopeRes
     """Maps either an Envoy DOE Response to a CACTUS backend DTO."""
     return dtos.SiteControlResponse(
         site_control_id=f"{response.dynamic_operating_envelope_id_snapshot}",
+        response_type=response.response_type,
+        created_time=response.created_time,
+    )
+
+
+def map_envoy_tariff_generated_rate_response_to_dto(
+    response: DbTariffGeneratedRateResponse,
+) -> dtos.TariffGeneratedRateResponse:
+    """Maps either an Envoy DOE Response to a CACTUS backend DTO."""
+    return dtos.TariffGeneratedRateResponse(
+        tariff_generated_rate_id=f"{response.tariff_generated_rate_id_snapshot}",
         response_type=response.response_type,
         created_time=response.created_time,
     )
@@ -661,6 +680,21 @@ def map_envoy_tariff_to_dto(tariff_response: TariffResponse) -> dtos.Tariff:
     )
 
 
+def map_envoy_db_tariff_to_dto(tariff_response: Tariff) -> dtos.Tariff:
+    return dtos.Tariff(
+        tariff_id=str(tariff_response.tariff_id),
+        name=tariff_response.name,
+        dnsp_code=tariff_response.dnsp_code,
+        currency_code=tariff_response.currency_code,
+        price_power_of_ten_multiplier=tariff_response.price_power_of_ten_multiplier or 0,
+        primacy=tariff_response.primacy,
+        fsa_id=str(tariff_response.fsa_id),
+        required_site_group_id=tariff_response.required_site_group_id,
+        created_time=tariff_response.created_time,
+        changed_time=tariff_response.changed_time,
+    )
+
+
 def map_dto_tariff_to_request(tariff: dtos.TariffWrite) -> TariffRequest:
     return TariffRequest(
         name=tariff.name,
@@ -674,6 +708,26 @@ def map_dto_tariff_to_request(tariff: dtos.TariffWrite) -> TariffRequest:
 
 
 def map_envoy_tariff_component_to_dto(tariff_component_response: TariffComponentResponse) -> dtos.TariffComponent:
+    return dtos.TariffComponent(
+        tariff_component_id=str(tariff_component_response.tariff_component_id),
+        tariff_id=str(tariff_component_response.tariff_id),
+        role_flags=tariff_component_response.role_flags,
+        description=tariff_component_response.description,
+        created_time=tariff_component_response.created_time,
+        changed_time=tariff_component_response.changed_time,
+        # ReadingType fields
+        accumulation_behaviour=tariff_component_response.accumulation_behaviour,
+        commodity=tariff_component_response.commodity,
+        data_qualifier=tariff_component_response.data_qualifier,
+        flow_direction=tariff_component_response.flow_direction,
+        kind=tariff_component_response.kind,
+        phase=tariff_component_response.phase,
+        power_of_ten_multiplier=tariff_component_response.power_of_ten_multiplier,
+        uom=tariff_component_response.uom,
+    )
+
+
+def map_envoy_db_tariff_component_to_dto(tariff_component_response: TariffComponent) -> dtos.TariffComponent:
     return dtos.TariffComponent(
         tariff_component_id=str(tariff_component_response.tariff_component_id),
         tariff_id=str(tariff_component_response.tariff_id),
@@ -726,6 +780,33 @@ def map_envoy_tariff_generated_rate_to_dto(
         price_pow10_encoded_block_1=tariff_generated_rate.price_pow10_encoded_block_1,
         created_time=tariff_generated_rate.created_time,
         changed_time=tariff_generated_rate.changed_time,
+        deleted_time=None,
+        archive_time=None,
+    )
+
+
+def map_envoy_db_tariff_generated_rate_to_dto(
+    tariff_generated_rate: TariffGeneratedRate | ArchiveTariffGeneratedRate,
+) -> dtos.TariffGeneratedRate:
+    return dtos.TariffGeneratedRate(
+        tariff_generated_rate_id=str(tariff_generated_rate.tariff_generated_rate_id),
+        tariff_id=str(tariff_generated_rate.tariff_id),
+        tariff_component_id=str(tariff_generated_rate.tariff_component_id),
+        site_group_id=str(tariff_generated_rate.site_group_id),
+        calculation_log_id=str(tariff_generated_rate.calculation_log_id),
+        start_time=tariff_generated_rate.start_time,
+        duration_seconds=tariff_generated_rate.duration_seconds,
+        price_pow10_encoded=tariff_generated_rate.price_pow10_encoded,
+        block_1_start_pow10_encoded=tariff_generated_rate.block_1_start_pow10_encoded,
+        price_pow10_encoded_block_1=tariff_generated_rate.price_pow10_encoded_block_1,
+        created_time=tariff_generated_rate.created_time,
+        changed_time=tariff_generated_rate.changed_time,
+        archive_time=tariff_generated_rate.archive_time
+        if isinstance(tariff_generated_rate, ArchiveTariffGeneratedRate)
+        else None,
+        deleted_time=tariff_generated_rate.deleted_time
+        if isinstance(tariff_generated_rate, ArchiveTariffGeneratedRate)
+        else None,
     )
 
 
