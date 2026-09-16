@@ -2904,14 +2904,14 @@ async def test_check_response_contents_any(pg_base_config):
         assert_check_result(
             await check_response_contents(
                 {"latest": False, "status": ResponseType.CANNOT_BE_DISPLAYED.value, "exists": False},
-                session,
+                backend,
                 active_test_procedure,
             ),
             True,
         )
         assert_check_result(
             await check_response_contents(
-                {"status": ResponseType.EVENT_COMPLETED.value, "exists": False}, session, active_test_procedure
+                {"status": ResponseType.EVENT_COMPLETED.value, "exists": False}, backend, active_test_procedure
             ),
             False,
         )
@@ -3074,7 +3074,7 @@ async def test_check_response_contents_tag_DERC1(pg_base_config):
         assert_check_result(
             await check_response_contents(
                 {"subject_tag": "DERC1", "latest": True, "status": ResponseType.EVENT_CANCELLED.value, "exists": False},
-                session,
+                backend,
                 active_test_procedure,
             ),
             True,
@@ -3106,7 +3106,7 @@ async def test_check_response_contents_tag_DERC1(pg_base_config):
         assert_check_result(
             await check_response_contents(
                 {"subject_tag": "DERC2", "status": ResponseType.EVENT_CANCELLED.value, "exists": False},
-                session,
+                backend,
                 active_test_procedure,
             ),
             False,
@@ -4281,13 +4281,15 @@ async def test_check_price_response_contents_latest(pg_base_config):
         await session.commit()
 
     async with generate_async_session(pg_base_config) as session:
+        mock_admin_client = mock.Mock(spec=EnvoyAdminClient)
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=mock_admin_client)
         # This will check that there is a latest
-        assert_check_result(await check_price_response_contents({"latest": True}, session, active_test_procedure), True)
+        assert_check_result(await check_price_response_contents({"latest": True}, backend, active_test_procedure), True)
 
         # This will check that there is a latest and that the status matches the filter
         assert_check_result(
             await check_price_response_contents(
-                {"latest": True, "status": ResponseType.EVENT_COMPLETED.value}, session, active_test_procedure
+                {"latest": True, "status": ResponseType.EVENT_COMPLETED.value}, backend, active_test_procedure
             ),
             True,
         )
@@ -4295,7 +4297,7 @@ async def test_check_price_response_contents_latest(pg_base_config):
         # This will check that the filter on latest will fail if there is mismatch on the latest record
         assert_check_result(
             await check_price_response_contents(
-                {"latest": True, "status": ResponseType.EVENT_CANCELLED.value}, session, active_test_procedure
+                {"latest": True, "status": ResponseType.EVENT_CANCELLED.value}, backend, active_test_procedure
             ),
             False,
         )
@@ -4392,6 +4394,9 @@ async def test_check_price_response_contents_all(
         await session.commit()
 
     async with generate_async_session(pg_base_config) as session:
+        mock_admin_client = mock.Mock(spec=EnvoyAdminClient)
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=mock_admin_client)
+
         params: dict[str, Any] = {"all": True}
         if status is not None:
             params["status"] = status
@@ -4399,7 +4404,7 @@ async def test_check_price_response_contents_all(
         if exists is not None:
             params["exists"] = exists
 
-        assert_check_result(await check_price_response_contents(params, session, active_test_procedure), expected)
+        assert_check_result(await check_price_response_contents(params, backend, active_test_procedure), expected)
 
 
 @pytest.mark.anyio
@@ -4468,28 +4473,31 @@ async def test_check_price_response_contents_any(pg_base_config):
         await session.commit()
 
     async with generate_async_session(pg_base_config) as session:
+        mock_admin_client = mock.Mock(spec=EnvoyAdminClient)
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=mock_admin_client)
+
         # This will check that there is any response
         assert_check_result(
-            await check_price_response_contents({"latest": False}, session, active_test_procedure), True
+            await check_price_response_contents({"latest": False}, backend, active_test_procedure), True
         )
-        assert_check_result(await check_price_response_contents({}, session, active_test_procedure), True)
+        assert_check_result(await check_price_response_contents({}, backend, active_test_procedure), True)
 
         # Checks on existing values
         assert_check_result(
             await check_price_response_contents(
-                {"status": ResponseType.EVENT_COMPLETED.value}, session, active_test_procedure
+                {"status": ResponseType.EVENT_COMPLETED.value}, backend, active_test_procedure
             ),
             True,
         )
         assert_check_result(
             await check_price_response_contents(
-                {"status": ResponseType.EVENT_RECEIVED.value}, session, active_test_procedure
+                {"status": ResponseType.EVENT_RECEIVED.value}, backend, active_test_procedure
             ),
             True,
         )
         assert_check_result(
             await check_price_response_contents(
-                {"status": ResponseType.EVENT_CANCELLED.value}, session, active_test_procedure
+                {"status": ResponseType.EVENT_CANCELLED.value}, backend, active_test_procedure
             ),
             True,
         )
@@ -4497,7 +4505,7 @@ async def test_check_price_response_contents_any(pg_base_config):
         # This will check that the filter will fail if a matching record cant be found
         assert_check_result(
             await check_price_response_contents(
-                {"latest": False, "status": ResponseType.CANNOT_BE_DISPLAYED.value}, session, active_test_procedure
+                {"latest": False, "status": ResponseType.CANNOT_BE_DISPLAYED.value}, backend, active_test_procedure
             ),
             False,
         )
@@ -4506,14 +4514,14 @@ async def test_check_price_response_contents_any(pg_base_config):
         assert_check_result(
             await check_price_response_contents(
                 {"latest": False, "status": ResponseType.CANNOT_BE_DISPLAYED.value, "exists": False},
-                session,
+                backend,
                 active_test_procedure,
             ),
             True,
         )
         assert_check_result(
             await check_price_response_contents(
-                {"status": ResponseType.EVENT_COMPLETED.value, "exists": False}, session, active_test_procedure
+                {"status": ResponseType.EVENT_COMPLETED.value, "exists": False}, backend, active_test_procedure
             ),
             False,
         )
@@ -4524,35 +4532,38 @@ async def test_check_price_response_contents_empty(pg_base_config):
     """check_price_response_contents should behave correctly when the DB is empty of responses"""
     active_test_procedure = generate_class_instance(ActiveTestProcedure, step_status={}, finished_zip_path=None)
     async with generate_async_session(pg_base_config) as session:
+        mock_admin_client = mock.Mock(spec=EnvoyAdminClient)
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=mock_admin_client)
+
         # This will check that there is any response
         assert_check_result(
-            await check_price_response_contents({"latest": False}, session, active_test_procedure), False
+            await check_price_response_contents({"latest": False}, backend, active_test_procedure), False
         )
         assert_check_result(
-            await check_price_response_contents({"latest": True}, session, active_test_procedure), False
+            await check_price_response_contents({"latest": True}, backend, active_test_procedure), False
         )
-        assert_check_result(await check_price_response_contents({}, session, active_test_procedure), False)
+        assert_check_result(await check_price_response_contents({}, backend, active_test_procedure), False)
         assert_check_result(
             await check_price_response_contents(
-                {"status": ResponseType.EVENT_COMPLETED.value}, session, active_test_procedure
+                {"status": ResponseType.EVENT_COMPLETED.value}, backend, active_test_procedure
             ),
             False,
         )
         assert_check_result(
             await check_price_response_contents(
-                {"latest": True, "status": ResponseType.EVENT_COMPLETED.value}, session, active_test_procedure
+                {"latest": True, "status": ResponseType.EVENT_COMPLETED.value}, backend, active_test_procedure
             ),
             False,
         )
 
         assert_check_result(
-            await check_price_response_contents({"exists": False}, session, active_test_procedure), True
+            await check_price_response_contents({"exists": False}, backend, active_test_procedure), True
         )
         assert_check_result(
-            await check_price_response_contents({"all": True, "exists": False}, session, active_test_procedure), True
+            await check_price_response_contents({"all": True, "exists": False}, backend, active_test_procedure), True
         )
         assert_check_result(
-            await check_price_response_contents({"latest": True, "exists": False}, session, active_test_procedure), True
+            await check_price_response_contents({"latest": True, "exists": False}, backend, active_test_procedure), True
         )
 
 
@@ -4564,7 +4575,7 @@ async def test_check_price_response_contents_tag_RATE1(pg_base_config):
     )
 
     # Set up resource annotations with tagged control IDs
-    active_test_procedure.resource_annotations.time_tariff_interval_ids_by_alias = {"RATE1": 100, "RATE2": 200}
+    active_test_procedure.resource_annotations.time_tariff_interval_ids_by_alias = {"RATE1": "100", "RATE2": "200"}
 
     # Fill up the DB with responses
     async with generate_async_session(pg_base_config) as session:
@@ -4644,15 +4655,18 @@ async def test_check_price_response_contents_tag_RATE1(pg_base_config):
         await session.commit()
 
     async with generate_async_session(pg_base_config) as session:
+        mock_admin_client = mock.Mock(spec=EnvoyAdminClient)
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=mock_admin_client)
+
         # Check responses for RATE1 tag can be found
         assert_check_result(
-            await check_price_response_contents({"subject_tag": "RATE1"}, session, active_test_procedure), True
+            await check_price_response_contents({"subject_tag": "RATE1"}, backend, active_test_procedure), True
         )
 
         # Check latest response for RATE1 is EVENT_COMPLETED
         assert_check_result(
             await check_price_response_contents(
-                {"subject_tag": "RATE1", "latest": True}, session, active_test_procedure
+                {"subject_tag": "RATE1", "latest": True}, backend, active_test_procedure
             ),
             True,
         )
@@ -4661,7 +4675,7 @@ async def test_check_price_response_contents_tag_RATE1(pg_base_config):
         assert_check_result(
             await check_price_response_contents(
                 {"subject_tag": "RATE1", "latest": True, "status": ResponseType.EVENT_COMPLETED.value},
-                session,
+                backend,
                 active_test_procedure,
             ),
             True,
@@ -4671,7 +4685,7 @@ async def test_check_price_response_contents_tag_RATE1(pg_base_config):
         assert_check_result(
             await check_price_response_contents(
                 {"subject_tag": "RATE1", "latest": True, "status": ResponseType.EVENT_CANCELLED.value},
-                session,
+                backend,
                 active_test_procedure,
             ),
             False,
@@ -4679,7 +4693,7 @@ async def test_check_price_response_contents_tag_RATE1(pg_base_config):
         assert_check_result(
             await check_price_response_contents(
                 {"subject_tag": "RATE1", "latest": True, "status": ResponseType.EVENT_CANCELLED.value, "exists": False},
-                session,
+                backend,
                 active_test_procedure,
             ),
             True,
@@ -4688,7 +4702,7 @@ async def test_check_price_response_contents_tag_RATE1(pg_base_config):
         # Check RATE1 has a response of type EVENT_RECEIVED
         assert_check_result(
             await check_price_response_contents(
-                {"subject_tag": "RATE1", "status": ResponseType.EVENT_RECEIVED.value}, session, active_test_procedure
+                {"subject_tag": "RATE1", "status": ResponseType.EVENT_RECEIVED.value}, backend, active_test_procedure
             ),
             True,
         )
@@ -4696,7 +4710,7 @@ async def test_check_price_response_contents_tag_RATE1(pg_base_config):
         # Check RATE1 does not have a response of type EVENT_CANCELLED
         assert_check_result(
             await check_price_response_contents(
-                {"subject_tag": "RATE1", "status": ResponseType.EVENT_CANCELLED.value}, session, active_test_procedure
+                {"subject_tag": "RATE1", "status": ResponseType.EVENT_CANCELLED.value}, backend, active_test_procedure
             ),
             False,
         )
@@ -4704,14 +4718,14 @@ async def test_check_price_response_contents_tag_RATE1(pg_base_config):
         # Check RATE2 has EVENT_CANCELLED (different control)
         assert_check_result(
             await check_price_response_contents(
-                {"subject_tag": "RATE2", "status": ResponseType.EVENT_CANCELLED.value}, session, active_test_procedure
+                {"subject_tag": "RATE2", "status": ResponseType.EVENT_CANCELLED.value}, backend, active_test_procedure
             ),
             True,
         )
         assert_check_result(
             await check_price_response_contents(
                 {"subject_tag": "RATE2", "status": ResponseType.EVENT_CANCELLED.value, "exists": False},
-                session,
+                backend,
                 active_test_procedure,
             ),
             False,
@@ -4719,12 +4733,12 @@ async def test_check_price_response_contents_tag_RATE1(pg_base_config):
 
         # Check non-existent tag returns failure
         assert_check_result(
-            await check_price_response_contents({"subject_tag": "NONEXISTENT"}, session, active_test_procedure),
+            await check_price_response_contents({"subject_tag": "NONEXISTENT"}, backend, active_test_procedure),
             False,
         )
         assert_check_result(
             await check_price_response_contents(
-                {"subject_tag": "NONEXISTENT", "exists": False}, session, active_test_procedure
+                {"subject_tag": "NONEXISTENT", "exists": False}, backend, active_test_procedure
             ),
             False,
         )

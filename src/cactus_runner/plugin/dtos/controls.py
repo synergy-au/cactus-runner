@@ -80,8 +80,8 @@ class SiteControlGroupDefaultWrite:
     generation_limit_watts: Decimal | None
     load_limit_watts: Decimal | None
     ramp_rate_percent_per_second: Decimal | None
+    storage_target_watts: Decimal | None
     cancelled: bool = False
-    storage_target_watts: Decimal | None = None
 
 
 @dataclass(slots=True, frozen=True)

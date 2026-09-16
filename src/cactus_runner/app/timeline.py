@@ -283,7 +283,7 @@ async def generate_control_data_streams(
                 lambda e: decimal_to_watts(cast(dtos.SiteControl, e).export_limit_active_watts, True),
                 lambda e: decimal_to_watts(cast(dtos.SiteControl, e).load_limit_active_watts, False),
                 lambda e: decimal_to_watts(cast(dtos.SiteControl, e).generation_limit_active_watts, True),
-                lambda e: decimal_to_watts(getattr(e, "storage_target_active_watts", None), True),
+                lambda e: decimal_to_watts(cast(dtos.SiteControl, e).storage_target_watts, True),
             ],
         )
 
@@ -361,7 +361,7 @@ async def generate_default_control_data_streams(
             lambda e: decimal_to_watts(cast(dtos.SiteControlGroupDefault, e).export_limit_active_watts, True),
             lambda e: decimal_to_watts(cast(dtos.SiteControlGroupDefault, e).load_limit_active_watts, False),
             lambda e: decimal_to_watts(cast(dtos.SiteControlGroupDefault, e).generation_limit_active_watts, True),
-            lambda e: decimal_to_watts(getattr(e, "storage_target_active_watts", None), True),
+            lambda e: decimal_to_watts(cast(dtos.SiteControlGroupDefault, e).storage_target_watts, True),
         ],
     )
 
