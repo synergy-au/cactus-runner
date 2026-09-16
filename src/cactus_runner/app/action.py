@@ -139,7 +139,7 @@ async def action_finish_test(
 
 async def action_set_default_der_control(resolved_parameters: dict[str, Any], backend: RunnerBackend) -> None:
 
-    derp_id: str | None = resolved_parameters.get("derp_id", None)
+    derp_id: int | str | None = resolved_parameters.get("derp_id", None)
     import_limit_watts = resolved_parameters.get("opModImpLimW", None)
     export_limit_watts = resolved_parameters.get("opModExpLimW", None)
     gen_limit_watts = resolved_parameters.get("opModGenLimW", None)
@@ -157,7 +157,7 @@ async def action_set_default_der_control(resolved_parameters: dict[str, Any], ba
         derp_id = all_site_control_groups[0].site_control_group_id
 
     await backend.set_site_control_default(
-        site_control_group_id=derp_id,
+        site_control_group_id=f"{derp_id}",
         default=dtos.SiteControlGroupDefaultWrite(
             import_limit_watts=import_limit_watts,
             export_limit_watts=export_limit_watts,

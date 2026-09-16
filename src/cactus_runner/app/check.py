@@ -1,5 +1,4 @@
 import http
-import itertools
 import logging
 import math
 import re
@@ -19,11 +18,14 @@ from cactus_test_definitions.client import Check
 from cactus_test_definitions.csipaus import CSIPAusResource
 from envoy.server.crud.common import convert_lfdi_to_sfdi
 from envoy.server.exception import InvalidMappingError
+from envoy.server.model.config.server import RuntimeServerConfig as RuntimeServerConfigDefaults
 from envoy_schema.server.schema import uri
 from envoy_schema.server.schema.sep2.response import ResponseType
 from envoy_schema.server.schema.sep2.types import DataQualifierType, KindType, UomType
 
-from cactus_runner.app.envoy_common import ReadingLocation
+from cactus_runner.app.envoy_common import (
+    ReadingLocation,
+)
 from cactus_runner.app.evaluator import (
     ResolvedParam,
     resolve_variable_expressions_from_parameters,
@@ -648,139 +650,136 @@ async def do_check_readings_for_types(
     return CheckResult(True, None)
 
 
-async def do_check_single_level(
+async def do_check_levels_for_readings(
     backend: RunnerBackend,
     site_reading_types: Sequence[dtos.SiteReadingType],
     min_level: float | None,
     max_level: float | None,
+    window_period: timedelta | None = None,
 ) -> CheckResult:
     """Checks the SiteReadings presented by the backend for a specified set of SiteReadingType ID's.
 
-    Makes sure that all levels are met. "Valid" is that ALL of the site_reading_types
+    Makes sure that all readings meet the specified levels. "Valid" is that ALL of the site_reading_types
     supplied meets the conditions. Min max levels are >= and <= respectively for valid result.
-    The query retrieves the latest readings, meaning the latest point a time period window for reading
-    has occurred i.e. time_period_start + time_period_seconds
+
+    If window_period is None, every reading for the site_reading_types is checked. Otherwise only readings
+    within window_period of the latest received reading are checked - the end of the window is found by
+    retrieving the max `created_time` of all readings corresponding to the supplied `site_reading_types`, and
+    included readings are those with a reading period that lies wholly within
+    time_period_start >= latest created_time - window_period.
 
     Args:
         backend: backend responsible for presenting the readings for verification
         site_reading_types: list of SiteReadingType's to check readings
-        min_level: If not None - ensure that at all SiteReadingType last SiteReading's value above this
-        max_level: If not None - ensure that at all SiteReadingType last SiteReading's value below this
+        min_level: If not None - ensure that all readings are above this
+        max_level: If not None - ensure that all readings are below this
+        window_period: If not None - restrict the check to readings within this trailing window of the latest
+            received reading
 
     Returns:
-        CheckResult - True if falls above and/or below limits else False
+        CheckResult - True if all readings fall above and/or below limits else False
     """
-    srt_dict = {srt.site_reading_type_id: srt for srt in site_reading_types}
+    srt_ids = [srt.site_reading_type_id for srt in site_reading_types]
+    srt_pow10s_by_id = dict((srt.site_reading_type_id, srt.power_of_ten_multiplier) for srt in site_reading_types)
 
-    site_readings = await get_site_readings_ordered(backend, list(srt_dict))
+    if window_period is None:
+        readings = await backend.get_site_readings(srt_ids)
+        window_description = ""
+    else:
+        # Retrieve latest reading entry creation time - should be trigger time
+        latest_reading = await backend.get_latest_site_reading(srt_ids, method="created_time")
+        if latest_reading is None:
+            return CheckResult(False, "No readings found for level comparison")
+        latest_time = latest_reading.created_time
 
-    # Sort and group all readings by their respective site reading types
-    sorted_readings = sorted(list(site_readings), key=lambda x: x.site_reading_type_id)
-    grouped: itertools.groupby[str, dtos.SiteReading] = itertools.groupby(
-        sorted_readings, key=lambda x: x.site_reading_type_id
-    )
+        start_time = latest_time - window_period
 
-    # Gather the latest readings per site reading type
-    latest_readings_dict = {srt_id: max(group, key=site_reading_time_end, default=None) for srt_id, group in grouped}
-
-    # Ensure that there is at least a reading for each site reading type
-    missing_reading_srts = [srt_dict[srt_id] for srt_id in srt_dict if latest_readings_dict.get(srt_id) is None]
-    if missing_reading_srts:
-        return CheckResult(False, f"No readings supplied for SiteReadingTypes {missing_reading_srts}")
-
-    # Join the readings and readingtypes to enable calculation of underlying values next (using power of ten)
-    latest_readings: list[tuple[dtos.SiteReading, dtos.SiteReadingType]] = [
-        (sr, srt_dict[srt_id]) for srt_id, sr in latest_readings_dict.items() if sr is not None
-    ]
-
-    latest_values = [sr.value * 10**srt.power_of_ten_multiplier for sr, srt in latest_readings]
-    failure_msg = ""
-
-    # Perform the comparisons
-    if min_level is not None and any(v < min_level for v in latest_values):
-        failure_msg += f"Not all readings above minimum target level of {min_level}."
-    if max_level is not None and any(v > max_level for v in latest_values):
-        if failure_msg:
-            failure_msg += " "
-        failure_msg += f"Not all readings below maximum target level of {max_level}."
-
-    return CheckResult(False, f"{failure_msg} Got {latest_values}.") if failure_msg else CheckResult(True, None)
-
-
-async def do_check_levels_for_period(
-    backend: RunnerBackend,
-    site_reading_types: Sequence[dtos.SiteReadingType],
-    min_level: float | None,
-    max_level: float | None,
-    window_period: timedelta,
-) -> CheckResult:
-    """Performs a level check over a specified window of time.
-
-    The end of the window is the latest start_time + duration - window_period.
-    The included readings include those that have a reading period that lies wholly within
-    the `time_period_start >= t >= now - window_period` window i.e. if startTime of
-    reading falls outside, it will not be considered.
-
-    Args:
-        backend: utility server representation responsible for serving up state.
-        site_reading_types: list of SiteReadingType's to check readings
-        min_level: If not None ensure that all SiteReadingType SiteReading values above this
-        max_level: If not None ensure that all SiteReadingType SiteReading values below this
-        window_period: period from now to start of window that readings must fall in wholly.
-
-    Returns:
-        CheckResult - True if all readings for window are above and/or below min max levels else False
-    """
-    srt_dict = {srt.site_reading_type_id: srt for srt in site_reading_types}
-
-    # Retrieve all readings between now and the window-period start.
-    site_readings = await get_site_readings_ordered(backend, list(srt_dict))
-
-    if not site_readings:
-        return CheckResult(False, "No readings presented by backend")
-
-    # Calculate readings window
-    window_end = max((sr.time_period_start + sr.time_period_duration) for sr in site_readings)
-    window_start = window_end - window_period
-
-    # Shape readings and filter to ensure they lie within the window
-    readings = [
-        (sr, srt_dict[sr.site_reading_type_id])
-        for sr in site_readings
-        if sr.time_period_start >= window_start and sr.time_period_start + sr.time_period_duration <= window_end
-    ]
+        # Retrieve all readings within the window. For this we only count those with "completed" reading
+        # periods. Those periods that have a time_period_start before the start_time are discarded.
+        all_overlapping_readings = await backend.get_site_readings(srt_ids, start_time=start_time, end_time=latest_time)
+        readings = [
+            rdg
+            for rdg in all_overlapping_readings
+            if rdg.time_period_start >= start_time and (rdg.time_period_start + rdg.time_period_duration) <= latest_time
+        ]
+        window_description = f"; for window size {window_period.total_seconds()}s."
 
     # No readings returned
     if not readings:
         return CheckResult(False, "No readings found for level comparison")
 
-    # Convert readings to numbers and ensuring they fall within window
-    window_values = [sr.value * 10**srt.power_of_ten_multiplier for sr, srt in readings]
+    values = [rdg.value * (10 ** srt_pow10s_by_id[rdg.site_reading_type_id]) for rdg in readings]
     failure_msg = ""
 
-    # Confirm readings fall within the window
-    if min_level is not None and any(v < min_level for v in window_values):
+    if min_level is not None and any(v < min_level for v in values):
         failure_msg += f"Not all readings above minimum target level of {min_level}."
-    if max_level is not None and any(v > max_level for v in window_values):
+    if max_level is not None and any(v > max_level for v in values):
         if failure_msg:
             failure_msg += " "
         failure_msg += f"Not all readings below maximum target level of {max_level}."
 
     return (
-        CheckResult(False, f"{failure_msg} Got {window_values}; for window size {window_period.total_seconds()}s.")
+        CheckResult(False, f"{failure_msg} Got {values}{window_description}.")
         if failure_msg
         else CheckResult(True, None)
     )
 
 
+async def do_check_latest_reading_level(
+    backend: RunnerBackend,
+    site_reading_types: Sequence[dtos.SiteReadingType],
+    min_level: float | None,
+    max_level: float | None,
+) -> CheckResult:
+    """Checks that the LATEST SiteReading (by reading period end, i.e. time_period_start + time_period_seconds) for
+    each of the supplied SiteReadingType's falls within the specified level.
+
+    Unlike do_check_levels_for_readings (which checks every historical reading, optionally windowed), this only
+    considers the single most recent reading per type. Suited to gating a Preconditions check on "the device is
+    currently operating at roughly the right level" rather than asserting behaviour across a whole test.
+
+    Args:
+        backend: utility server representation responsible for serving up state.
+        site_reading_types: list of SiteReadingType's to check readings
+        min_level: If not None - ensure the latest reading is above this
+        max_level: If not None - ensure the latest reading is below this
+
+    Returns:
+        CheckResult - True if the latest reading for every type is above/below the supplied limits.
+    """
+    failure_msg = ""
+    for srt in site_reading_types:
+        latest_reading = await backend.get_latest_site_reading([srt.site_reading_type_id], method="end_time")
+        if latest_reading is None:
+            return CheckResult(False, f"No readings found under MirrorMeterReading {srt.mrid}")
+        value = latest_reading.value * (10**srt.power_of_ten_multiplier)
+
+        if min_level is not None and value < min_level:
+            failure_msg += f"Not all latest readings above minimum target level of {min_level}."
+        if max_level is not None and value > max_level:
+            if failure_msg:
+                failure_msg += " "
+            failure_msg += f"Not all latest readings below maximum target level of {max_level}."
+
+        if failure_msg:
+            return CheckResult(False, f"{failure_msg} (Interpreted value {value}) under MirrorMeterReading {srt.mrid}.")
+
+    return CheckResult(True, None)
+
+
 async def do_check_reading_levels_for_types(
-    backend: RunnerBackend, site_reading_types: Sequence[dtos.SiteReadingType], resolved_parameters: dict[str, Any]
+    backend: RunnerBackend,
+    site_reading_types: Sequence[dtos.SiteReadingType],
+    resolved_parameters: dict[str, Any],
 ) -> CheckResult:
     """Performs selected reading value level checks.
 
-    It assumes that reading type checks have been performed prior. The type of check depends whether a window
-    period has been provided or not. No window period means only the most recent values are checked for level.
-    With window period means all readings are checked to have fallen in the acceptable region for values.
+    It assumes that reading type checks have been performed prior. The type of check depends on the parameters
+    provided:
+    - latest_reading_only=True only considers the single most recent reading per type (suited to gating a
+      Preconditions check on current device state). Mutually exclusive with window_seconds.
+    - Otherwise, no window period means all readings for the test are checked, and a window period means only
+      readings within that trailing window (relative to the latest reading) are checked.
 
     Args:
         backend: utility server representation responsible for serving up state.
@@ -793,14 +792,14 @@ async def do_check_reading_levels_for_types(
     max_level = resolved_parameters.get("maximum_level")
     min_level = resolved_parameters.get("minimum_level")
     window_seconds = resolved_parameters.get("window_seconds")
-    if all(el is None for el in [max_level, min_level, window_seconds]):
+    latest_reading_only = resolved_parameters.get("latest_reading_only", False)
+    if all(el is None for el in [max_level, min_level, window_seconds]) and not latest_reading_only:
         # Nothing to do, check passes
         return CheckResult(True, None)
-    if not window_seconds:
-        return await do_check_single_level(backend, site_reading_types, min_level, max_level)
-    return await do_check_levels_for_period(
-        backend, site_reading_types, min_level, max_level, timedelta(seconds=window_seconds)
-    )
+    if latest_reading_only:
+        return await do_check_latest_reading_level(backend, site_reading_types, min_level, max_level)
+    window_period = timedelta(seconds=window_seconds) if window_seconds else None
+    return await do_check_levels_for_readings(backend, site_reading_types, min_level, max_level, window_period)
 
 
 def timestamp_on_minute_boundary(d: datetime) -> bool:
@@ -939,6 +938,7 @@ async def do_check_site_readings_and_params(
 
     if check_duration:
         check_results.append(await do_check_readings_for_duration(backend, site_reading_types))
+        check_results.append(await do_check_readings_match_post_rate(backend, site_reading_types))
 
     minimum_count: int | None = resolved_parameters.get("minimum_count", None)
     check_results.append(await do_check_readings_for_types(backend, site_reading_types, minimum_count))
@@ -974,6 +974,65 @@ async def do_check_readings_for_duration(
         return CheckResult(False, f"{' and '.join(error_parts)} found")
 
     return CheckResult(True, "All readings have a valid time_period_seconds set")
+
+
+async def do_check_readings_match_post_rate(
+    backend: RunnerBackend, site_reading_types: Sequence[dtos.SiteReadingType]
+) -> CheckResult:
+    """Check that all readings have a time_period_seconds matching the mup_postrate_seconds that was configured
+    at the time the reading was taken.
+
+    Post rate changes are rare, so rather than precisely reasoning about a client's polling/aggregation lag in
+    each direction, a reading taken close to a rate change (within the larger of the old/new rate either side of
+    the change) is allowed to match either rate. This covers both a client lagging on adopting a new rate, and a
+    client re-aggregating older fine-grained samples into one coarser, retroactively-dated reading.
+
+    SWG consensus on ALL-10 is that a client may either finish its in-progress collection window at the old rate
+    before switching, or discard it and re-baseline on the new rate immediately. This check only ever inspects readings
+    that are actually present, so a gap left by a discarded window is not penalised here."""
+
+    default_post_rate_seconds = RuntimeServerConfigDefaults().mup_postrate_seconds
+    config_history = await backend.get_runtime_config_history()  # oldest -> newest by changed_time
+
+    # Collapse config_history down to the points where the post rate actually changed
+    transitions: list[tuple[datetime, int, int]] = []  # (changed_time, old_rate, new_rate)
+    current_rate = default_post_rate_seconds
+    for config in config_history:
+        if config.mup_postrate_seconds is None or config.mup_postrate_seconds == current_rate:
+            continue
+        transitions.append((config.changed_time, current_rate, config.mup_postrate_seconds))
+        current_rate = config.mup_postrate_seconds
+
+    mismatched_count = 0
+    for reading_type in site_reading_types:
+        reading_data = await get_site_readings_ordered(backend, [reading_type.site_reading_type_id])
+        for reading in reading_data:
+            expected_post_rate_seconds = default_post_rate_seconds
+            for changed_time, _, new_rate in transitions:
+                if changed_time > reading.time_period_start:
+                    break
+                expected_post_rate_seconds = new_rate
+
+            time_period_seconds = int(reading.time_period_duration.total_seconds())
+            if time_period_seconds == expected_post_rate_seconds:
+                continue
+
+            near_a_transition = any(
+                abs((reading.time_period_start - changed_time).total_seconds()) <= max(old_rate, new_rate)
+                and time_period_seconds in (old_rate, new_rate)
+                for changed_time, old_rate, new_rate in transitions
+            )
+            if not near_a_transition:
+                mismatched_count += 1
+
+    if mismatched_count > 0:
+        return CheckResult(
+            False,
+            f"{mismatched_count} readings with time_period_seconds not matching "
+            "the MUP post rate configured at the time they were taken",
+        )
+
+    return CheckResult(True, "All readings have a time_period_seconds matching the configured post rate")
 
 
 async def check_readings_site_active_power(
@@ -1741,7 +1800,7 @@ def csip_aus_resource_to_match_uri(resource: CSIPAusResource) -> str:  # noqa: C
         case CSIPAusResource.ConsumptionTariffInterval:
             return resolve_format(uri.ConsumptionTariffIntervalUri)
         case _:
-            raise Exception(f"Unsupported resource type {resource}")
+            raise ValueError(f"Unsupported resource type {resource}")
 
 
 def check_resource_requests(resolved_parameters: dict[str, Any], request_history: list[RequestEntry]) -> CheckResult:

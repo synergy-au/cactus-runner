@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 __all__ = ["RuntimeConfig", "RuntimeConfigWrite"]
 
@@ -17,6 +18,11 @@ class RuntimeConfig:
     tti_pollrate_seconds: int | None
     disable_edev_registration: bool | None
     site_control_pow10_encoding: int | None
+
+    deleted_time: datetime | None
+    archive_time: datetime | None
+    created_time: datetime
+    changed_time: datetime
 
 
 @dataclass(slots=True, frozen=True)

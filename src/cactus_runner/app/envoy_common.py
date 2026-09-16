@@ -8,11 +8,13 @@ from envoy.server.model.archive.doe import (
     ArchiveDynamicOperatingEnvelope,
     ArchiveSiteControlGroupDefault,
 )
+from envoy.server.model.archive.server import ArchiveRuntimeServerConfig
 from envoy.server.model.doe import (
     DynamicOperatingEnvelope,
     SiteControlGroup,
     SiteControlGroupDefault,
 )
+from envoy.server.model.server import RuntimeServerConfig
 from envoy.server.model.site import Site
 from envoy.server.model.site_reading import SiteReading, SiteReadingType
 from envoy.server.model.tariff import Tariff, TariffComponent, TariffGeneratedRate
@@ -148,6 +150,26 @@ async def get_site_readings(session: AsyncSession, site_reading_type: SiteReadin
     )
 
     return response.scalars().all()
+
+
+async def get_runtime_server_config_history(
+    session: AsyncSession,
+) -> list[RuntimeServerConfig | ArchiveRuntimeServerConfig]:
+    """Returns all known RuntimeServerConfig states (current + archived), ordered oldest -> newest by changed_time."""
+
+    live_config = (
+        (await session.execute(select(RuntimeServerConfig).order_by(RuntimeServerConfig.changed_time))).scalars().all()
+    )
+    archived_config = (
+        (await session.execute(select(ArchiveRuntimeServerConfig).order_by(ArchiveRuntimeServerConfig.changed_time)))
+        .scalars()
+        .all()
+    )
+
+    # It's a fair assumption that the live_config will have changed_time > archived_config
+    history = list(chain(archived_config, live_config))
+    history.sort(key=lambda c: c.changed_time)
+    return history
 
 
 async def get_reading_counts_grouped_by_reading_type(session: AsyncSession) -> dict[SiteReadingType, int]:

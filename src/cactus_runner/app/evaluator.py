@@ -8,6 +8,7 @@ from cactus_test_definitions.variable_expressions import (
     Expression,
     NamedVariable,
     NamedVariableType,
+    Negate,
     OperationType,
 )
 
@@ -31,11 +32,13 @@ class ResolvedParam:
 
 def is_resolvable_variable(v: Any) -> bool:  # noqa: ANN401
     """Returns True if the supplied value is a variable definition that requires resolving"""
-    return isinstance(v, NamedVariable) or isinstance(v, Expression) or isinstance(v, Constant)
+    return isinstance(v, NamedVariable) or isinstance(v, Expression) or isinstance(v, Constant) or isinstance(v, Negate)
 
 
 async def resolve_variable(  # noqa: C901
-    resolver: ExpressionResolver, active_test_procedure: ActiveTestProcedure, v: NamedVariable | Expression | Constant
+    resolver: ExpressionResolver,
+    active_test_procedure: ActiveTestProcedure,
+    v: NamedVariable | Expression | Constant | Negate,
 ) -> Any:  # noqa: ANN401
     """Attempts to resolve the specified variable (potentially from the database)
 
@@ -102,8 +105,6 @@ async def resolve_variable(  # noqa: C901
             # Storage extension
             case NamedVariableType.DERSETTING_SET_MIN_WH:
                 return await resolver.resolve_named_variable_der_setting_min_wh()
-            case NamedVariableType.DERCAPABILITY_NEG_RTG_MAX_CHARGE_RATE_W:
-                return await resolver.resolve_named_variable_neg_der_rating_max_charge_rate_w()
         raise UnresolvableVariableError(f"Unable to resolve NamedVariable of type {v.variable} ({int(v.variable)})")
     elif isinstance(v, Expression):
         lhs = await resolve_variable(resolver, active_test_procedure, v.lhs_operand)
@@ -135,6 +136,12 @@ async def resolve_variable(  # noqa: C901
 
         except Exception as err:
             raise UnresolvableVariableError(f"Unable to apply {v.operation} to operands: {err}") from err
+    elif isinstance(v, Negate):
+        operand_value = await resolve_variable(resolver, active_test_procedure, v.operand)
+        try:
+            return -operand_value
+        except Exception as err:
+            raise UnresolvableVariableError(f"Unable to negate operand: {err}") from err
     else:
         raise UnresolvableVariableError(f"Unsupported variable type {type(v)}")
 
