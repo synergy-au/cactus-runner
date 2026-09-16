@@ -89,6 +89,7 @@ ACTION_TYPE_TO_HANDLER: dict[str, str | None] = {
     "remove-function-set-assignment": "action_remove_function_set_assignment",
     "create-wellknown-route": "action_create_wellknown_route",
     "add-proxy-route": "action_add_proxy_route",
+    "force-response-status": None,  # To be added in a seperate PR
 }
 
 

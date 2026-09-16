@@ -2,6 +2,7 @@ import itertools
 import logging
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
+from typing import Literal
 
 from cactus_schema.runner import EndDeviceMetadata, WarningEntry
 from envoy.server.mapper.sep2.pub_sub import SubscriptionMapper
@@ -31,12 +32,13 @@ from envoy.server.model.archive import (
 )
 from envoy_schema.admin.schema.site_control import SiteControlGroupRequest
 from envoy_schema.server.schema.sep2.response import ResponseType
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from cactus_runner.app.envoy_common import (
     get_reading_counts_grouped_by_reading_type,
+    get_runtime_server_config_history,
     get_sites,
 )
 from cactus_runner.app.health import is_admin_api_healthy, is_db_healthy
@@ -47,7 +49,10 @@ from cactus_runner.plugin import dtos
 from cactus_runner.plugin.backends.common import RunnerBackend
 from cactus_runner.plugin.backends.envoy import EnvoyAdminClient, mappers
 from cactus_runner.plugin.backends.envoy.admin_client import get_exclusive_site_group
-from cactus_runner.plugin.backends.envoy.mappers import map_envoy_site_control_group_default_to_dto
+from cactus_runner.plugin.backends.envoy.mappers import (
+    map_envoy_db_runtime_config_to_dto,
+    map_envoy_site_control_group_default_to_dto,
+)
 from cactus_runner.plugin.backends.envoy.resolver import EnvoyResolver
 from cactus_runner.plugin.backends.models import FinalSerializableReportingData, RunnerBackendTestContext
 
@@ -213,14 +218,8 @@ class EnvoyBackend(RunnerBackend):
     ) -> Sequence[dtos.SiteReading]:
         """Returns all SiteReadings for the given SiteReadingType IDs.
 
-        The ``start_time`` and ``end_time`` window parameters are not applied in this implementation.
-        Because the envoy instance is scoped to the test lifetime, all recorded readings are relevant
-        and time filtering is deferred to the calling check logic.
-
         Args:
             site_reading_type_ids: IDs of the SiteReadingTypes whose readings should be returned.
-            start_time: Unused in this implementation.
-            end_time: Unused in this implementation.
 
         Returns:
             All SiteReadings associated with the supplied SiteReadingType IDs.
@@ -230,11 +229,52 @@ class EnvoyBackend(RunnerBackend):
             srt_ids = [int(srt_id) for srt_id in site_reading_type_ids]
             stmt = stmt.where(SiteReading.site_reading_type_id.in_(srt_ids))
 
+        if start_time is not None or end_time is not None:
+            if end_time is not None:
+                stmt = stmt.where(SiteReading.time_period_start < end_time)
+
+            if start_time is not None:
+                end_time_expr = SiteReading.time_period_start + SiteReading.time_period_seconds * text(
+                    "interval '1 second'"
+                )
+                stmt = stmt.where(end_time_expr >= start_time)
+
         async with self._session_factory() as session:
             results = await session.execute(stmt)
 
         readings = results.scalars().all()
         return [mappers.map_envoy_site_reading_to_dto(rdg) for rdg in readings]
+
+    async def get_latest_site_reading(
+        self,
+        site_reading_type_ids: Sequence[str] | None,
+        *,
+        method: Literal["created_time"] | Literal["end_time"] = "created_time",
+    ) -> dtos.SiteReading | None:
+        stmt = select(SiteReading).limit(1)
+
+        match method:
+            case "end_time":
+                end_time_expr = SiteReading.time_period_start + SiteReading.time_period_seconds * text(
+                    "interval '1 second'"
+                )
+                stmt = stmt.order_by(end_time_expr.desc())
+            case "created_time":
+                stmt = stmt.order_by(SiteReading.created_time.desc())
+            case _:
+                raise ValueError(f"Unsupported method {method}")
+
+        if site_reading_type_ids is not None:
+            srt_ids = [int(srt_id) for srt_id in site_reading_type_ids]
+            stmt = stmt.where(SiteReading.site_reading_type_id.in_(srt_ids))
+
+        async with self._session_factory() as session:
+            results = await session.execute(stmt)
+            reading = results.scalar_one_or_none()
+            if reading is None:
+                return None
+            else:
+                return mappers.map_envoy_site_reading_to_dto(reading)
 
     async def get_subscriptions(
         self,
@@ -499,6 +539,15 @@ class EnvoyBackend(RunnerBackend):
 
         all_controls = itertools.chain(active_control_groups, deleted_control_groups)
         return [map_envoy_site_control_group_default_to_dto(ctrl) for ctrl in all_controls]
+
+    async def get_runtime_config_history(self) -> Sequence[dtos.RuntimeConfig]:
+        """Fetches the current and all historical values for RuntimeConfig
+
+        Returns:
+            All RuntimeConfig values that have existed, ordered by their changed_time (ASC)"""
+        async with self._session_factory() as session:
+            config_history = await get_runtime_server_config_history(session)
+            return [map_envoy_db_runtime_config_to_dto(cfg) for cfg in config_history]
 
     async def update_runtime_config(self, config: dtos.RuntimeConfigWrite) -> None:
         """Applies runtime configuration changes to the envoy server via the admin API.

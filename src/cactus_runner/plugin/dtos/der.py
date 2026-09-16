@@ -48,7 +48,7 @@ class SiteDERSetting:
     max_wh_value: int | None
     min_pf_over_excited_displacement: int | None
     min_pf_under_excited_displacement: int | None
-    # Placeholders for the storage extension
+    # Storage extension
     min_wh_value: int | None
     vpp_modes_enabled: int | None
 
