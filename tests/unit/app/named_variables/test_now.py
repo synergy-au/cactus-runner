@@ -4,11 +4,16 @@ import freezegun
 import pytest
 from assertical.asserts.time import assert_nowish
 
-from cactus_runner.app import resolvers
+from cactus_runner.plugin.backends.resolver import (
+    AEST,
+    resolve_named_variable_now,
+    resolve_named_variable_now_day,
+    resolve_named_variable_now_hour,
+)
 
 
 def test_resolve_named_variable_now():
-    actual = resolvers.resolve_named_variable_now()
+    actual = resolve_named_variable_now()
     assert actual.tzinfo
     assert_nowish(actual)
 
@@ -18,27 +23,27 @@ def test_resolve_named_variable_now():
     [
         (
             datetime(2021, 11, 1, 4, 0, 0, 0, tzinfo=UTC),
-            datetime(2021, 11, 1, 14, 0, 0, 0, tzinfo=resolvers.AEST),
+            datetime(2021, 11, 1, 14, 0, 0, 0, tzinfo=AEST),
         ),
         (
-            datetime(2022, 11, 14, 0, 0, 0, 0, tzinfo=resolvers.AEST),
-            datetime(2022, 11, 14, 0, 0, 0, 0, tzinfo=resolvers.AEST),
+            datetime(2022, 11, 14, 0, 0, 0, 0, tzinfo=AEST),
+            datetime(2022, 11, 14, 0, 0, 0, 0, tzinfo=AEST),
         ),
         (
             datetime(2021, 10, 19, 20, 2, 3, 4, tzinfo=UTC),
-            datetime(2021, 10, 20, 6, 0, 0, 0, tzinfo=resolvers.AEST),
+            datetime(2021, 10, 20, 6, 0, 0, 0, tzinfo=AEST),
         ),
         (
-            datetime(2022, 9, 1, 1, 2, 3, 4, tzinfo=resolvers.AEST),
-            datetime(2022, 9, 1, 1, 0, 0, 0, tzinfo=resolvers.AEST),
+            datetime(2022, 9, 1, 1, 2, 3, 4, tzinfo=AEST),
+            datetime(2022, 9, 1, 1, 0, 0, 0, tzinfo=AEST),
         ),
     ],
 )
 def test_resolve_named_variable_now_hour(now: datetime, expected: datetime):
 
     with freezegun.freeze_time(now):
-        actual = resolvers.resolve_named_variable_now_hour()
-        assert actual.tzinfo == resolvers.AEST
+        actual = resolve_named_variable_now_hour()
+        assert actual.tzinfo == AEST
         assert actual == expected, f"Diff={(actual - expected).total_seconds()} seconds"
 
     assert actual.minute == 0
@@ -51,22 +56,22 @@ def test_resolve_named_variable_now_hour(now: datetime, expected: datetime):
     [
         (
             datetime(2021, 11, 1, 4, 0, 0, 0, tzinfo=UTC),
-            datetime(2021, 11, 1, 0, 0, 0, 0, tzinfo=resolvers.AEST),
+            datetime(2021, 11, 1, 0, 0, 0, 0, tzinfo=AEST),
         ),
         (
             datetime(2021, 11, 1, 20, 0, 0, 0, tzinfo=UTC),
-            datetime(2021, 11, 2, 0, 0, 0, 0, tzinfo=resolvers.AEST),
+            datetime(2021, 11, 2, 0, 0, 0, 0, tzinfo=AEST),
         ),
         (
             datetime(2021, 11, 1, 20, 1, 2, 3, tzinfo=UTC),
-            datetime(2021, 11, 2, 0, 0, 0, 0, tzinfo=resolvers.AEST),
+            datetime(2021, 11, 2, 0, 0, 0, 0, tzinfo=AEST),
         ),
     ],
 )
 def test_resolve_named_variable_now_day(now: datetime, expected: datetime):
     with freezegun.freeze_time(now):
-        actual = resolvers.resolve_named_variable_now_day()
-        assert actual.tzinfo == resolvers.AEST
+        actual = resolve_named_variable_now_day()
+        assert actual.tzinfo == AEST
         assert actual == expected, f"Diff={(actual - expected).total_seconds()} seconds"
 
     assert actual.hour == 0

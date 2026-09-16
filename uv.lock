@@ -164,6 +164,18 @@ wheels = [
 ]
 
 [[package]]
+name = "apluggy"
+version = "1.1.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pluggy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b8/e8/a597d779a3fbb5e4628bf54d90df72471e76e42fce922da816847e2dc206/apluggy-1.1.2.tar.gz", hash = "sha256:421700438e6f3f47d284a5a3bb5d3f2369c70e9165f89f3785d09493a8f5db73", size = 26477, upload-time = "2025-11-20T20:46:13.923Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bd/28/01d0136b3e8acace61711b56a309637e78f7e6faa39e9a88661c8da489d1/apluggy-1.1.2-py3-none-any.whl", hash = "sha256:18c4c0c631fe9d98be65375c6e73de3bc4b881a39a88bd6b48dd683c91f18e0b", size = 11883, upload-time = "2025-11-20T20:46:12.439Z" },
+]
+
+[[package]]
 name = "asgi-lifespan"
 version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -277,6 +289,7 @@ name = "cactus-runner"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
+    { name = "apluggy" },
     { name = "asyncpg" },
     { name = "cactus-schema" },
     { name = "cactus-test-definitions" },
@@ -319,6 +332,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.11.12,<4" },
+    { name = "apluggy", specifier = ">=1.1.2" },
     { name = "asgi-lifespan", marker = "extra == 'test'" },
     { name = "assertical", marker = "extra == 'test'", specifier = ">=0.4.0" },
     { name = "asyncpg", specifier = ">=0.30.0,<1" },
