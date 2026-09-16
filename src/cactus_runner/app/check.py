@@ -1800,7 +1800,7 @@ def csip_aus_resource_to_match_uri(resource: CSIPAusResource) -> str:  # noqa: C
         case CSIPAusResource.ConsumptionTariffInterval:
             return resolve_format(uri.ConsumptionTariffIntervalUri)
         case _:
-            raise Exception(f"Unsupported resource type {resource}")
+            raise ValueError(f"Unsupported resource type {resource}")
 
 
 def check_resource_requests(resolved_parameters: dict[str, Any], request_history: list[RequestEntry]) -> CheckResult:

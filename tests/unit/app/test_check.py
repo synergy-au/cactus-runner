@@ -5010,7 +5010,16 @@ def test_resolve_format(fmt: str, replace: str, expected: str):
 def test_csip_aus_resource_to_match_uri():
     all_uris: set[str] = set()
     for r in CSIPAusResource:
-        if r in {CSIPAusResource.Notification}:
+        if r in {
+            CSIPAusResource.Notification,  # No URI for Notificaions
+            CSIPAusResource.UsagePointList,  # Unsupported in envoy
+            CSIPAusResource.UsagePoint,  # Unsupported in envoy
+            CSIPAusResource.MeterReadingList,  # Unsupported in envoy
+            CSIPAusResource.MeterReading,  # Unsupported in envoy
+            CSIPAusResource.ReadingType,  # Unsupported in envoy
+        }:
+            with pytest.raises(ValueError):
+                csip_aus_resource_to_match_uri(r)
             continue
 
         uri = csip_aus_resource_to_match_uri(r)
