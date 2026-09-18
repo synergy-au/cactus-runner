@@ -347,6 +347,7 @@ async def action_set_comms_rate(resolved_parameters: dict[str, Any], backend: Ru
     tti_list_poll_seconds: int | None = resolved_parameters.get("tti_list_poll_seconds", None)
 
     mup_post_seconds: int | None = resolved_parameters.get("mup_post_seconds", None)
+    mup_list_poll_seconds: int | None = resolved_parameters.get("mup_list_poll_seconds", None)
     edev_post_seconds: int | None = resolved_parameters.get("edev_post_seconds", None)
 
     # If we have any of the server config values set - send that request
@@ -358,6 +359,7 @@ async def action_set_comms_rate(resolved_parameters: dict[str, Any], backend: Ru
             derp_list_poll_seconds,
             fsa_list_poll_seconds,
             mup_post_seconds,
+            mup_list_poll_seconds,
             tp_list_poll_seconds,
             tti_list_poll_seconds,
         ]
@@ -370,6 +372,7 @@ async def action_set_comms_rate(resolved_parameters: dict[str, Any], backend: Ru
                 derpl_pollrate_seconds=derp_list_poll_seconds,
                 fsal_pollrate_seconds=fsa_list_poll_seconds,
                 mup_postrate_seconds=mup_post_seconds,
+                mupl_pollrate_seconds=mup_list_poll_seconds,
                 tp_pollrate_seconds=tp_list_poll_seconds,
                 tti_pollrate_seconds=tti_list_poll_seconds,
             )

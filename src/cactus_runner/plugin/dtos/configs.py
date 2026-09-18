@@ -14,6 +14,7 @@ class RuntimeConfig:
     derpl_pollrate_seconds: int | None
     fsal_pollrate_seconds: int | None
     mup_postrate_seconds: int | None
+    mupl_pollrate_seconds: int | None
     tp_pollrate_seconds: int | None
     tti_pollrate_seconds: int | None
     disable_edev_registration: bool | None
@@ -35,6 +36,7 @@ class RuntimeConfigWrite:
     derpl_pollrate_seconds: int | None = None
     fsal_pollrate_seconds: int | None = None
     mup_postrate_seconds: int | None = None
+    mupl_pollrate_seconds: int | None = None
     tp_pollrate_seconds: int | None = None
     tti_pollrate_seconds: int | None = None
     disable_edev_registration: bool | None = None
