@@ -2,50 +2,21 @@ import logging
 import math
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 from cactus_test_definitions.client import Action
-from envoy.server.crud.doe import select_site_control_groups
-from envoy.server.model.site import Site
-from envoy_schema.admin.schema.config import (
-    RuntimeServerConfigRequest,
-)
-from envoy_schema.admin.schema.pricing import (
-    TariffComponentRequest,
-    TariffGeneratedRateRequest,
-    TariffRequest,
-)
-from envoy_schema.admin.schema.site import SiteUpdateRequest
-from envoy_schema.admin.schema.site_control import (
-    SiteControlGroupDefaultRequest,
-    SiteControlGroupRequest,
-    SiteControlRequest,
-    UpdateDefaultValue,
-)
 from envoy_schema.server.schema.sep2.types import (
     CommodityType,
     CurrencyCode,
     DataQualifierType,
+    DeviceCategory,
     FlowDirectionType,
     KindType,
     PhaseCode,
     RoleFlagsType,
     UomType,
 )
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from cactus_runner.app.envoy_admin_client import EnvoyAdminClient
-from cactus_runner.app.envoy_common import (
-    count_all_site_controls_with_cancelled,
-    get_active_site,
-    get_all_site_control_groups,
-    get_all_sites,
-    get_exclusive_site_group,
-    get_tariff_components,
-    get_tariff_generated_rates,
-    get_tariffs,
-)
 from cactus_runner.app.evaluator import (
     resolve_variable_expressions_from_parameters,
 )
@@ -58,6 +29,8 @@ from cactus_runner.models import (
     RunnerState,
     WellKnownEntry,
 )
+from cactus_runner.plugin import dtos
+from cactus_runner.plugin.backends.common import RunnerBackend, get_site_control_groups_ordered
 
 logger = logging.getLogger(__name__)
 
@@ -154,21 +127,19 @@ async def action_remove_steps(
 
 
 async def action_finish_test(
-    resolved_parameters: dict[str, Any], runner_state: RunnerState, session: AsyncSession
+    resolved_parameters: dict[str, Any], runner_state: RunnerState, backend: RunnerBackend
 ) -> None:
 
     fail_message: str | None = resolved_parameters.get("fail_message", None)
     if fail_message:
         runner_state.fail_message = fail_message
 
-    await finish_active_test(runner_state, session)
+    await finish_active_test(runner_state, backend)
 
 
-async def action_set_default_der_control(
-    resolved_parameters: dict[str, Any], session: AsyncSession, envoy_client: EnvoyAdminClient
-) -> None:
+async def action_set_default_der_control(resolved_parameters: dict[str, Any], backend: RunnerBackend) -> None:
 
-    derp_id: int | None = resolved_parameters.get("derp_id", None)
+    derp_id: int | str | None = resolved_parameters.get("derp_id", None)
     import_limit_watts = resolved_parameters.get("opModImpLimW", None)
     export_limit_watts = resolved_parameters.get("opModExpLimW", None)
     gen_limit_watts = resolved_parameters.get("opModGenLimW", None)
@@ -176,60 +147,49 @@ async def action_set_default_der_control(
     storage_target_watts = resolved_parameters.get("opModStorageTargetW", None)
     set_grad_w = resolved_parameters.get("setGradW", None)
     cancelled = resolved_parameters.get("cancelled", False)
-    default_val: UpdateDefaultValue | None = UpdateDefaultValue(value=None) if cancelled else None
 
     # if the test doesn't specifically call out a DERProgram - we select the first one (lowest primacy)
     if derp_id is None:
-        all_site_control_groups = await select_site_control_groups(
-            session, start=0, changed_after=datetime.min, limit=1, fsa_id=None, site_group_ids=set()
-        )
+        all_site_control_groups = await get_site_control_groups_ordered(backend, fsa_ids=None)
+
         if len(all_site_control_groups) == 0:
             raise Exception("There are no configured DERPrograms - unable to set the DefaultDERControl")
         derp_id = all_site_control_groups[0].site_control_group_id
 
-    await envoy_client.post_site_control_default(
-        derp_id,
-        SiteControlGroupDefaultRequest(
-            import_limit_watts=(
-                UpdateDefaultValue(value=import_limit_watts) if import_limit_watts is not None else default_val
-            ),
-            export_limit_watts=(
-                UpdateDefaultValue(value=export_limit_watts) if export_limit_watts is not None else default_val
-            ),
-            generation_limit_watts=(
-                UpdateDefaultValue(value=gen_limit_watts) if gen_limit_watts is not None else default_val
-            ),
-            load_limit_watts=(
-                UpdateDefaultValue(value=load_limit_watts) if load_limit_watts is not None else default_val
-            ),
-            storage_target_watts=(
-                UpdateDefaultValue(value=storage_target_watts) if storage_target_watts is not None else default_val
-            ),
-            ramp_rate_percent_per_second=(
-                UpdateDefaultValue(value=set_grad_w) if set_grad_w is not None else default_val
-            ),
+    await backend.set_site_control_default(
+        site_control_group_id=f"{derp_id}",
+        default=dtos.SiteControlGroupDefaultWrite(
+            import_limit_watts=import_limit_watts,
+            export_limit_watts=export_limit_watts,
+            generation_limit_watts=gen_limit_watts,
+            load_limit_watts=load_limit_watts,
+            storage_target_watts=storage_target_watts,
+            ramp_rate_percent_per_second=set_grad_w,
+            cancelled=cancelled,
         ),
     )
 
 
 async def action_create_der_program(
     resolved_parameters: dict[str, Any],
-    envoy_client: EnvoyAdminClient,
     active_test_procedure: ActiveTestProcedure,
-    session: AsyncSession,
+    backend: RunnerBackend,
 ) -> None:
     primacy: int = int(resolved_parameters["primacy"])  # mandatory param
-    fsa_id: int = int(resolved_parameters.get("fsa_id", 1))
+    fsa_id_int: int = int(resolved_parameters.get("fsa_id", 1))
+    fsa_id = f"{fsa_id_int}"
     end_device_indexes: list[int] | None = resolved_parameters.get("end_device_indexes", None)
     tag: str | None = resolved_parameters.get("tag", None)
 
     display_id: int | None = None
     if end_device_indexes:
         # We can't fully implement this for a subset of end_device_indexes - so we just apply it globally
-        display_id = len(await get_all_site_control_groups(session)) + 1
+        display_id = len(await backend.get_site_control_groups(fsa_ids=None)) + 1
 
-    site_control_group_id = await envoy_client.post_site_control_group(
-        SiteControlGroupRequest(description=f"Primacy {primacy}", primacy=primacy, fsa_id=fsa_id, display_id=display_id)
+    site_control_group_id = await backend.create_site_control_group(
+        dtos.SiteControlGroupWrite(
+            description=f"Primacy {primacy}", primacy=primacy, fsa_id=fsa_id, display_id=display_id
+        )
     )
 
     if tag is not None:
@@ -238,8 +198,7 @@ async def action_create_der_program(
 
 async def action_create_der_control(  # noqa: C901
     resolved_parameters: dict[str, Any],
-    session: AsyncSession,
-    envoy_client: EnvoyAdminClient,
+    backend: RunnerBackend,
     active_test_procedure: ActiveTestProcedure,
 ) -> None:
 
@@ -250,28 +209,30 @@ async def action_create_der_control(  # noqa: C901
 
     display_id: int | None = None
 
-    site_group_ids: list[int]
+    site_group_ids: list[str]
     if not end_device_indexes:
         # We need to know the "active" site - we are interpreting that as the LAST site created/modified by the client
-        active_site = await get_active_site(session)
+        active_site = await backend.get_active_site()
         if active_site is None:
             raise Exception("No active EndDevice could be resolved. Has an EndDevice been registered?")
 
-        active_site_group = await get_exclusive_site_group(envoy_client, active_site)
+        active_site_group = await backend.get_exclusive_site_group(active_site.site_id)
         site_group_ids = [active_site_group.site_group_id]
     else:
         site_group_ids = []
-        all_sites = await get_all_sites(session)
+        all_sites = await backend.get_all_sites()
         for idx in end_device_indexes:
             if idx < 0 or idx >= len(all_sites):
                 raise Exception(f"end_device_index {idx} doesn't map to a valid EndDevice. {len(all_sites)} registered")
-            exclusive_site_group = await get_exclusive_site_group(envoy_client, all_sites[idx])
+            exclusive_site_group = await backend.get_exclusive_site_group(all_sites[idx].site_id)
             site_group_ids.append(exclusive_site_group.site_group_id)
 
         # We also need a unique display_id if we are "sharing" this DERControl virtually across multiple EndDevices
         # We could just use the current count of DERControls but that will recycle between test runs - not ideal
         # so we ALSO combine that with a timestamp to get a 64 bit display_id
-        existing_control_count = await count_all_site_controls_with_cancelled(session, site_id=None)
+        existing_controls = await backend.get_site_controls()
+        existing_control_count = len(existing_controls)
+
         now_seconds = int(datetime.now(UTC).timestamp())
         display_id = existing_control_count << 32 | (now_seconds & 0xFFFFFFFF)
 
@@ -281,7 +242,7 @@ async def action_create_der_control(  # noqa: C901
     # We need the parent SiteControlGroup.site_control_group_id to nest this control under. This can be resolved via
     # a direct tag reference - or it can be implied via primacy / fsa_id values.
     der_program_tag: str | None = resolved_parameters.get("der_program_tag", None)
-    site_control_group_id: int | None = None
+    site_control_group_id: str | None = None
     if der_program_tag is not None:
         site_control_group_id = active_test_procedure.resource_annotations.der_program_ids_by_alias.get(der_program_tag)
         if site_control_group_id is None:
@@ -290,21 +251,28 @@ async def action_create_der_control(  # noqa: C901
     else:
         # For primacy/fsa_id - we need to find the site_control_group with the specified values (creating if required)
         primacy: int = resolved_parameters.get("primacy", 0)
-        fsa_id: int | None = resolved_parameters.get("fsa_id", None)
-        control_groups_response = await envoy_client.get_all_site_control_groups()
-        if control_groups_response.site_control_groups:
-            for g in control_groups_response.site_control_groups:
+        fsa_id_int: int | None = resolved_parameters.get("fsa_id", None)
+        fsa_id: str | None = f"{fsa_id_int}" if fsa_id_int is not None else None
+        site_control_groups = await backend.get_site_control_groups()
+        if site_control_groups:
+            for g in site_control_groups:
                 if g.primacy == primacy and (fsa_id is None or fsa_id == g.fsa_id):
                     site_control_group_id = g.site_control_group_id
                     break
 
-        # Create our site control group if we don't have an existing one
+        # TODO [2026-08-06 17:00 Copilot]: Replace with backend.create_site_control_group(SiteControlGroupWrite(...)).
+        # create_site_control_group returns the int ID directly; the str cast below can remain.
         if site_control_group_id is None:
-            site_control_group_id = await envoy_client.post_site_control_group(
-                SiteControlGroupRequest(
-                    description=f"Primacy {primacy}", primacy=primacy, fsa_id=fsa_id if fsa_id is not None else 1
+            site_control_group_id_int = await backend.create_site_control_group(
+                dtos.SiteControlGroupWrite(
+                    description=f"Primacy {primacy}",
+                    primacy=primacy,
+                    fsa_id=fsa_id if fsa_id is not None else "1",
+                    display_id=None,
                 )
             )
+            # TODO: temporarily in place as part of plugin architecture implementation.
+            site_control_group_id = f"{site_control_group_id_int}"
 
     randomize_seconds: int | None = resolved_parameters.get("randomizeStart_seconds", None)
     ramp_time_seconds: Decimal | None = resolved_parameters.get("ramp_time_seconds", None)
@@ -329,32 +297,33 @@ async def action_create_der_control(  # noqa: C901
                 f"Adjusting pow10 multiplier from {pow_10mult} to {effective_mult} "
                 f"to fit watt values within Int16 range"
             )
-        await envoy_client.update_runtime_config(RuntimeServerConfigRequest(site_control_pow10_encoding=effective_mult))
+        await backend.update_runtime_config(dtos.RuntimeConfigWrite(site_control_pow10_encoding=effective_mult))
 
-    site_control_ids = await envoy_client.create_site_controls(
-        site_control_group_id,
-        [
-            SiteControlRequest(
-                calculation_log_id=None,
-                site_group_id=site_group_id,
-                duration_seconds=duration_seconds,
-                start_time=start_time,
-                randomize_start_seconds=randomize_seconds,
-                display_id=display_id,
-                set_energized=energize,
-                set_connect=connect,
-                import_limit_watts=import_limit_watts,
-                export_limit_watts=export_limit_watts,
-                generation_limit_watts=gen_limit_watts,
-                load_limit_watts=load_limit_watts,
-                set_point_percentage=set_point_percent,
-                ramp_time_seconds=ramp_time_seconds,
-                # Storage extension
-                storage_target_watts=storage_target_watts,
+    site_control_ids: list[str] = []
+    for site_group_id in site_group_ids:
+        site_control_ids.append(
+            await backend.create_site_control(
+                site_control_group_id=site_control_group_id,
+                control=dtos.SiteControlWrite(
+                    calculation_log_id=None,
+                    site_group_id=site_group_id,
+                    duration_seconds=duration_seconds,
+                    start_time=start_time,
+                    randomize_start_seconds=randomize_seconds,
+                    display_id=display_id,
+                    set_energized=energize,
+                    set_connect=connect,
+                    import_limit_watts=import_limit_watts,
+                    export_limit_watts=export_limit_watts,
+                    generation_limit_watts=gen_limit_watts,
+                    load_limit_watts=load_limit_watts,
+                    set_point_percentage=set_point_percent,
+                    ramp_time_seconds=ramp_time_seconds,
+                    # Storage extension
+                    storage_target_watts=storage_target_watts,
+                ),
             )
-            for site_group_id in site_group_ids
-        ],
-    )
+        )
 
     # If we have tagged a control, we add it to the test procedure annotations
     if annotation is not None:
@@ -362,23 +331,13 @@ async def action_create_der_control(  # noqa: C901
         active_test_procedure.resource_annotations.der_control_ids_by_alias[annotation] = site_control_ids[0]
 
 
-async def action_cancel_active_controls(envoy_client: EnvoyAdminClient) -> None:
-    control_groups_response = await envoy_client.get_all_site_control_groups()
-    if control_groups_response.site_control_groups:
-        for g in control_groups_response.site_control_groups:
-            await envoy_client.delete_site_controls_in_range(
-                g.site_control_group_id,
-                datetime(2000, 1, 1, tzinfo=UTC),
-                datetime(
-                    2100, 1, 1, tzinfo=UTC
-                ),  # If this is still in use in 2100... I hope you guys sorted out that climate change thing.
-                # Sorry, some of us were trying. Sincerely people in 2025
-            )
+async def action_cancel_active_controls(backend: RunnerBackend) -> None:
+    site_control_groups = await backend.get_site_control_groups()
+    if site_control_groups:
+        await backend.cancel_active_site_controls()
 
 
-async def action_set_comms_rate(
-    resolved_parameters: dict[str, Any], session: AsyncSession, envoy_client: EnvoyAdminClient
-) -> None:
+async def action_set_comms_rate(resolved_parameters: dict[str, Any], backend: RunnerBackend) -> None:
     dcap_poll_seconds: int | None = resolved_parameters.get("dcap_poll_seconds", None)
     edev_list_poll_seconds: int | None = resolved_parameters.get("edev_list_poll_seconds", None)
     fsa_list_poll_seconds: int | None = resolved_parameters.get("fsa_list_poll_seconds", None)
@@ -388,6 +347,7 @@ async def action_set_comms_rate(
     tti_list_poll_seconds: int | None = resolved_parameters.get("tti_list_poll_seconds", None)
 
     mup_post_seconds: int | None = resolved_parameters.get("mup_post_seconds", None)
+    mup_list_poll_seconds: int | None = resolved_parameters.get("mup_list_poll_seconds", None)
     edev_post_seconds: int | None = resolved_parameters.get("edev_post_seconds", None)
 
     # If we have any of the server config values set - send that request
@@ -399,18 +359,20 @@ async def action_set_comms_rate(
             derp_list_poll_seconds,
             fsa_list_poll_seconds,
             mup_post_seconds,
+            mup_list_poll_seconds,
             tp_list_poll_seconds,
             tti_list_poll_seconds,
         ]
     ):
-        await envoy_client.update_runtime_config(
-            RuntimeServerConfigRequest(
+        await backend.update_runtime_config(
+            dtos.RuntimeConfigWrite(
                 dcap_pollrate_seconds=dcap_poll_seconds,
                 edevl_pollrate_seconds=edev_list_poll_seconds,
                 derl_pollrate_seconds=der_list_poll_seconds,
                 derpl_pollrate_seconds=derp_list_poll_seconds,
                 fsal_pollrate_seconds=fsa_list_poll_seconds,
                 mup_postrate_seconds=mup_post_seconds,
+                mupl_pollrate_seconds=mup_list_poll_seconds,
                 tp_pollrate_seconds=tp_list_poll_seconds,
                 tti_pollrate_seconds=tti_list_poll_seconds,
             )
@@ -418,18 +380,15 @@ async def action_set_comms_rate(
 
     # If we are updating the active EndDevice postRate - send that request
     if edev_post_seconds is not None:
-        active_site = await get_active_site(session)
+        active_site = await backend.get_active_site()
         if active_site is None:
             raise Exception("No active EndDevice could be resolved. Has an EndDevice been registered?")
 
-        await envoy_client.update_single_site(
-            active_site.site_id,
-            SiteUpdateRequest(nmi=None, timezone_id=None, device_category=None, post_rate_seconds=edev_post_seconds),
-        )
+        await backend.update_site_post_rate(site_id=active_site.site_id, post_rate_seconds=edev_post_seconds)
 
 
 async def action_register_end_device(
-    active_test_procedure: ActiveTestProcedure, resolved_parameters: dict[str, Any], session: AsyncSession
+    active_test_procedure: ActiveTestProcedure, resolved_parameters: dict[str, Any], backend: RunnerBackend
 ) -> None:
     """
     Register an end device for the test. Skip if a site with the same lfdi already exists, allowing the action to be
@@ -456,13 +415,14 @@ async def action_register_end_device(
 
     # Check if site already exists
     lfdi_upper = lfdi.upper()
-    existing_site = await session.execute(select(Site).where(Site.lfdi == lfdi_upper))
-    if existing_site.scalar_one_or_none() is not None:
+    all_sites = await backend.get_all_sites()
+    existing_sites = [s for s in all_sites if s.lfdi.upper() == lfdi_upper]
+    if existing_sites:
         logger.info(f"Site with lfdi {lfdi_upper} already exists, skipping registration")
         return
 
-    session.add(
-        Site(
+    await backend.register_site(
+        site=dtos.SiteWrite(
             nmi=nmi,
             aggregator_id=active_test_procedure.client_aggregator_id,
             timezone_id="Australia/Brisbane",
@@ -470,11 +430,10 @@ async def action_register_end_device(
             changed_time=now,
             lfdi=lfdi_upper,
             sfdi=sfdi,
-            device_category=0,
+            device_category=cast(DeviceCategory, 0),
             registration_pin=registration_pin if registration_pin is not None else 1,
         )
     )
-    await session.commit()
 
 
 def action_communications_status(
@@ -484,43 +443,34 @@ def action_communications_status(
     active_test_procedure.communications_disabled = not comms_enabled
 
 
-async def action_edev_registration_links(resolved_parameters: dict[str, Any], envoy_client: EnvoyAdminClient) -> None:
+async def action_edev_registration_links(resolved_parameters: dict[str, Any], backend: RunnerBackend) -> None:
     """Implements edev-registration-links action"""
     links_enabled: bool = resolved_parameters["enabled"]
 
-    await envoy_client.update_runtime_config(RuntimeServerConfigRequest(disable_edev_registration=not links_enabled))
+    await backend.update_runtime_config(dtos.RuntimeConfigWrite(disable_edev_registration=not links_enabled))
 
 
-async def action_remove_function_set_assignment(
-    resolved_parameters: dict[str, Any], session: AsyncSession, envoy_client: EnvoyAdminClient
-) -> None:
+async def action_remove_function_set_assignment(resolved_parameters: dict[str, Any], backend: RunnerBackend) -> None:
+    # TODO: This should be changed to str to suit potentially more systems with custom test definitions.
     fsa_id: int = resolved_parameters["fsa_id"]  # Mandatory param
 
     # Identify which site control groups have the nominated function set assignment ID - and remove that FSA ID
-    # via the admin API
-    existing_groups = await get_all_site_control_groups(session)
-
-    for scg in existing_groups:
-        if scg.fsa_id == fsa_id:
-            logger.info(f"Removing fsa_id {scg.fsa_id} from SiteControlGroup {scg.site_control_group_id}")
-            request = SiteControlGroupRequest(
-                description=scg.description, primacy=scg.primacy, fsa_id=None, display_id=scg.display_id
-            )
-            await envoy_client.put_site_control_group(scg.site_control_group_id, request)
+    # via the an admin interface
+    await backend.remove_function_set_assignment(fsa_id=f"{fsa_id}")
 
 
 async def action_create_tariff_profile(
     resolved_parameters: dict[str, Any],
-    envoy_client: EnvoyAdminClient,
     active_test_procedure: ActiveTestProcedure,
+    backend: RunnerBackend,
 ) -> None:
     primacy: int = resolved_parameters["primacy"]
     fsa_id: int = resolved_parameters.get("fsa_id", 1)
     price_pow_10_multiplier: int = resolved_parameters.get("price_pow_10_multiplier", 0)
     tag: str | None = resolved_parameters.get("tag", None)
 
-    tariff_id = await envoy_client.create_tariff(
-        TariffRequest(
+    tariff_id = await backend.create_tariff(
+        dtos.TariffWrite(
             name=f"Tariff {primacy}",
             dnsp_code="CACTUS",
             currency_code=CurrencyCode.AUSTRALIAN_DOLLAR,
@@ -536,9 +486,8 @@ async def action_create_tariff_profile(
 
 async def action_create_rate_component(
     resolved_parameters: dict[str, Any],
-    envoy_client: EnvoyAdminClient,
     active_test_procedure: ActiveTestProcedure,
-    session: AsyncSession,
+    backend: RunnerBackend,
 ) -> None:
     tariff_profile_tag: str | None = resolved_parameters.get("tariff_profile_tag", None)
     role_flags: RoleFlagsType = resolved_parameters.get("role_flags", RoleFlagsType.NONE)
@@ -551,10 +500,10 @@ async def action_create_rate_component(
     uom: UomType | None = resolved_parameters.get("uom", None)
     tag: str | None = resolved_parameters.get("tag", None)
 
-    parent_tariff_id: int | None = None
+    parent_tariff_id: str | None = None
     if tariff_profile_tag is None:
         # If we have no parent tag - we assume there must be a single TariffProfile and we'll use that ID
-        existing_tariffs = await get_tariffs(session)
+        existing_tariffs = await backend.get_tariffs()
         if len(existing_tariffs) != 1:
             raise Exception(
                 f"Can't find an unambiguous TariffProfile to use as a parent. Discovered {len(existing_tariffs)}."
@@ -570,8 +519,8 @@ async def action_create_rate_component(
                 f"No TariffProfile with tag '{tariff_profile_tag}' exists. This is a test definition error."
             )
 
-    tariff_component_id = await envoy_client.create_tariff_component(
-        TariffComponentRequest(
+    tariff_component_id = await backend.create_tariff_component(
+        dtos.TariffComponentWrite(
             tariff_id=parent_tariff_id,
             accumulation_behaviour=None,
             commodity=commodity,
@@ -592,9 +541,8 @@ async def action_create_rate_component(
 
 async def action_create_time_tariff_interval(
     resolved_parameters: dict[str, Any],
-    envoy_client: EnvoyAdminClient,
     active_test_procedure: ActiveTestProcedure,
-    session: AsyncSession,
+    backend: RunnerBackend,
 ) -> None:
     start: datetime = resolved_parameters["start"]
     duration_seconds: int = resolved_parameters["duration_seconds"]
@@ -604,16 +552,16 @@ async def action_create_time_tariff_interval(
     price_start_pow10_block1: int | None = resolved_parameters.get("price_start_pow10_block1", None)
     tag: str | None = resolved_parameters.get("tag", None)
 
-    active_site = await get_active_site(session)
+    active_site = await backend.get_active_site()
     if active_site is None:
         raise Exception("Can't create TimeTariffInterval if there is no EndDevice. This is a test definition error.")
 
-    active_site_group = await get_exclusive_site_group(envoy_client, active_site)
+    active_site_group = await backend.get_exclusive_site_group(active_site.site_id)
 
-    parent_tc_id: int | None = None
+    parent_tc_id: str | None = None
     if rate_component_tag is None:
         # If we have no parent tag - we assume there must be a single TariffComponent and we'll use that ID
-        existing_tcs = await get_tariff_components(session)
+        existing_tcs = await backend.get_tariff_components()
         if len(existing_tcs) != 1:
             raise Exception(
                 f"Can't find an unambiguous RateComponent to use as a parent. Discovered {len(existing_tcs)}."
@@ -629,8 +577,8 @@ async def action_create_time_tariff_interval(
                 f"No RateComponent with tag '{rate_component_tag}' exists. This is a test definition error."
             )
 
-    rate_id = await envoy_client.create_tariff_generated_rate(
-        TariffGeneratedRateRequest(
+    rate_id = await backend.create_tariff_generated_rate(
+        dtos.TariffGeneratedRateWrite(
             tariff_component_id=parent_tc_id,
             site_group_id=active_site_group.site_group_id,
             start_time=start,
@@ -648,9 +596,8 @@ async def action_create_time_tariff_interval(
 
 async def action_cancel_time_tariff_intervals(
     resolved_parameters: dict[str, Any],
-    envoy_client: EnvoyAdminClient,
     active_test_procedure: ActiveTestProcedure,
-    session: AsyncSession,
+    backend: RunnerBackend,
 ) -> None:
 
     tag: str | None = resolved_parameters.get("tag", None)
@@ -661,15 +608,15 @@ async def action_cancel_time_tariff_intervals(
         if tagged_id is None:
             raise Exception(f"No TimeTariffInterval with tag '{tag}' exists. This is a test definition error.")
 
-        await envoy_client.delete_tariff_generated_rate(tagged_id)
+        await backend.delete_tariff_generated_rate(tagged_id)
     else:
-        all_rates = await get_tariff_generated_rates(session)
+        all_rates = await backend.get_tariff_generated_rates()
         for r in all_rates:
-            await envoy_client.delete_tariff_generated_rate(r.tariff_generated_rate_id)
+            await backend.delete_tariff_generated_rate(r.tariff_generated_rate_id)
 
 
 async def action_delete_rate_component(
-    resolved_parameters: dict[str, Any], envoy_client: EnvoyAdminClient, active_test_procedure: ActiveTestProcedure
+    resolved_parameters: dict[str, Any], active_test_procedure: ActiveTestProcedure, backend: RunnerBackend
 ) -> None:
 
     tag: str = resolved_parameters["tag"]
@@ -678,7 +625,7 @@ async def action_delete_rate_component(
     if tagged_id is None:
         raise Exception(f"No RateComponent with tag '{tag}' exists. This is a test definition error.")
 
-    await envoy_client.delete_tariff_component(tagged_id)
+    await backend.delete_tariff_component(tagged_id)
 
 
 def action_add_proxy_route(resolved_parameters: dict[str, Any], active_test_procedure: ActiveTestProcedure) -> None:
@@ -705,7 +652,9 @@ def action_create_wellknown_route(
 
 
 async def apply_action(  # noqa: C901
-    action: Action, runner_state: RunnerState, session: AsyncSession, envoy_client: EnvoyAdminClient
+    action: Action,
+    runner_state: RunnerState,
+    backend: RunnerBackend,
 ) -> None:
     """Applies the action to the active test procedure.
 
@@ -714,6 +663,8 @@ async def apply_action(  # noqa: C901
     Args:
         action (Action): The Action to apply to the active test procedure.
         runner_state (RunnerState): The current state of the runner. If not active_test_procedure then this exits early.
+        backend (RunnerBackend): Object tasked with interacting with the underlying utility server to complete
+            protocol tasks.
 
     Raises:
         UnknownActionError: Raised if this function has no implementation for the provided `action.type`.
@@ -722,8 +673,9 @@ async def apply_action(  # noqa: C901
     if not active_test_procedure:
         return
 
+    resolver = backend.get_expression_resolver()
     resolved_with_metadata_parameters = await resolve_variable_expressions_from_parameters(
-        session, active_test_procedure, action.parameters
+        resolver, active_test_procedure, action.parameters
     )
     resolved_parameters = {k: v.value for k, v in resolved_with_metadata_parameters.items()}
     logger.info(f"Executing action {action} with parameters {resolved_parameters}")
@@ -736,53 +688,49 @@ async def apply_action(  # noqa: C901
                 await action_remove_steps(active_test_procedure, resolved_parameters)
                 return
             case "finish-test":
-                await action_finish_test(resolved_parameters, runner_state, session)
+                await action_finish_test(resolved_parameters, runner_state, backend)
                 return
             case "set-default-der-control":
-                await action_set_default_der_control(resolved_parameters, session, envoy_client)
+                await action_set_default_der_control(resolved_parameters, backend)
                 return
             case "create-der-control":
-                await action_create_der_control(resolved_parameters, session, envoy_client, active_test_procedure)
+                await action_create_der_control(resolved_parameters, backend, active_test_procedure)
                 return
             case "create-der-program":
-                await action_create_der_program(resolved_parameters, envoy_client, active_test_procedure, session)
+                await action_create_der_program(resolved_parameters, active_test_procedure, backend)
                 return
             case "cancel-active-der-controls":
-                await action_cancel_active_controls(envoy_client)
+                await action_cancel_active_controls(backend)
                 return
             case "set-comms-rate":
-                await action_set_comms_rate(resolved_parameters, session, envoy_client)
+                await action_set_comms_rate(resolved_parameters, backend)
                 return
             case "register-end-device":
-                await action_register_end_device(active_test_procedure, resolved_parameters, session)
+                await action_register_end_device(active_test_procedure, resolved_parameters, backend)
                 return
             case "communications-status":
                 action_communications_status(active_test_procedure, resolved_parameters)
                 return
             case "edev-registration-links":
-                await action_edev_registration_links(resolved_parameters, envoy_client)
+                await action_edev_registration_links(resolved_parameters, backend)
                 return
             case "remove-function-set-assignment":
-                await action_remove_function_set_assignment(resolved_parameters, session, envoy_client)
+                await action_remove_function_set_assignment(resolved_parameters, backend)
                 return
             case "create-tariff-profile":
-                await action_create_tariff_profile(resolved_parameters, envoy_client, active_test_procedure)
+                await action_create_tariff_profile(resolved_parameters, active_test_procedure, backend)
                 return
             case "create-rate-component":
-                await action_create_rate_component(resolved_parameters, envoy_client, active_test_procedure, session)
+                await action_create_rate_component(resolved_parameters, active_test_procedure, backend)
                 return
             case "create-time-tariff-interval":
-                await action_create_time_tariff_interval(
-                    resolved_parameters, envoy_client, active_test_procedure, session
-                )
+                await action_create_time_tariff_interval(resolved_parameters, active_test_procedure, backend)
                 return
             case "cancel-time-tariff-intervals":
-                await action_cancel_time_tariff_intervals(
-                    resolved_parameters, envoy_client, active_test_procedure, session
-                )
+                await action_cancel_time_tariff_intervals(resolved_parameters, active_test_procedure, backend)
                 return
             case "delete-rate-component":
-                await action_delete_rate_component(resolved_parameters, envoy_client, active_test_procedure)
+                await action_delete_rate_component(resolved_parameters, active_test_procedure, backend)
                 return
             case "add-proxy-route":
                 action_add_proxy_route(resolved_parameters, active_test_procedure)
@@ -793,16 +741,15 @@ async def apply_action(  # noqa: C901
 
     except Exception as exc:
         logger.error(f"Failed executing action {action}", exc_info=exc)
-        raise FailedActionError(f"Failed executing action {action.type}") from None
+        raise FailedActionError(f"Failed executing action '{action.type}', with exception {exc}") from None
 
     raise UnknownActionError(f"Unrecognised action '{action.type}'. This is a problem with the test definition")
 
 
 async def apply_actions(
-    session: AsyncSession,
     listener: Listener,
     runner_state: RunnerState,
-    envoy_client: EnvoyAdminClient,
+    backend: RunnerBackend,
 ) -> None:
     """Applies all actions for the given listener.
 
@@ -814,6 +761,6 @@ async def apply_actions(
     """
     for action in listener.actions:
         try:
-            await apply_action(session=session, action=action, runner_state=runner_state, envoy_client=envoy_client)
+            await apply_action(action=action, runner_state=runner_state, backend=backend)
         except (UnknownActionError, FailedActionError) as e:
             logger.error(f"Error. Unable to execute action for step={listener.step}: {repr(e)}")
