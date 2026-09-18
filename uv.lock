@@ -164,6 +164,18 @@ wheels = [
 ]
 
 [[package]]
+name = "apluggy"
+version = "1.1.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pluggy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b8/e8/a597d779a3fbb5e4628bf54d90df72471e76e42fce922da816847e2dc206/apluggy-1.1.2.tar.gz", hash = "sha256:421700438e6f3f47d284a5a3bb5d3f2369c70e9165f89f3785d09493a8f5db73", size = 26477, upload-time = "2025-11-20T20:46:13.923Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bd/28/01d0136b3e8acace61711b56a309637e78f7e6faa39e9a88661c8da489d1/apluggy-1.1.2-py3-none-any.whl", hash = "sha256:18c4c0c631fe9d98be65375c6e73de3bc4b881a39a88bd6b48dd683c91f18e0b", size = 11883, upload-time = "2025-11-20T20:46:12.439Z" },
+]
+
+[[package]]
 name = "asgi-lifespan"
 version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -277,6 +289,7 @@ name = "cactus-runner"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },
+    { name = "apluggy" },
     { name = "asyncpg" },
     { name = "cactus-schema" },
     { name = "cactus-test-definitions" },
@@ -319,14 +332,15 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.11.12,<4" },
+    { name = "apluggy", specifier = ">=1.1.2" },
     { name = "asgi-lifespan", marker = "extra == 'test'" },
     { name = "assertical", marker = "extra == 'test'", specifier = ">=0.4.0" },
     { name = "asyncpg", specifier = ">=0.30.0,<1" },
     { name = "bandit", marker = "extra == 'dev'" },
-    { name = "cactus-schema", specifier = ">=1.3.3,<2" },
-    { name = "cactus-test-definitions", specifier = ">=1.15.0,<2" },
+    { name = "cactus-schema", specifier = ">=1.3.4,<2" },
+    { name = "cactus-test-definitions", specifier = ">=1.18.0,<2" },
     { name = "coverage", marker = "extra == 'dev'" },
-    { name = "envoy", git = "https://github.com/synergy-au/envoy.git?rev=v2.3.0-storage.0.9.0" },
+    { name = "envoy", git = "https://github.com/synergy-au/envoy.git?rev=v2.5.0-storage.0.9.0" },
     { name = "freezegun", marker = "extra == 'test'" },
     { name = "intervaltree", specifier = ">=3.1.0" },
     { name = "jsonschema", marker = "extra == 'test'" },
@@ -353,28 +367,28 @@ provides-extras = ["dev", "test", "docs"]
 
 [[package]]
 name = "cactus-schema"
-version = "1.3.3"
+version = "1.3.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dataclass-wizard" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9e/d0/d99e93a82ac1ea6f69ab28238baf3ef7b41d08da199a337bd9fc2be94e65/cactus_schema-1.3.3.tar.gz", hash = "sha256:d8b6ae479158898cc03b1043d741edd21991911772bc3d5bfecec105a920d69b", size = 11857, upload-time = "2026-08-04T03:34:13.195Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/07/38/d28b371a4684ca7bbc012dfb9ed8c81e78203a473f38b0c8c9fb66290079/cactus_schema-1.3.4.tar.gz", hash = "sha256:2cbdc5a9ff6562415665eaf92876318d438c48cda2c85005f4472c6d59934746", size = 12041, upload-time = "2026-08-17T00:39:33.364Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e4/88/0456bc6e9aa798412469d97ac501ca66ec88f5b1908aa6a33ec378529064/cactus_schema-1.3.3-py3-none-any.whl", hash = "sha256:eb4e5c8c59d59199d94c79a1bbe3252c9a19906c01c7207283b7c33924eb1799", size = 13826, upload-time = "2026-08-04T03:34:11.787Z" },
+    { url = "https://files.pythonhosted.org/packages/c7/da/73fa659dd2f06e686e6a36da13dc5a90e8155bbd742d1ff133e9a24f1a1d/cactus_schema-1.3.4-py3-none-any.whl", hash = "sha256:824a99c55a26e0c5cf35d7e5d30c58a3cc8198ceabaacef3896ed660337d4bf7", size = 13854, upload-time = "2026-08-17T00:39:32.34Z" },
 ]
 
 [[package]]
 name = "cactus-test-definitions"
-version = "1.15.0"
+version = "1.18.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "dataclass-wizard" },
     { name = "pyyaml" },
     { name = "pyyaml-include" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ca/3e/2761a13c8c20736eaaca13bd2e964f39ae64ee69302bb256f43645befa2b/cactus_test_definitions-1.15.0.tar.gz", hash = "sha256:b6f8783579c8d76184be9c9150e30dd8c57b248a6afe6344dcbb5beb64692d75", size = 178077, upload-time = "2026-07-21T01:52:26.593Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ac/82/6dd7cd017150b716a4f3f625661c5e45413dd1640edfa9f14af418e6f8b4/cactus_test_definitions-1.18.0.tar.gz", hash = "sha256:beca24c858273dd6c6f74a9084520f84b8b4859c1e678bc0feefde3322239cee", size = 191976, upload-time = "2026-09-18T03:52:03.961Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0c/b9/cb06d1585ec4917e1cdd491e65f3e11763b6cddddaf058ba4171324c35e8/cactus_test_definitions-1.15.0-py3-none-any.whl", hash = "sha256:c4276362faa32a8049b8b720f7823eb4670d8f9116fbba532f3896df71b7ec32", size = 352224, upload-time = "2026-07-21T01:52:24.661Z" },
+    { url = "https://files.pythonhosted.org/packages/39/c3/f29358d339baae486a070f154adf142a46a92135a1ad4d4c6c97b8e8f284/cactus_test_definitions-1.18.0-py3-none-any.whl", hash = "sha256:d651fec25d527048423ed3580d1a7ea576b18282d54a9b71b45a88d6bd31f35f", size = 373473, upload-time = "2026-09-18T03:52:01.05Z" },
 ]
 
 [[package]]
@@ -706,8 +720,8 @@ wheels = [
 
 [[package]]
 name = "envoy"
-version = "2.3.0"
-source = { git = "https://github.com/synergy-au/envoy.git?rev=v2.3.0-storage.0.9.0#73a96a04d939fce6c4161f33ae5aa64205941323" }
+version = "2.5.0"
+source = { git = "https://github.com/synergy-au/envoy.git?rev=v2.5.0-storage.0.9.0#ee7b2125efa8788bef335fa37344c051d3494122" }
 dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
@@ -731,8 +745,8 @@ dependencies = [
 
 [[package]]
 name = "envoy-schema"
-version = "2.5.0"
-source = { git = "https://github.com/synergy-au/envoy-schema.git?rev=v2.5.0-storage.0.10.0#0454a924f898f444f023b432d516be5f350b3146" }
+version = "2.7.0"
+source = { git = "https://github.com/synergy-au/envoy-schema.git?rev=v2.7.0-storage.0.10.0#d6b61040e0d9962c195b3a6a741e852d2014c20d" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-xml", extra = ["lxml"] },

@@ -2,8 +2,8 @@ import pytest
 from assertical.fake.generator import generate_class_instance
 from envoy.server.model.site import Site, SiteDERRating
 
-from cactus_runner.app import resolvers
 from cactus_runner.app.database import begin_session
+from cactus_runner.plugin.backends.envoy.resolver import EnvoyResolver
 
 
 @pytest.mark.asyncio
@@ -29,6 +29,7 @@ async def test_resolve_named_variable_neg_der_rating_max_charge_rate_w_single_se
         await session.commit()
 
     async with begin_session() as session:
-        result = await resolvers.resolve_named_variable_neg_der_rating_max_charge_rate_w(session)
+        resolver = EnvoyResolver(lambda: session)
+        result = await resolver.resolve_named_variable_neg_der_rating_max_charge_rate_w()
         assert isinstance(result, float)
         assert result == -123.45
