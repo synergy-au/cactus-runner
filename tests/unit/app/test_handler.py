@@ -1347,7 +1347,10 @@ async def test_media_headers_check(
         "application/sep+xml;csipaus=v1.2, application/sep+xml;csipaus=1.3-beta_storage",
         "application/sep+xml;csipaus=v1.2, application/sep+xml;csipaus=1.3-beta_storage;q=0.1",
         "application/sep+xml;csipaus=v1.2;q=0.9,application/sep+xml;csipaus=1.3-beta_storage;q=0.8",
-        "application/json , application/sep+xml;csipaus=v1.2;q=0.9 ,\tapplication/sep+xml;csipaus=1.3-beta_storage;q=0.8",
+        (
+            "application/json , application/sep+xml;csipaus=v1.2;q=0.9 ,"
+            "\tapplication/sep+xml;csipaus=1.3-beta_storage;q=0.8"
+        ),
         "application/sep+xml;csipaus=1.3-beta_storage;q=0.5, */*;q=0.1",
         # An explicitly unacceptable version doesn't affect v1.3-beta/storage support
         "application/sep+xml;csipaus=v1.2;q=0, application/sep+xml;csipaus=1.3-beta_storage;q=0.1",
