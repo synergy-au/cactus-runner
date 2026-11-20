@@ -424,7 +424,7 @@ requires-dist = [
     { name = "cactus-schema", specifier = ">=1.4.0,<2" },
     { name = "cactus-test-definitions", specifier = ">=1.18.0,<2" },
     { name = "coverage", marker = "extra == 'dev'" },
-    { name = "envoy", git = "https://github.com/bsgip/envoy.git?rev=v2.5.3" },
+    { name = "envoy", git = "https://github.com/synergy-au/envoy.git?rev=v2.5.3-storage.0.9.0" },
     { name = "freezegun", marker = "extra == 'test'" },
     { name = "intervaltree", specifier = ">=3.1.0" },
     { name = "jsonschema", marker = "extra == 'test'" },
@@ -940,7 +940,7 @@ wheels = [
 [[package]]
 name = "envoy"
 version = "2.5.3"
-source = { git = "https://github.com/bsgip/envoy.git?rev=v2.5.3#ac723d082491dc7857f90b7cf18fb4bbe5ef37d3" }
+source = { git = "https://github.com/synergy-au/envoy.git?rev=v2.5.3-storage.0.9.0#9b2d47c30c819fa2134dcc4eaa618ed5f1986548" }
 dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
@@ -963,15 +963,11 @@ dependencies = [
 
 [[package]]
 name = "envoy-schema"
-version = "2.7.0"
-source = { registry = "https://pypi.org/simple" }
+version = "2.8.0"
+source = { git = "https://github.com/synergy-au/envoy-schema.git?rev=v2.8.0-storage.0.10.0#babb86ebcd246fb04bff481d6716caeea4eb6bce" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-xml", extra = ["lxml"] },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/d1/24/d29a0f4cc6c3b127b162fd7fad9566f3e156e3dda8090ea3ee42c56c0c21/envoy_schema-2.7.0.tar.gz", hash = "sha256:32e6274181eff787f14343bd9ecbb1bfa464c1d4e5dde8f631187b4b6a07b6c1", size = 42603, upload-time = "2026-09-18T01:57:19.21Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/24/f3/daed589eed5663caa045d8338f3d2c654d1c9e6b521bc0d9a22e11b6f8df/envoy_schema-2.7.0-py3-none-any.whl", hash = "sha256:ce73d5a7de55741b927246093d4cfc3975b306bfd34a9d9ce3e385f813e19c70", size = 54511, upload-time = "2026-09-18T01:57:17.616Z" },
 ]
 
 [[package]]
