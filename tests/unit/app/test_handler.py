@@ -1334,32 +1334,32 @@ async def test_media_headers_check(
 @pytest.mark.parametrize(
     "accept_header",
     [
-        "application/sep+xml;csipaus=v1.3;q=1",
-        "application/sep+xml;csipaus=v1.3;q=1.000",
-        "application/sep+xml;csipaus=v1.3;q=0.001",
-        "application/sep+xml; csipaus=v1.3; q=0.5",
-        "application/sep+xml;csipaus=v1.3;Q=0.5",
-        'application/sep+xml;csipaus="v1.3";q=0.5',
-        "APPLICATION/SEP+XML;CSIPAUS=v1.3;q=0.5",
-        # v1.3 is preferred
-        "application/sep+xml;csipaus=v1.3, application/sep+xml;csipaus=v1.2;q=0.5",
-        # v1.3 is NOT preferred, but it is still supported
-        "application/sep+xml;csipaus=v1.2, application/sep+xml;csipaus=v1.3",
-        "application/sep+xml;csipaus=v1.2, application/sep+xml;csipaus=v1.3;q=0.1",
-        "application/sep+xml;csipaus=v1.2;q=0.9,application/sep+xml;csipaus=v1.3;q=0.8",
-        "application/json , application/sep+xml;csipaus=v1.2;q=0.9 ,\tapplication/sep+xml;csipaus=v1.3;q=0.8",
-        "application/sep+xml;csipaus=v1.3;q=0.5, */*;q=0.1",
-        # An explicitly unacceptable version doesn't affect v1.3 support
-        "application/sep+xml;csipaus=v1.2;q=0, application/sep+xml;csipaus=v1.3;q=0.1",
+        "application/sep+xml;csipaus=1.3-beta_storage;q=1",
+        "application/sep+xml;csipaus=1.3-beta_storage;q=1.000",
+        "application/sep+xml;csipaus=1.3-beta_storage;q=0.001",
+        "application/sep+xml; csipaus=1.3-beta_storage; q=0.5",
+        "application/sep+xml;csipaus=1.3-beta_storage;Q=0.5",
+        'application/sep+xml;csipaus="1.3-beta_storage";q=0.5',
+        "APPLICATION/SEP+XML;csipaus=1.3-beta_storage;q=0.5",
+        # v1.3-beta/storage is preferred
+        "application/sep+xml;csipaus=1.3-beta_storage, application/sep+xml;csipaus=v1.2;q=0.5",
+        # v1.3-beta/storage is NOT preferred, but it is still supported
+        "application/sep+xml;csipaus=v1.2, application/sep+xml;csipaus=1.3-beta_storage",
+        "application/sep+xml;csipaus=v1.2, application/sep+xml;csipaus=1.3-beta_storage;q=0.1",
+        "application/sep+xml;csipaus=v1.2;q=0.9,application/sep+xml;csipaus=1.3-beta_storage;q=0.8",
+        "application/json , application/sep+xml;csipaus=v1.2;q=0.9 ,\tapplication/sep+xml;csipaus=1.3-beta_storage;q=0.8",
+        "application/sep+xml;csipaus=1.3-beta_storage;q=0.5, */*;q=0.1",
+        # An explicitly unacceptable version doesn't affect v1.3-beta/storage support
+        "application/sep+xml;csipaus=v1.2;q=0, application/sep+xml;csipaus=1.3-beta_storage;q=0.1",
         # Commas inside a quoted parameter value do not delimit list entries
-        'application/sep+xml;other="a,b";csipaus=v1.3',
+        'application/sep+xml;other="a,b";csipaus=1.3-beta_storage',
         # RFC 9110 allows empty list entries
-        "application/sep+xml;csipaus=v1.2,, application/sep+xml;csipaus=v1.3,",
+        "application/sep+xml;csipaus=v1.2,, application/sep+xml;csipaus=1.3-beta_storage,",
     ],
 )
 @pytest.mark.asyncio
 async def test_media_headers_check_accept_lists(accept_header: str) -> None:
-    """Accept passes if v1.3 is listed at all, regardless of its position or (nonzero) weight"""
+    """Accept passes if v1.3-beta/storage is listed at all, regardless of its position or (nonzero) weight"""
     request = MagicMock()
     request.headers = {"accept": accept_header, "content-type": None}
     request.method = http.HTTPMethod.GET
