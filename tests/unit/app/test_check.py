@@ -50,12 +50,17 @@ from envoy_schema.server.schema.sep2.types import (
     DataQualifierType,
     DeviceCategory,
     KindType,
+    PhaseCode,
     UomType,
 )
 from sqlalchemy import select
 
 from cactus_runner.app import evaluator
 from cactus_runner.app.check import (
+    DER_MODES_EQUIVALENTS,
+    DER_VALUE_EQUIVALENTS,
+    DERComparison,
+    DERValueEquivalent,
     FailedCheckError,
     ParamsDERCapabilityContents,
     ParamsDERSettingsContents,
@@ -70,10 +75,12 @@ from cactus_runner.app.check import (
     check_end_device_contents,
     check_end_device_count,
     check_price_response_contents,
+    check_readings_site_active_power,
     check_readings_voltage,
     check_resource_requests,
     check_response_contents,
     check_subscription_contents,
+    check_voltage_phase_code,
     csip_aus_resource_to_match_uri,
     determine_check_results,
     do_check_latest_reading_level,
@@ -118,6 +125,7 @@ CHECK_TYPE_TO_HANDLER: dict[str, str | None] = {
     "readings-site-active-power": "check_readings_site_active_power",
     "readings-site-reactive-power": "check_readings_site_reactive_power",
     "readings-voltage": "check_readings_voltage",
+    "voltage-phase-code": "check_voltage_phase_code",
     "readings-der-active-power": "check_readings_der_active_power",
     "readings-der-reactive-power": "check_readings_der_reactive_power",
     "all-notifications-transmitted": "check_all_notifications_transmitted",
@@ -437,6 +445,27 @@ async def test_check_end_device_lfdi(
     backend.get_active_site.assert_called_once()
 
 
+def generate_matching_der_rating(setting: SiteDERSetting, **overrides: Any) -> SiteDERRating:
+    """Generates a SiteDERRating whose values are identical to every equivalent value in setting"""
+    values: dict[str, Any] = {m.rating_property: getattr(setting, m.setting_property) for m in DER_MODES_EQUIVALENTS}
+    for e in DER_VALUE_EQUIVALENTS:
+        values[e.value_property] = getattr(setting, e.value_property)
+        values[e.multiplier_property] = getattr(setting, e.multiplier_property)
+    return generate_class_instance(SiteDERRating, **(values | overrides))
+
+
+def generate_site_with_der_setting(setting: SiteDERSetting, **rating_overrides: Any) -> Site:
+    """Generates a Site with the specified DERSetting and a DERCapability that (unless overridden) matches it"""
+    return generate_class_instance(
+        Site,
+        nmi_checksum=None,
+        seed=101,
+        aggregator_id=1,
+        site_der_setting=setting,
+        site_der_rating=generate_matching_der_rating(setting, **rating_overrides),
+    )
+
+
 DERKey = Literal["site_der_setting", "site_der_rating"]
 
 
@@ -453,9 +482,7 @@ def der_bool_param_scenario(
 
     Returns: pytest ParameterSet to be used in pytest.mark.parametrize
     """
-    der_props: dict[DERKey, SiteDERSetting | SiteDERRating] = {
-        der_key: generate_class_instance(der_type, **{db_property: db_property_value})
-    }  # ty:ignore[invalid-assignment]
+    der_props: dict[DERKey, Any] = {der_key: generate_class_instance(der_type, **{db_property: db_property_value})}
 
     if der_key == "site_der_rating":
         return pytest.param(
@@ -474,15 +501,7 @@ def der_bool_param_scenario(
         )
     if der_key == "site_der_setting":
         return pytest.param(
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=der_props[der_key],
-                )
-            ],
+            [generate_site_with_der_setting(der_props[der_key])],
             {param: evaluator.ResolvedParam(param_value)},
             expected,
             id=f"boolcheck-{param}-{param_value}-{db_property}-{db_property_value}-expecting-{expected}",
@@ -561,26 +580,14 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
     [
         ([], {}, False),
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting))],
             {},
             True,
         ),
         (
             [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(
+                generate_site_with_der_setting(
+                    generate_class_instance(
                         SiteDERSetting,
                         optional_is_none=True,
                         max_charge_rate_w_value=0,
@@ -599,7 +606,7 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
                         min_pf_over_excited_multiplier=0,
                         min_pf_under_excited_displacement=0,
                         min_pf_under_excited_multiplier=0,
-                    ),
+                    )
                 )
             ],
             {
@@ -615,28 +622,12 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
             True,
         ),  # 0 values are acceptable
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, grad_w=12345),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, grad_w=12345))],
             {"setGradW": evaluator.ResolvedParam(12345, variable_expressions.Constant(12345))},
             True,
         ),
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, grad_w=12345),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, grad_w=12345))],
             {"setGradW": evaluator.ResolvedParam(1234)},
             False,
         ),  # setGradW doesn't match value
@@ -678,197 +669,81 @@ DERSETTING_BOOL_PARAM_SCENARIOS = [
             False,
         ),
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=int("ff", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, doe_modes_enabled=int("ff", 16)))],
             {"doeModesEnabled_set": evaluator.ResolvedParam("03")},
             True,
         ),
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=int("fe", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, doe_modes_enabled=int("fe", 16)))],
             {"doeModesEnabled_set": evaluator.ResolvedParam("03")},
             False,
         ),  # Bit flag 1 not set on actual value
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, modes_enabled=int("ff", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, modes_enabled=int("ff", 16)))],
             {"modesEnabled_set": evaluator.ResolvedParam("03")},
             True,
         ),
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, modes_enabled=int("fe", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, modes_enabled=int("fe", 16)))],
             {"modesEnabled_set": evaluator.ResolvedParam("03")},
             False,
         ),  # Bit flag 1 not set on actual value
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=int("fc", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, doe_modes_enabled=int("fc", 16)))],
             {"doeModesEnabled_unset": evaluator.ResolvedParam("03")},
             True,
         ),
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=int("fd", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, doe_modes_enabled=int("fd", 16)))],
             {"doeModesEnabled_unset": evaluator.ResolvedParam("03")},
             False,
         ),  # Bit flag 1 set on actual value
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, modes_enabled=int("fc", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, modes_enabled=int("fc", 16)))],
             {"modesEnabled_unset": evaluator.ResolvedParam("03")},
             True,
         ),
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, modes_enabled=int("fd", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, modes_enabled=int("fd", 16)))],
             {"modesEnabled_unset": evaluator.ResolvedParam("03")},
             False,
         ),  # Bit flag 1 set on actual value
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("ff", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("ff", 16)))],
             {"vppModesEnabled_set": evaluator.ResolvedParam("03")},
             True,
         ),
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("fe", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("fe", 16)))],
             {"vppModesEnabled_set": evaluator.ResolvedParam("03")},
             False,
         ),  # Bit flag 1 not set on actual value
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("fc", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("fc", 16)))],
             {"vppModesEnabled_unset": evaluator.ResolvedParam("03")},
             True,
         ),
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("fd", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, vpp_modes_enabled=int("fd", 16)))],
             {"vppModesEnabled_unset": evaluator.ResolvedParam("03")},
             False,
         ),  # Bit flag 1 set on actual value
         (
             [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, min_wh_value=12345, min_wh_multiplier=1),
+                generate_site_with_der_setting(
+                    generate_class_instance(SiteDERSetting, min_wh_value=12345, min_wh_multiplier=1)
                 )
             ],
             {"setMinWh": evaluator.ResolvedParam(True)},
             True,
         ),
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, min_wh_value=12345),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, min_wh_value=12345))],
             {"setMinWh": evaluator.ResolvedParam(True)},
             True,
         ),
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, min_wh_value=0),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, min_wh_value=0))],
             {"setMinWh": evaluator.ResolvedParam(False)},
             False,
         ),
@@ -891,6 +766,179 @@ async def test_check_der_settings_contents(
 
     # Currently not relying on admin api for checks. This may change.
     mock_admin_client.assert_not_called()
+
+
+def generate_der_settings_and_rating(
+    setting_overrides: dict[str, Any], rating_overrides: dict[str, Any]
+) -> tuple[dtos.SiteDERSetting, dtos.SiteDERRating]:
+    """Generates a setting/rating DTO pair where only the mandatory values (and overrides) are set"""
+    setting: dict[str, Any] = {"grad_w": 27, "max_w_value": 5000, "max_w_multiplier": 0} | setting_overrides
+    rating: dict[str, Any] = {"max_w_value": 5000, "max_w_multiplier": 0} | rating_overrides
+    return (
+        generate_class_instance(dtos.SiteDERSetting, optional_is_none=True, **setting),
+        generate_class_instance(dtos.SiteDERRating, optional_is_none=True, **rating),
+    )
+
+
+async def do_der_settings_vs_rating_check(
+    setting: dtos.SiteDERSetting,
+    rating: dtos.SiteDERRating | None,
+    resolved_params: dict[str, evaluator.ResolvedParam] | None = None,
+) -> CheckResult:
+    backend = mock.AsyncMock(spec=RunnerBackend)
+    backend.get_active_site.return_value = generate_class_instance(dtos.Site, site_id="1")
+    backend.get_der_settings.return_value = setting
+    backend.get_der_capability.return_value = rating
+    return await check_der_settings_contents(backend, resolved_params or {})
+
+
+@pytest.mark.parametrize(
+    "setting_value, setting_mult, rating_value, rating_mult, lte_expected, gte_expected",
+    [
+        (100, 0, 100, 0, True, True),
+        (99, 0, 100, 0, True, False),
+        (101, 0, 100, 0, False, True),
+        (0, 0, 0, 0, True, True),
+        (0, 0, 100, 0, True, False),
+        (-99, 0, -100, 0, False, True),  # setMaxVarNeg style values
+        (-101, 0, -100, 0, True, False),
+        (5, 3, 5000, 0, True, True),  # Multipliers must be considered
+        (5, 3, 4000, 0, False, True),
+        (9999, 0, 10, 3, True, False),
+        (95, -2, 950, -3, True, True),
+        (951, -3, 95, -2, False, True),
+        (100, None, 100, 0, True, True),  # Missing multiplier is 0
+        (100, None, 10, 1, True, True),
+    ],
+)
+@pytest.mark.parametrize("equivalent", DER_VALUE_EQUIVALENTS, ids=lambda e: e.setting_name)
+@pytest.mark.anyio
+async def test_check_der_settings_contents_value_vs_capability(
+    equivalent: DERValueEquivalent,
+    setting_value: int,
+    setting_mult: int | None,
+    rating_value: int,
+    rating_mult: int | None,
+    lte_expected: bool,
+    gte_expected: bool,
+):
+    reversed_names = ["setMaxVarNeg", "setMinPFOverExcited", "setMinPFUnderExcited"]
+    is_reversed = equivalent.setting_name in reversed_names
+    assert equivalent.comparison == (DERComparison.GTE if is_reversed else DERComparison.LTE)
+
+    setting, rating = generate_der_settings_and_rating(
+        {equivalent.value_property: setting_value, equivalent.multiplier_property: setting_mult},
+        {equivalent.value_property: rating_value, equivalent.multiplier_property: rating_mult},
+    )
+    result = await do_der_settings_vs_rating_check(setting, rating)
+
+    assert_check_result(result, gte_expected if is_reversed else lte_expected)
+    if not result.passed:
+        assert result.description is not None
+        assert equivalent.setting_name in result.description
+        assert equivalent.rating_name in result.description
+        assert equivalent.comparison in result.description
+
+
+@pytest.mark.parametrize(
+    "setting_prop, rating_prop, setting_name, rating_name",
+    [(e.value_property, e.value_property, e.setting_name, e.rating_name) for e in DER_VALUE_EQUIVALENTS]
+    + [
+        ("modes_enabled", "modes_supported", "modesEnabled", "modesSupported"),
+        ("doe_modes_enabled", "doe_modes_supported", "doeModesEnabled", "doeModesSupported"),
+        ("vpp_modes_enabled", "vpp_modes_supported", "vppModesEnabled", "vppModesSupported"),
+    ],
+)
+@pytest.mark.parametrize("value", [0, 1])
+@pytest.mark.anyio
+async def test_check_der_settings_contents_presence_vs_capability(
+    setting_prop: str, rating_prop: str, setting_name: str, rating_name: str, value: int
+):
+    """Values set in only one of DERSettings/DERCapability are failures (including when the value is 0)"""
+    setting, rating = generate_der_settings_and_rating({setting_prop: value}, {rating_prop: None})
+    result = await do_der_settings_vs_rating_check(setting, rating)
+    assert result == CheckResult(False, f"DERSetting.{setting_name} is set but DERCapability.{rating_name} is missing")
+
+    setting, rating = generate_der_settings_and_rating({setting_prop: None}, {rating_prop: value})
+    result = await do_der_settings_vs_rating_check(setting, rating)
+    assert result == CheckResult(False, f"DERCapability.{rating_name} is set but DERSetting.{setting_name} is missing")
+
+    setting, rating = generate_der_settings_and_rating({setting_prop: None}, {rating_prop: None})
+    assert_check_result(await do_der_settings_vs_rating_check(setting, rating), True)
+
+
+@pytest.mark.parametrize(
+    "enabled, supported, expected",
+    [
+        (0b000, 0b000, True),
+        (0b000, 0b111, True),
+        (0b101, 0b111, True),
+        (0b111, 0b111, True),
+        (0b001, 0b000, False),
+        (0b011, 0b100, False),  # numerically smaller - but not a subset
+        (0b111, 0b101, False),
+    ],
+)
+@pytest.mark.parametrize(
+    "setting_prop, rating_prop, setting_name",
+    [
+        ("modes_enabled", "modes_supported", "modesEnabled"),
+        ("doe_modes_enabled", "doe_modes_supported", "doeModesEnabled"),
+        ("vpp_modes_enabled", "vpp_modes_supported", "vppModesEnabled"),
+    ],
+)
+@pytest.mark.anyio
+async def test_check_der_settings_contents_modes_vs_capability(
+    setting_prop: str, rating_prop: str, setting_name: str, enabled: int, supported: int, expected: bool
+):
+    setting, rating = generate_der_settings_and_rating({setting_prop: enabled}, {rating_prop: supported})
+    result = await do_der_settings_vs_rating_check(setting, rating)
+    assert_check_result(result, expected)
+    if not expected:
+        assert result.description is not None
+        assert f"DERSetting.{setting_name}" in result.description
+
+
+@pytest.mark.anyio
+async def test_check_der_settings_contents_no_capability():
+    """A missing DERCapability is a failure that's reported alongside any other failures"""
+    setting, _ = generate_der_settings_and_rating({}, {})
+    result = await do_der_settings_vs_rating_check(setting, None, {"setGradW": evaluator.ResolvedParam(28)})
+    assert_check_result(result, False)
+    assert result.description is not None
+    assert "setGradW 27 doesn't match expected 28" in result.description
+    assert "No DERCapability found for EndDevice 1" in result.description
+
+
+@pytest.mark.parametrize(
+    "rating_overrides, expected",
+    [
+        ({}, True),
+        ({"max_w_value": 5, "max_w_multiplier": 3}, True),
+        ({"max_w_value": 4, "max_w_multiplier": 3}, False),
+        ({"max_va_value": None, "max_va_multiplier": None}, False),
+        ({"doe_modes_supported": 0}, False),
+        ({"vpp_modes_supported": 3}, True),
+        ({"vpp_modes_supported": 0}, False),
+        ({"vpp_modes_supported": 2}, False),
+        ({"vpp_modes_supported": None}, False),
+    ],
+)
+@pytest.mark.anyio
+async def test_check_der_settings_contents_vs_capability_db(
+    pg_base_config, rating_overrides: dict[str, Any], expected: bool
+):
+    """Ensures the comparison is fed correctly (including multipliers and VPP modes) via the envoy backend"""
+    setting = generate_class_instance(
+        SiteDERSetting, max_w_value=5000, max_w_multiplier=0, doe_modes_enabled=3, vpp_modes_enabled=1
+    )
+    async with generate_async_session(pg_base_config) as session:
+        session.add(generate_site_with_der_setting(setting, **rating_overrides))
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=mock.Mock(spec=EnvoyAdminClient))
+        assert_check_result(await check_der_settings_contents(backend, {}), expected)
 
 
 DERRATING_BOOL_PARAM_SCENARIOS = [
@@ -1878,13 +1926,18 @@ async def test_do_check_latest_reading_level(
 
 
 @pytest.mark.parametrize(
-    "resolved_params, expected_window_period, called",
+    "resolved_params, expected_window_period, expected_length, called",
     [
-        ({"minimum_level": 1, "maximum_level": 2, "window_seconds": 3}, timedelta(seconds=3), True),
-        ({"minimum_level": 1, "maximum_level": 2}, None, True),
-        ({"minimum_level": 1}, None, True),
-        ({"maximum_level": 2}, None, True),
-        ({}, None, False),
+        ({"minimum_level": 1, "maximum_level": 2, "window_seconds": 3}, timedelta(seconds=3), None, True),
+        ({"minimum_level": 1, "maximum_level": 2}, None, None, True),
+        ({"minimum_level": 1}, None, None, True),
+        ({"maximum_level": 2}, None, None, True),
+        ({"maximum_level": 2, "reading_length_seconds": 60}, None, 60, True),
+        ({"maximum_level": 2, "reading_length_seconds": 0}, None, 0, True),
+        ({"window_seconds": 3, "reading_length_seconds": 60}, timedelta(seconds=3), 60, True),
+        ({"reading_length_seconds": 60}, None, None, False),  # Purely a filter - has no levels to apply to
+        ({"reading_length_seconds": 60, "minimum_count": 1}, None, None, False),
+        ({}, None, None, False),
     ],
 )
 @pytest.mark.anyio
@@ -1892,6 +1945,7 @@ async def test_do_check_reading_levels_for_types(
     mocker: pytest_mock.MockerFixture,
     resolved_params: dict[str, Any],
     expected_window_period: timedelta | None,
+    expected_length: int | None,
     called: bool,
 ) -> None:
     """Ensures that the matching function works as expected for the correct combinations of resolved parameters.
@@ -1900,6 +1954,7 @@ async def test_do_check_reading_levels_for_types(
         mocker: the mocker fixture
         resolved_params: dictionary passed in containing parameters resolved during evaluation
         expected_window_period: the window_period do_check_levels_for_readings should be called with
+        expected_length: the reading_length_seconds do_check_levels_for_readings should be called with
         called: whether do_check_levels_for_readings should be called at all
     """
     mock_levels = mocker.patch("cactus_runner.app.check.do_check_levels_for_readings")
@@ -1907,7 +1962,7 @@ async def test_do_check_reading_levels_for_types(
 
     result = await do_check_reading_levels_for_types(session, [], resolved_params)
     if called:
-        mock_levels.assert_called_once_with(session, [], mock.ANY, mock.ANY, expected_window_period)
+        mock_levels.assert_called_once_with(session, [], mock.ANY, mock.ANY, expected_window_period, expected_length)
     else:
         mock_levels.assert_not_called()
         assert_check_result(result, True)
@@ -1919,6 +1974,9 @@ async def test_do_check_reading_levels_for_types(
         {"minimum_level": 1, "maximum_level": 2, "latest_reading_only": True},
         {"minimum_level": 1, "latest_reading_only": True},
         {"latest_reading_only": True},  # No levels at all - still routes to the latest-reading check
+        {"latest_reading_only": True, "reading_length_seconds": 60},
+        {"latest_reading_only": True, "reading_length_seconds": 0},
+        {"latest_reading_only": True, "reading_length_seconds": 60, "minimum_count": 1, "maximum_level": 2},
     ],
 )
 @pytest.mark.anyio
@@ -1937,9 +1995,260 @@ async def test_do_check_reading_levels_for_types_latest_reading_only(
 
     mock_levels.assert_not_called()
     mock_latest.assert_called_once_with(
-        session, [], resolved_params.get("minimum_level"), resolved_params.get("maximum_level")
+        session,
+        [],
+        resolved_params.get("minimum_level"),
+        resolved_params.get("maximum_level"),
+        resolved_params.get("reading_length_seconds"),
     )
     assert_check_result(result, True)
+
+
+# (length_seconds, value) tuples - each reading starts as the preceding reading ends
+READING_LENGTHS_60 = [(60, 10), (60, 11)]
+READING_LENGTHS_60_300 = [*READING_LENGTHS_60, (300, 20)]
+READING_LENGTHS_60_300_60 = [*READING_LENGTHS_60_300, (60, 30)]
+
+
+async def seed_reading_lengths(
+    pg_base_config, readings_by_srt_id: dict[int, list[tuple[int, int]]], start: datetime
+) -> list[dtos.SiteReadingType]:
+    """Seeds the DB with back to back readings, received the moment they end. Returns the (valid) site active power
+    SiteReadingTypes"""
+    async with generate_async_session(pg_base_config) as session:
+        site = generate_class_instance(Site, nmi_checksum=None, aggregator_id=1, site_id=1)
+        session.add(site)
+        for srt_id, readings in readings_by_srt_id.items():
+            srt = generate_class_instance(
+                SiteReadingType,
+                seed=srt_id * 101,
+                site_reading_type_id=srt_id,
+                aggregator_id=1,
+                site=site,
+                power_of_ten_multiplier=0,
+                uom=UomType.REAL_POWER_WATT,
+                kind=KindType.POWER,
+                data_qualifier=DataQualifierType.AVERAGE,
+                role_flags=ReadingLocation.SITE_READING,
+            )
+            session.add(srt)
+            reading_start = start
+            for i, (length_seconds, value) in enumerate(readings):
+                reading_end = reading_start + timedelta(seconds=length_seconds)
+                session.add(
+                    generate_class_instance(
+                        SiteReading,
+                        seed=srt_id * 1001 + i,
+                        site_reading_type=srt,
+                        value=value,
+                        time_period_start=reading_start,
+                        time_period_seconds=length_seconds,
+                        created_time=reading_end,
+                    )
+                )
+                reading_start = reading_end
+        await session.commit()
+
+    async with generate_async_session(pg_base_config) as session:
+        srts = (await session.execute(select(SiteReadingType).order_by(SiteReadingType.site_reading_type_id))).scalars()
+        return [map_envoy_site_reading_type_to_dto(srt) for srt in srts.all()]
+
+
+@pytest.mark.parametrize(
+    "readings_by_srt_id, started_offset_seconds, minimum_count, length, expected",
+    [
+        ({1: READING_LENGTHS_60_300_60}, None, 4, None, True),
+        ({1: READING_LENGTHS_60_300_60}, None, 5, None, False),
+        ({1: READING_LENGTHS_60_300_60}, None, 3, 60, True),
+        ({1: READING_LENGTHS_60_300_60}, None, 4, 60, False),
+        ({1: READING_LENGTHS_60_300_60}, None, 1, 300, True),
+        ({1: READING_LENGTHS_60_300_60}, None, 2, 300, False),
+        ({1: READING_LENGTHS_60_300_60}, None, 1, 120, False),
+        ({1: READING_LENGTHS_60_300_60}, None, 0, 120, True),
+        ({1: READING_LENGTHS_60_300_60}, None, None, 120, True),  # Nothing to count
+        ({1: READING_LENGTHS_60}, None, 1, 0, False),  # A length of 0 is NOT the same as None
+        ({1: [(60, 11), (0, 10)]}, None, 1, 0, True),
+        ({1: [(60, 11), (0, 10)]}, None, 2, 0, False),
+        # Counts are per SiteReadingType - not across all SiteReadingTypes
+        ({1: READING_LENGTHS_60, 2: READING_LENGTHS_60_300}, None, 1, 300, True),
+        ({1: READING_LENGTHS_60_300, 2: READING_LENGTHS_60_300}, None, 2, 300, False),
+        # Length filter combines with the test start time (only the final 300s / 60s readings are in the test)
+        ({1: READING_LENGTHS_60_300_60}, 150, 1, 60, True),
+        ({1: READING_LENGTHS_60_300_60}, 150, 2, 60, False),
+        ({1: READING_LENGTHS_60_300_60}, 150, 1, 300, True),
+    ],
+)
+@pytest.mark.anyio
+async def test_do_check_readings_for_types_reading_length(
+    pg_base_config,
+    readings_by_srt_id: dict[int, list[tuple[int, int]]],
+    started_offset_seconds: int | None,
+    minimum_count: int | None,
+    length: int | None,
+    expected: bool,
+):
+    """Tests that only readings of the specified length count towards minimum_count"""
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    srt_dtos = await seed_reading_lengths(pg_base_config, readings_by_srt_id, start)
+    started_at = None if started_offset_seconds is None else start + timedelta(seconds=started_offset_seconds)
+    active_test_procedure = generate_class_instance(
+        ActiveTestProcedure, step_status={}, finished_zip_path=None, started_at=started_at
+    )
+
+    async with generate_async_session(pg_base_config) as session:
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=mock.Mock(spec=EnvoyAdminClient))
+        result = await do_check_readings_for_types(active_test_procedure, backend, srt_dtos, minimum_count, length)
+        assert_check_result(result, expected)
+
+
+@pytest.mark.parametrize(
+    "readings, min_level, max_level, window_s, length, expected",
+    [
+        # No window
+        (READING_LENGTHS_60_300_60, 20, 20, None, None, False),
+        (READING_LENGTHS_60_300_60, 20, 20, None, 300, True),
+        (READING_LENGTHS_60_300_60, 10, 30, None, 60, True),
+        (READING_LENGTHS_60_300_60, 11, 30, None, 60, False),
+        (READING_LENGTHS_60_300_60, 10, 29, None, 60, False),
+        (READING_LENGTHS_60_300_60, 0, 100, None, 120, False),  # No readings of this length
+        (READING_LENGTHS_60, 0, 100, None, 0, False),  # A length of 0 is NOT the same as None
+        ([(60, 11), (0, 10)], 10, 10, None, 0, True),
+        # Windowed
+        (READING_LENGTHS_60_300_60, 30, 30, 360, None, False),
+        (READING_LENGTHS_60_300_60, 30, 30, 360, 60, True),
+        (READING_LENGTHS_60_300_60, 20, 20, 360, 300, True),
+        (READING_LENGTHS_60_300_60, 30, 30, 420, 60, False),  # Now includes the second 60s reading
+        (READING_LENGTHS_60_300_60, 20, 20, 359, 300, False),  # 300s reading isn't wholly in the window
+        (READING_LENGTHS_60_300, 11, 11, 60, 60, False),  # Window is relative to the (300s) latest reading
+    ],
+)
+@pytest.mark.anyio
+async def test_do_check_levels_for_readings_reading_length(
+    pg_base_config,
+    readings: list[tuple[int, int]],
+    min_level: float | None,
+    max_level: float | None,
+    window_s: int | None,
+    length: int | None,
+    expected: bool,
+):
+    """Tests that level checks only consider readings of the specified length"""
+    srt_dtos = await seed_reading_lengths(pg_base_config, {1: readings}, datetime(2024, 1, 1, tzinfo=UTC))
+
+    async with generate_async_session(pg_base_config) as session:
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=mock.Mock(spec=EnvoyAdminClient))
+        window_period = timedelta(seconds=window_s) if window_s is not None else None
+        result = await do_check_levels_for_readings(backend, srt_dtos, min_level, max_level, window_period, length)
+        assert_check_result(result, expected)
+
+
+@pytest.mark.parametrize(
+    "readings_by_srt_id, min_level, max_level, length, expected",
+    [
+        ({1: READING_LENGTHS_60}, None, None, 60, True),
+        ({1: READING_LENGTHS_60}, None, None, 300, False),
+        ({1: READING_LENGTHS_60_300}, None, None, None, True),
+        ({1: READING_LENGTHS_60_300}, None, None, 300, True),
+        ({1: READING_LENGTHS_60_300}, None, None, 60, False),  # Older 60s readings exist but they AREN'T the latest
+        ({1: READING_LENGTHS_60_300_60}, None, None, 60, True),
+        ({1: READING_LENGTHS_60_300_60}, None, None, 300, False),
+        ({1: READING_LENGTHS_60}, None, None, 0, False),  # A length of 0 is NOT the same as None
+        ({1: []}, None, None, 60, False),
+        # Combined with levels
+        ({1: READING_LENGTHS_60_300}, 20, 20, 300, True),
+        ({1: READING_LENGTHS_60_300}, 21, None, 300, False),
+        ({1: READING_LENGTHS_60_300}, None, 19, 300, False),
+        ({1: READING_LENGTHS_60_300}, 11, 11, 60, False),
+        # EVERY SiteReadingType must match
+        ({1: READING_LENGTHS_60_300, 2: READING_LENGTHS_60_300}, None, None, 300, True),
+        ({1: READING_LENGTHS_60_300, 2: READING_LENGTHS_60}, None, None, 300, False),
+        ({1: READING_LENGTHS_60, 2: READING_LENGTHS_60_300}, None, None, 300, False),
+    ],
+)
+@pytest.mark.anyio
+async def test_do_check_latest_reading_level_reading_length(
+    pg_base_config,
+    readings_by_srt_id: dict[int, list[tuple[int, int]]],
+    min_level: float | None,
+    max_level: float | None,
+    length: int | None,
+    expected: bool,
+):
+    """Tests that the latest reading (of ANY length) must match the specified length"""
+    srt_dtos = await seed_reading_lengths(pg_base_config, readings_by_srt_id, datetime(2024, 1, 1, tzinfo=UTC))
+
+    async with generate_async_session(pg_base_config) as session:
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=mock.Mock(spec=EnvoyAdminClient))
+        result = await do_check_latest_reading_level(backend, srt_dtos, min_level, max_level, length)
+        assert_check_result(result, expected)
+
+
+@pytest.mark.parametrize(
+    "readings, parameters, expected",
+    [
+        # ALL-10 - waiting for the post rate to move 60s -> 300s -> 60s
+        (READING_LENGTHS_60, {"latest_reading_only": True, "minimum_count": 1, "reading_length_seconds": 60}, True),
+        (READING_LENGTHS_60, {"latest_reading_only": True, "minimum_count": 1, "reading_length_seconds": 300}, False),
+        (
+            READING_LENGTHS_60_300,
+            {"latest_reading_only": True, "minimum_count": 1, "reading_length_seconds": 300},
+            True,
+        ),
+        (
+            READING_LENGTHS_60_300,  # The initial 60s readings can't satisfy the final 60s check
+            {"latest_reading_only": True, "minimum_count": 1, "reading_length_seconds": 60},
+            False,
+        ),
+        (
+            READING_LENGTHS_60_300_60,
+            {"latest_reading_only": True, "minimum_count": 1, "reading_length_seconds": 60},
+            True,
+        ),
+        # minimum_count considers ALL readings of that length - not just the latest
+        (
+            READING_LENGTHS_60_300_60,
+            {"latest_reading_only": True, "minimum_count": 3, "reading_length_seconds": 60},
+            True,
+        ),
+        (
+            READING_LENGTHS_60_300_60,
+            {"latest_reading_only": True, "minimum_count": 4, "reading_length_seconds": 60},
+            False,
+        ),
+        # Without latest_reading_only
+        (READING_LENGTHS_60_300, {"minimum_count": 2, "reading_length_seconds": 60}, True),
+        (READING_LENGTHS_60_300, {"minimum_count": 2, "reading_length_seconds": 300}, False),
+        (
+            READING_LENGTHS_60_300,
+            {"minimum_count": 2, "maximum_level": 11, "reading_length_seconds": 60},
+            True,
+        ),
+        (READING_LENGTHS_60_300, {"minimum_count": 2, "maximum_level": 11}, False),
+    ],
+)
+@mock.patch("cactus_runner.app.check.do_check_readings_match_post_rate")
+@mock.patch("cactus_runner.app.check.do_check_reading_type_mrids_match_pen")
+@pytest.mark.anyio
+async def test_check_readings_site_active_power_reading_length(
+    mock_do_check_reading_type_mrids_match_pen: mock.MagicMock,
+    mock_do_check_readings_match_post_rate: mock.MagicMock,
+    pg_base_config,
+    readings: list[tuple[int, int]],
+    parameters: dict[str, Any],
+    expected: bool,
+):
+    """Tests reading_length_seconds in combination with other parameters via a full reading check"""
+    mock_do_check_readings_match_post_rate.return_value = CheckResult(True, None)
+    mock_do_check_reading_type_mrids_match_pen.return_value = CheckResult(True, None)
+    await seed_reading_lengths(pg_base_config, {1: readings}, datetime(2024, 1, 1, tzinfo=UTC))
+    active_test_procedure = generate_class_instance(
+        ActiveTestProcedure, step_status={}, finished_zip_path=None, started_at=None
+    )
+
+    async with generate_async_session(pg_base_config) as session:
+        backend = EnvoyBackend(session_factory=lambda: session, admin_client=mock.Mock(spec=EnvoyAdminClient))
+        result = await check_readings_site_active_power(active_test_procedure, backend, parameters, 0)
+        assert_check_result(result, expected)
 
 
 @pytest.mark.parametrize(
@@ -2151,7 +2460,7 @@ async def test_do_check_reading_type_mrids_match_pen(
             None,
         ),
         (
-            {"minimum_count": 123, "foo": 456},
+            {"minimum_count": 123, "foo": 456, "reading_length_seconds": 300},
             UomType.BRITISH_THERMAL_UNIT,
             ReadingLocation.DEVICE_READING,
             DataQualifierType.STANDARD,
@@ -2248,7 +2557,11 @@ async def test_do_check_site_readings_and_params(
     if len(site_reading_types) != 0:
         assert result == expected_result
         mock_do_check_readings_for_types.assert_called_once_with(
-            active_test_procedure, mock_backend, site_reading_types, expected_min_count
+            active_test_procedure,
+            mock_backend,
+            site_reading_types,
+            expected_min_count,
+            resolved_parameters.get("reading_length_seconds"),
         )
         mock_do_check_readings_on_minute_boundary.assert_called_once_with(mock_backend, site_reading_types)
         mock_do_check_reading_type_mrids_match_pen.assert_called_once_with(site_reading_types, pen)
@@ -2510,6 +2823,116 @@ async def test_check_readings_voltage(
     assert all(
         [ca.args[6] is DataQualifierType.AVERAGE for ca in mock_do_check_site_readings_and_params.call_args_list]
     )
+
+
+SITE = ReadingLocation.SITE_READING
+DEVICE = ReadingLocation.DEVICE_READING
+AN, BN, CN, ABC = PhaseCode.PHASE_AN_S1N, PhaseCode.PHASE_BN, PhaseCode.PHASE_CN_S2N, PhaseCode.PHASE_ABC
+
+
+@pytest.mark.parametrize(
+    "site_phases, device_phases, expected, expected_in_description",
+    [
+        # Single MMR
+        ([AN], [], True, ["site level", "129"]),
+        ([BN], [], True, ["65"]),
+        ([CN], [], True, ["33"]),
+        ([ABC], [], True, ["224"]),
+        ([], [AN], True, ["DER/device level", "129"]),
+        ([PhaseCode.NOT_APPLICABLE], [], False, ["site level", "phase 0"]),
+        ([PhaseCode.PHASE_A_S1], [], False, ["phase 128"]),
+        ([PhaseCode.PHASE_AB], [], False, ["phase 132"]),
+        # Multiple MMRs
+        ([AN, BN, CN, ABC], [], True, ["129, 65, 33, 224"]),
+        ([ABC, AN], [], True, []),
+        ([ABC, ABC], [], True, []),
+        ([AN, BN, CN], [], False, ["PHASE_ABC (224)"]),
+        ([AN, AN], [], False, ["PHASE_ABC (224)"]),
+        ([ABC, PhaseCode.NOT_APPLICABLE], [], False, ["phase 0"]),
+        # Site and device are assessed independently
+        ([AN, BN, CN, ABC], [AN], True, ["site level", "DER/device level"]),
+        ([AN], [BN], True, []),
+        ([ABC], [AN, BN], False, ["DER/device level"]),
+        ([AN, BN], [ABC], False, ["site level"]),
+        ([AN, BN], [PhaseCode.NOT_APPLICABLE], False, ["site level", "DER/device level"]),
+        # Nothing registered
+        ([], [], False, ["No site level or DER/device level"]),
+    ],
+)
+@pytest.mark.anyio
+async def test_check_voltage_phase_code(
+    site_phases: list[PhaseCode],
+    device_phases: list[PhaseCode],
+    expected: bool,
+    expected_in_description: list[str],
+):
+    site = generate_class_instance(dtos.Site, seed=1, site_id="1")
+    located_phases = [(SITE, p) for p in site_phases] + [(DEVICE, p) for p in device_phases]
+    mock_backend = mock.AsyncMock(spec=RunnerBackend)
+    mock_backend.get_active_site.return_value = site
+    mock_backend.get_site_reading_types.return_value = [
+        generate_class_instance(
+            dtos.SiteReadingType,
+            seed=100 * (i + 1),
+            site_id=site.site_id,
+            uom=UomType.VOLTAGE,
+            kind=KindType.POWER,
+            data_qualifier=DataQualifierType.AVERAGE,
+            role_flags=location,
+            phase=phase,
+        )
+        for i, (location, phase) in enumerate(located_phases)
+    ]
+
+    result = await check_voltage_phase_code(mock_backend)
+
+    assert_check_result(result, expected)
+    assert result.description is not None
+    for expected_text in expected_in_description:
+        assert expected_text in result.description
+    assert all(ca.kwargs == {"site_ids": ["1"]} for ca in mock_backend.get_site_reading_types.call_args_list)
+
+
+@pytest.mark.parametrize(
+    "ignored_values",
+    [
+        {"uom": UomType.REAL_POWER_WATT},
+        {"kind": KindType.ENERGY},
+        {"data_qualifier": DataQualifierType.MAXIMUM},
+        {"role_flags": 0},
+    ],
+)
+@pytest.mark.anyio
+async def test_check_voltage_phase_code_ignores_other_reading_types(ignored_values: dict[str, Any]):
+    """Only the average voltage readings at the site / device should be considered"""
+    valid_values: dict[str, Any] = {
+        "site_id": "1",
+        "uom": UomType.VOLTAGE,
+        "kind": KindType.POWER,
+        "data_qualifier": DataQualifierType.AVERAGE,
+        "role_flags": SITE,
+    }
+    valid = generate_class_instance(dtos.SiteReadingType, seed=101, phase=AN, **valid_values)
+    ignored = generate_class_instance(
+        dtos.SiteReadingType, seed=202, phase=PhaseCode.NOT_APPLICABLE, **(valid_values | ignored_values)
+    )
+    mock_backend = mock.AsyncMock(spec=RunnerBackend)
+    mock_backend.get_active_site.return_value = generate_class_instance(dtos.Site, seed=1, site_id="1")
+
+    mock_backend.get_site_reading_types.return_value = [valid, ignored]
+    assert_check_result(await check_voltage_phase_code(mock_backend), True)
+
+    mock_backend.get_site_reading_types.return_value = [ignored]
+    assert_check_result(await check_voltage_phase_code(mock_backend), False)
+
+
+@pytest.mark.anyio
+async def test_check_voltage_phase_code_no_active_site():
+    mock_backend = mock.AsyncMock(spec=RunnerBackend)
+    mock_backend.get_active_site.return_value = None
+
+    assert_check_result(await check_voltage_phase_code(mock_backend), False)
+    mock_backend.get_site_reading_types.assert_not_called()
 
 
 @pytest.mark.anyio
@@ -3596,15 +4019,7 @@ def test_merge_check_results(checkresults: list[CheckResult], expected: CheckRes
     [
         ([], {}, False, r"[Nn]o [Ee]nd[Dd]evice is currently registered"),
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, grad_w=12345),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, grad_w=12345))],
             {"setGradW": evaluator.ResolvedParam(1234)},
             False,
             r"setGradW [0-9]+ doesn't match (expected)?[: ]+[0-9]+",
@@ -3650,71 +4065,31 @@ def test_merge_check_results(checkresults: list[CheckResult], expected: CheckRes
             r"No DERSetting found for [Ee]nd[Dd]evice [0-9]+",
         ),
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=int("fe", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, doe_modes_enabled=int("fe", 16)))],
             {"doeModesEnabled_set": evaluator.ResolvedParam("03")},
             False,
             r"doeModesEnabled_set.* minimum flag .* check hi.* failed",
         ),  # Bit flag 1 not set on actual value
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, modes_enabled=int("fe", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, modes_enabled=int("fe", 16)))],
             {"modesEnabled_set": evaluator.ResolvedParam("03")},
             False,
             r"modesEnabled_set.* minimum flag .* check hi.* failed",
         ),  # Bit flag 1 not set on actual value
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, doe_modes_enabled=int("fd", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, doe_modes_enabled=int("fd", 16)))],
             {"doeModesEnabled_unset": evaluator.ResolvedParam("03")},
             False,
             r"doeModesEnabled_unset.* minimum flag .* check lo.* failed",
         ),  # Bit flag 1 set on actual value
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, modes_enabled=int("fd", 16)),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, modes_enabled=int("fd", 16)))],
             {"modesEnabled_unset": evaluator.ResolvedParam("03")},
             False,
             r"modesEnabled_unset.* minimum flag .* check lo.* failed",
         ),  # Bit flag 1 set on actual value
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, max_va_value=12345),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, max_va_value=12345))],
             {
                 "setMaxVA": evaluator.ResolvedParam(
                     False,
@@ -3731,15 +4106,7 @@ def test_merge_check_results(checkresults: list[CheckResult], expected: CheckRes
             r"setMaxVA (must|MUST) satisfy (expression)?.*setMaxVA ?== ?54321.*currently set as[: ]{1} ?12345",
         ),  # Expression boolean not met
         (
-            [
-                generate_class_instance(
-                    Site,
-                    nmi_checksum=None,
-                    seed=101,
-                    aggregator_id=1,
-                    site_der_setting=generate_class_instance(SiteDERSetting, max_va_value=12345),
-                )
-            ],
+            [generate_site_with_der_setting(generate_class_instance(SiteDERSetting, max_va_value=12345))],
             {
                 "setMaxVA": evaluator.ResolvedParam(
                     False,
